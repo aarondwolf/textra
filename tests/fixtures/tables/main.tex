@@ -1,0 +1,17 @@
+\documentclass{article}
+\begin{document}
+% The simple table is intended to support a lossless editable round trip.
+\begin{tabular}{lrr}
+Variable & Model 1 & Model 2 \\
+Income & 0.125 & 0.250 \\
+Standard error & (0.010) & (0.020) \\
+Observations & 120 & 120 \\
+\end{tabular}
+
+% Complex constructs must not be flattened or interpreted as extra cells.
+\begin{tabular}{lcc}
+\multicolumn{3}{c}{Estimates with special content} \\
+Research \& development & $\alpha_{1}$ & $1.2 \times 10^{-3}$ \\
+Nested macro & \textbf{A {nested} value} & \multicolumn{1}{r}{0.50} \\
+\end{tabular}
+\end{document}

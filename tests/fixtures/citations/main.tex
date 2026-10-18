@@ -1,0 +1,14 @@
+\documentclass{article}
+\begin{document}
+% The comment citation \cite{commentOnly} must not count.
+Single citation~\cite{alpha}.
+Multiple citations~\cite{alpha,beta}.
+Optional note~\cite[pp.~1--2]{beta,missing}.
+Literal escaped percent \% followed by a real citation~\cite{alpha}.
+Unicode prose: caf\'{e}, na\"{i}ve, résumé.
+\section{First}\label{sec:duplicate}
+\section{Second}\label{sec:duplicate}
+Unresolved reference~\ref{sec:missing}.
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}

@@ -15,3 +15,12 @@
 - 2026-10-18: Phase 1 file operations will carry an opaque project session ID and
   SHA256 content revision. No force-save API. Reject symlinks and protected paths;
   poll only open files for external changes. User chooses roots via native dialogs.
+- 2026-10-18: Builds use unique build/textra output directories and retain last-good
+  PDF bytes in main, preserving preview after failed builds. No general command API.
+- 2026-10-18: Settings are strict schema1, unknown versions preserved. Project
+  overrides are opt-in; app exports exclude recents, paths, and credentials.
+- 2026-10-18: Core native workflow passes but full Phase 1 remains incomplete;
+  installer/manager actions and editable pipelines are the next gate work.
+- 2026-10-18: Put Vite dependency cache in OS temp, keyed by checkout path, outside
+  Dropbox/OneDrive. Explicit eager dependency list avoids incremental rediscovery.
+  The synced node_modules cache repeatedly failed directory renames with EBUSY.

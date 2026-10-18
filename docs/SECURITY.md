@@ -20,3 +20,10 @@ Logs must redact secret-like values. Never include environment dumps or keys.
 Review focus: IPC, symlinks, traversal, concurrent edits, process lifecycle, PDF
 input bounds, safe URLs, and restore paths. Report vulnerabilities privately to
 the owner; a public security contact remains an owner decision.
+
+Implemented limits: 5MiB UTF8 text, 10,000 tree entries, 50 tabs, 2MB build log,
+64MiB PDF, 16M-pixel render backing/image bounds, 120s compile, 5s SyncTeX.
+MiKTeX auto-install/first-line format parsing and shell escape are disabled;
+latexmk uses -norc. PDF XFA is disabled and its worker is bundled locally.
+Portable Node cannot atomically bind every path check to subsequent OS operations;
+revalidation narrows but does not eliminate hostile concurrent TOCTOU mutation.

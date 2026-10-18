@@ -2,17 +2,23 @@
 
 Each phase depends on the preceding gate. Do not describe a partial gate as complete.
 
-| Milestone      | Scope                                                                   | Acceptance / verification                                                      | Status   |
-| -------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------- |
-| 0 Foundation   | Electron/Vite, typed IPC, secure shell, themes, palette, panels, memory | dev native window + HMR; format, typecheck, lint, unit, build, Electron smoke  | Complete |
-| 1a Files       | Project selection, safe file service, Monaco, tabs, conflicts           | Traversal/symlink rejection, atomic save, dirty and external edit preservation | Planned  |
-| 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                    | Real minimal/multi-file TeX and failed/cancelled builds                        | Planned  |
-| 1c Preview     | PDF.js, navigation, search, SyncTeX                                     | Real PDF rendering and source mapping                                          | Planned  |
-| 1d Workflow    | Project CRUD, settings, onboarding, pipelines                           | Full phase 1 workflow and missing-tool fallbacks                               | Planned  |
-| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                          | Offline insertions/undo, diagnostics and explicit AI consent                   | Planned  |
-| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer                    | Real previews, round-trip tests, no unrelated Git changes                      | Planned  |
-| 4 Distribution | Templates, importer, accessibility, migrations, installers              | Security review, Windows install/uninstall, release matrix                     | Planned  |
+| Milestone      | Scope                                                                   | Acceptance / verification                                                      | Status               |
+| -------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------- |
+| 0 Foundation   | Electron/Vite, typed IPC, secure shell, themes, palette, panels, memory | dev native window + HMR; format, typecheck, lint, unit, build, Electron smoke  | Complete             |
+| 1a Files       | Project selection, safe file service, Monaco, tabs, conflicts           | Traversal/symlink rejection, atomic save, dirty and external edit preservation | Core passed          |
+| 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                    | Real minimal/multi-file TeX and failed/cancelled builds                        | Fixed presets passed |
+| 1c Preview     | PDF.js, navigation, search, SyncTeX                                     | Real PDF rendering and source mapping                                          | Core passed          |
+| 1d Workflow    | Project CRUD, settings, onboarding, pipelines                           | Full phase 1 workflow and missing-tool fallbacks                               | Partial              |
+| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                          | Offline insertions/undo, diagnostics and explicit AI consent                   | Planned              |
+| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer                    | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
+| 4 Distribution | Templates, importer, accessibility, migrations, installers              | Security review, Windows install/uninstall, release matrix                     | Planned              |
 
 Common gate: `npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.
 Use PowerShell commands individually if the shell does not support `&&`.
 Record blockers and exact next actions in memory; continue independent tasks when external software is unavailable.
+
+Full Phase 1 remains open: editable allowlisted ordered pipelines, installer and
+distribution-manager actions, engine/path preferences, TEX-root hints, file context
+menus/collapsing/reveal-active, persisted font/wrap, PDF-beside-source configuration,
+and broader SyncTeX/PDF edge fixtures. Core CRUD, recent/pinned, settings transfer,
+project root/compiler overrides and setup detection/test compile work now.

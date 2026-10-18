@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
 test('native shell keeps security boundaries and persists representative UI actions', async () => {
+  test.setTimeout(90000); // Includes two real Windows process launches and profile cleanup.
   const root = join(process.cwd(), 'test-results', 'electron');
   await mkdir(root, { recursive: true });
   const userData = await mkdtemp(join(root, 'user-data-'));
@@ -30,9 +31,36 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(await page.evaluate(() => 'process' in window)).toBe(false);
     expect(await page.evaluate(() => 'ipcRenderer' in window)).toBe(false);
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
+      'cancelBuild',
+      'chooseProject',
+      'compile',
+      'createEntry',
+      'deleteEntry',
+      'detectTools',
+      'exportSettings',
       'getAppInfo',
+      'getBuildState',
+      'getFileRevisions',
       'getPreferences',
+      'getProjectConfig',
+      'getRecentProjects',
+      'importSettings',
+      'openInCode',
+      'openRecentProject',
+      'openSetupLink',
+      'readFile',
+      'readPdf',
+      'refreshProject',
+      'renameEntry',
+      'revealEntry',
+      'saveFile',
+      'setDirty',
       'setPreferences',
+      'setProjectConfig',
+      'setProjectPinned',
+      'syncForward',
+      'syncInverse',
+      'testDistribution',
     ]);
 
     await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();

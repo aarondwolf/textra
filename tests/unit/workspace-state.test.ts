@@ -1,0 +1,130 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  discardAll,
+  editDocument,
+  openDocument,
+  reloadDocument,
+  saveAll,
+  saveDocument,
+  useWorkspace,
+  type OpenDocument,
+} from '../../src/renderer/src/state/workspace';
+import type { FileSnapshot, ProjectInfo, Result } from '../../src/shared/api';
+
+const project: ProjectInfo = {
+  id: 'a',
+  name: 'a',
+  rootPath: '/a',
+  mainFile: 'main.tex',
+  files: [],
+  truncated: false,
+};
+function document(path = 'main.tex'): OpenDocument {
+  return {
+    projectId: 'a',
+    path,
+    content: 'original',
+    savedContent: 'original',
+    revision: 'old',
+    conflict: false,
+  };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+const snapshot = (path: string): Result<FileSnapshot> => ({
+  ok: true,
+  value: { projectId: 'a', path, content: 'disk', revision: 'new' },
+});
+
+describe('editor state preserves concurrent work', () => {
+  beforeEach(() => {
+    useWorkspace.setState(
+      {
+        ...useWorkspace.getInitialState(),
+        project,
+        documents: [document()],
+        activePath: 'main.tex',
+      },
+      true,
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  it('does not replace text edited while a disk reload is pending', async () => {
+    const read = deferred<Result<FileSnapshot>>();
+    vi.stubGlobal('window', { textra: { readFile: () => read.promise } });
+    const loading = reloadDocument('main.tex');
+    editDocument('main.tex', 'new writing');
+    read.resolve(snapshot('main.tex'));
+    await loading;
+    expect(useWorkspace.getState().documents[0].content).toBe('new writing');
+  });
+  it('ignores a reload completed after a project switch', async () => {
+    const read = deferred<Result<FileSnapshot>>();
+    vi.stubGlobal('window', { textra: { readFile: () => read.promise } });
+    const loading = reloadDocument('main.tex');
+    useWorkspace.setState({
+      project: { ...project, id: 'b' },
+      documents: [{ ...document(), projectId: 'b', content: 'other project' }],
+    });
+    read.resolve(snapshot('main.tex'));
+    await loading;
+    expect(useWorkspace.getState().documents[0].content).toBe('other project');
+  });
+  it('bounds concurrent tab opens without disabling external conflict polling', async () => {
+    const one = deferred<Result<FileSnapshot>>();
+    const two = deferred<Result<FileSnapshot>>();
+    useWorkspace.setState({
+      documents: Array.from({ length: 49 }, (_, index) => document(`${index}.tex`)),
+    });
+    vi.stubGlobal('window', {
+      textra: {
+        readFile: ({ path }: { path: string }) => (path === 'one.tex' ? one.promise : two.promise),
+      },
+    });
+    const first = openDocument('one.tex');
+    const second = openDocument('two.tex');
+    one.resolve(snapshot('one.tex'));
+    await first;
+    two.resolve(snapshot('two.tex'));
+    await second;
+    expect(useWorkspace.getState().documents).toHaveLength(50);
+    expect(useWorkspace.getState().activePath).toBe('one.tex');
+    expect(useWorkspace.getState().error).toContain('50');
+  });
+  it('retains typing performed during a save and marks only the saved revision clean', async () => {
+    const write = deferred<Result<FileSnapshot>>();
+    vi.stubGlobal('window', { textra: { saveFile: () => write.promise } });
+    editDocument('main.tex', 'first edit');
+    const saving = saveDocument('main.tex');
+    editDocument('main.tex', 'later edit');
+    write.resolve({ ok: true, value: { ...document(), content: 'first edit', revision: 'new' } });
+    expect(await saving).toBe(true);
+    expect(useWorkspace.getState().documents[0]).toMatchObject({
+      content: 'later edit',
+      savedContent: 'first edit',
+      revision: 'new',
+    });
+  });
+  it('synchronizes the clean flag before returning from Save All', async () => {
+    const flag = vi.fn(async () => ({ ok: true, value: undefined }));
+    vi.stubGlobal('window', { textra: { setDirty: flag } });
+    expect(await saveAll()).toBe(true);
+    expect(flag).toHaveBeenCalledWith(false);
+  });
+  it('explicit discard resets edits while retaining an external-change warning', async () => {
+    const flag = vi.fn(async () => ({ ok: true, value: undefined }));
+    vi.stubGlobal('window', { textra: { setDirty: flag } });
+    useWorkspace.setState({ documents: [{ ...document(), content: 'unsaved', conflict: true }] });
+    await discardAll();
+    expect(useWorkspace.getState().documents[0]).toMatchObject({
+      content: 'original',
+      conflict: true,
+    });
+    expect(flag).toHaveBeenCalledWith(false);
+  });
+});

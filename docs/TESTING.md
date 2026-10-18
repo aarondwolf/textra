@@ -21,3 +21,14 @@ test may be claimed without running it. Evidence is in .agents/memory/TESTING.md
 `npm run test:dev` launches native electron-vite, checks HMR, and verifies
 main/preload restart behavior. Run without concurrent source edits. It restores
 temporary probes and stores a screenshot under ignored .test-data/dev-smoke.
+
+Core tests use actual MiKTeX/BibTeX/latexmk and two-way SyncTeX when installed,
+explicit skips otherwise. No real core integrations were skipped on this host.
+Native workflow stubs only chooser/confirmation destinations; files, editor, IPC,
+compiler, PDF.js, settings and conflict recovery are real. Junction tests require
+desktop filesystem permissions in this managed environment. See memory evidence.
+
+Vite's mutable cache is placed in the OS temp directory, keyed by checkout path,
+to avoid Dropbox/OneDrive directory locks. Dev checks must run without formatting
+or source edits; they intentionally mutate and restore probes. Shell E2E allows
+90 seconds for two real Windows launches plus profile cleanup.

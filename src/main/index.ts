@@ -1,10 +1,24 @@
-import { app, BrowserWindow, ipcMain, session, type IpcMainInvokeEvent } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { dirname, isAbsolute, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, open, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PRODUCT_NAME, type Result } from '../shared/api';
+import { PRODUCT_NAME, type Result, type TextraAPI } from '../shared/api';
 import { isTrustedRendererUrl } from './security';
 import { log } from './services/logger';
 import { PreferencesStore } from './services/preferences';
+import { ProjectError, ProjectService, validateRelativePath } from './services/projects';
+import { findCodeExecutable, openInExternalEditor } from './services/external-editor';
+import { BuildService, detectTools } from './services/latex';
+import { ConfigService, exportSettings, importSettings } from './services/settings';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -23,6 +37,63 @@ if (testUserData) {
 
 let mainWindow: BrowserWindow | null = null;
 const preferences = new PreferencesStore(app.getPath('userData'));
+const projects = new ProjectService(app.getPath('userData'));
+const builds = new BuildService((id) => projects.getRoot(id));
+const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
+let healthBuild: BuildService | null = null;
+let dirty = false;
+let forceClose = false;
+
+function requireIdleProject(): void {
+  if (builds.getState().running)
+    throw new ProjectError(
+      'BUILD_RUNNING',
+      'Cancel the current build before changing projects or files.',
+    );
+  if (dirty)
+    throw new ProjectError('DIRTY_FILES', 'Save or explicitly discard your unsaved edits first.');
+}
+
+function requireWindow(): BrowserWindow {
+  if (!mainWindow || mainWindow.isDestroyed())
+    throw new ProjectError('NO_WINDOW', 'The application window is no longer available.');
+  return mainWindow;
+}
+
+function errorResult(error: unknown): { ok: false; error: string; code: string } {
+  if (error instanceof ProjectError || (error instanceof Error && error.name === 'SettingsError'))
+    return {
+      ok: false,
+      error: error.message,
+      code: 'code' in error && typeof error.code === 'string' ? error.code : 'INVALID_SETTINGS',
+    };
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
+  if (code === 'EEXIST')
+    return {
+      ok: false,
+      code: 'ALREADY_EXISTS',
+      error: 'A file or folder already exists at that path.',
+    };
+  if (code === 'ENOENT')
+    return { ok: false, code: 'NOT_FOUND', error: 'The selected file or folder no longer exists.' };
+  if (code === 'EACCES' || code === 'EPERM')
+    return {
+      ok: false,
+      code: 'ACCESS_DENIED',
+      error: 'Permission was denied. Existing files were preserved.',
+    };
+  if (error instanceof Error && error.name === 'BuildError')
+    return {
+      ok: false,
+      code: typeof code === 'string' ? code : 'BUILD_ERROR',
+      error: error.message,
+    };
+  return {
+    ok: false,
+    code: 'REQUEST_FAILED',
+    error: 'The request could not be completed. Existing data was preserved.',
+  };
+}
 
 function validateSender(event: IpcMainInvokeEvent): void {
   if (
@@ -47,18 +118,24 @@ function handle<T>(
       validateSender(event);
       if (args.length !== argumentCount) throw new Error('Unexpected arguments.');
       return { ok: true, value: await action(...args) };
-    } catch {
+    } catch (error) {
       // Raw errors can contain local paths or private preference data.
       log('warn', 'ipc-request-failed', { channel });
-      return {
-        ok: false,
-        error: 'The request could not be completed. Existing data was preserved.',
-      };
+      return errorResult(error);
     }
   });
 }
 
+/** Adapters stay typed; every service validates its incoming request at runtime. */
+function handleRequest<K extends keyof TextraAPI>(
+  channel: string,
+  action: (...args: Parameters<TextraAPI[K]>) => unknown,
+): void {
+  handle(channel, 1, (value) => action(...([value] as Parameters<TextraAPI[K]>)));
+}
+
 function createWindow(): void {
+  forceClose = false;
   const window = new BrowserWindow({
     title: PRODUCT_NAME,
     width: 1440,
@@ -93,6 +170,38 @@ function createWindow(): void {
     log('error', 'renderer-process-gone', { reason: details.reason });
   });
   window.once('ready-to-show', () => window.show());
+  window.on('close', (event) => {
+    if (forceClose) return;
+    if (dirty || builds.getState().running) {
+      const answer = dialog.showMessageBoxSync(window, {
+        type: 'warning',
+        title: 'Close TeXtra?',
+        message: dirty
+          ? 'Discard unsaved edits and close TeXtra?'
+          : 'Stop the running build and close TeXtra?',
+        detail: 'Changes that have not been saved will be lost. Any running build will be stopped.',
+        buttons: ['Keep working', 'Close'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (answer !== 1) {
+        event.preventDefault();
+        return;
+      }
+    }
+    event.preventDefault();
+    forceClose = true;
+    void Promise.all([builds.cancel(), healthBuild?.cancel(), projects.flush(), config.flush()])
+      .then(() => {
+        dirty = false;
+        if (!window.isDestroyed()) window.close();
+      })
+      .catch(() => {
+        forceClose = false;
+        log('error', 'close-cleanup-failed');
+      });
+  });
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
   });
@@ -113,6 +222,175 @@ void app.whenReady().then(() => {
   }));
   handle('textra:preferences:get', 0, () => preferences.get());
   handle('textra:preferences:set', 1, (value) => preferences.set(value));
+  handle('textra:project:choose', 0, async () => {
+    requireIdleProject();
+    const result = await dialog.showOpenDialog(requireWindow(), {
+      title: 'Open LaTeX project',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    requireIdleProject();
+    return projects.openRoot(result.filePaths[0]);
+  });
+  handleRequest<'refreshProject'>('textra:project:refresh', (id) => projects.refreshProject(id));
+  handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
+  handleRequest<'saveFile'>('textra:file:save', (request) => projects.saveFile(request));
+  handleRequest<'createEntry'>('textra:file:create', (request) => projects.createEntry(request));
+  handleRequest<'renameEntry'>('textra:file:rename', async (request) => {
+    requireIdleProject();
+    await projects.resolvePath(request);
+    const newPath = validateRelativePath(request.newPath);
+    const answer = await dialog.showMessageBox(requireWindow(), {
+      type: 'question',
+      title: 'Rename project entry',
+      message: `Rename “${request.path}” to “${newPath}”?`,
+      buttons: ['Cancel', 'Rename'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (answer.response !== 1) return null;
+    requireIdleProject();
+    return projects.renameEntry(request);
+  });
+  handleRequest<'deleteEntry'>('textra:file:delete', async (request) => {
+    requireIdleProject();
+    await projects.resolvePath(request);
+    const answer = await dialog.showMessageBox(requireWindow(), {
+      type: 'warning',
+      title: 'Move to trash',
+      message: `Move “${request.path}” to the trash?`,
+      detail:
+        'Folders include all their contents. You can restore this item using your operating system.',
+      buttons: ['Cancel', 'Move to trash'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (answer.response !== 1) return null;
+    requireIdleProject();
+    return projects.deleteEntry(request, (path) => shell.trashItem(path));
+  });
+  handleRequest<'getFileRevisions'>('textra:file:revisions', (request) =>
+    projects.getFileRevisions(request),
+  );
+  handleRequest<'revealEntry'>('textra:file:reveal', async (request) => {
+    shell.showItemInFolder(await projects.resolvePath(request, true));
+  });
+  handleRequest<'openInCode'>('textra:file:code', async (request) =>
+    openInExternalEditor(await projects.resolvePath(request, true)),
+  );
+  handle('textra:recent:get', 0, () => projects.getRecentProjects());
+  handleRequest<'openRecentProject'>('textra:recent:open', (id) => {
+    requireIdleProject();
+    return projects.openRecentProject(id);
+  });
+  handleRequest<'setProjectPinned'>('textra:recent:pin', (request) =>
+    projects.setProjectPinned(request),
+  );
+  handle('textra:dirty', 1, (value) => {
+    if (typeof value !== 'boolean')
+      throw new ProjectError('INVALID_ARGUMENT', 'Invalid editor state.');
+    dirty = value;
+  });
+  handle('textra:tools', 0, async () => [
+    ...(await detectTools()),
+    { name: 'vscode', path: await findCodeExecutable(), version: null },
+  ]);
+  handleRequest<'compile'>('textra:build:compile', (request) => {
+    if (healthBuild)
+      throw new ProjectError('BUILD_RUNNING', 'Wait for the TeX setup test to finish.');
+    if (dirty) throw new ProjectError('DIRTY_FILES', 'Save your edits before compiling.');
+    return builds.compile(request);
+  });
+  handle('textra:build:cancel', 0, async () => {
+    await Promise.all([builds.cancel(), healthBuild?.cancel()]);
+  });
+  handle('textra:build:state', 0, () => builds.getState());
+  handleRequest<'readPdf'>('textra:pdf:read', (request) => builds.readPdf(request));
+  handleRequest<'syncForward'>('textra:sync:forward', (request) => builds.syncForward(request));
+  handleRequest<'syncInverse'>('textra:sync:inverse', (request) => builds.syncInverse(request));
+  handleRequest<'getProjectConfig'>('textra:config:get', (id) => config.getProjectConfig(id));
+  handleRequest<'setProjectConfig'>('textra:config:set', (request) =>
+    config.setProjectConfig(request),
+  );
+  handle('textra:settings:export', 0, async () => {
+    const content = exportSettings(await preferences.get());
+    const result = await dialog.showSaveDialog(requireWindow(), {
+      title: 'Export TeXtra settings',
+      defaultPath: 'textra-settings.json',
+      filters: [{ name: 'JSON settings', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return false;
+    const temporary = join(dirname(result.filePath), `.textra-export-${randomUUID()}.tmp`);
+    try {
+      const file = await open(temporary, 'wx', 0o600);
+      try {
+        await file.writeFile(content, 'utf8');
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await rename(temporary, result.filePath);
+    } finally {
+      await unlink(temporary).catch(() => undefined);
+    }
+    return true;
+  });
+  handle('textra:settings:import', 0, async () => {
+    const selected = await dialog.showOpenDialog(requireWindow(), {
+      title: 'Import TeXtra settings',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON settings', extensions: ['json'] }],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+    if ((await stat(selected.filePaths[0])).size > 1024 * 1024)
+      throw new ProjectError('INVALID_SETTINGS', 'Settings files must be smaller than 1 MiB.');
+    const next = importSettings(await readFile(selected.filePaths[0], 'utf8'));
+    const answer = await dialog.showMessageBox(requireWindow(), {
+      title: 'Import settings?',
+      type: 'question',
+      message: `Apply the ${next.theme} theme and saved pane layout?`,
+      detail:
+        'Your source files and recent project list are unchanged. No credentials are imported.',
+      buttons: ['Cancel', 'Apply settings'],
+      cancelId: 0,
+      defaultId: 0,
+    });
+    return answer.response === 1 ? preferences.set(next) : null;
+  });
+  handle('textra:setup:link', 1, async (target) => {
+    const links = {
+      miktex: 'https://miktex.org/download',
+      texlive: 'https://tug.org/texlive/acquire-netinstall.html',
+      mactex: 'https://tug.org/mactex/',
+    };
+    if (typeof target !== 'string' || !Object.hasOwn(links, target))
+      throw new ProjectError('INVALID_ARGUMENT', 'Unknown setup destination.');
+    await shell.openExternal(links[target as keyof typeof links]);
+  });
+  handle('textra:setup:test', 0, async () => {
+    if (healthBuild || builds.getState().running)
+      throw new ProjectError('BUILD_RUNNING', 'Wait for the current build to finish.');
+    const directory = await mkdtemp(join(app.getPath('temp'), 'textra-toolcheck-'));
+    const checker = new BuildService(() => directory, 30000);
+    healthBuild = checker;
+    try {
+      await writeFile(
+        join(directory, 'main.tex'),
+        '\\documentclass{article}\n\\begin{document}\nTeXtra setup test.\n\\end{document}\n',
+      );
+      const result = await checker.compile({
+        projectId: 'setup-test',
+        rootFile: 'main.tex',
+        engine: 'pdflatex',
+      });
+      return { success: result.outcome === 'success', log: result.log };
+    } finally {
+      healthBuild = null;
+      await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -122,4 +400,7 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+app.on('will-quit', () => {
+  void builds.cancel();
 });

@@ -62,7 +62,9 @@ try {
   const context = browser.contexts()[0];
   await expect.poll(() => context.pages().length, { timeout: 15000 }).toBeGreaterThan(0);
   const page = context.pages()[0];
-  await expect(page.getByRole('main', { name: 'Document workspace' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Document workspace' })).toBeVisible({
+    timeout: 30000,
+  });
   await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
   const sentinel = randomUUID();
   await page.evaluate((value) => {

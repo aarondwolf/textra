@@ -1,15 +1,29 @@
 # Current state
 
-2026-10-18: Phase 0 implemented; validation/commit checkpoint active.
-Native shell, persisted themes/layout, command palette, accessible resizable panes,
-typed restricted bridge, atomic settings, and redacted logging work. No editing yet.
-No milestone commit yet. Previous run was interrupted by an approval-review usage limit.
+2026-10-18: Foundation complete; core Phase 1 workflow implemented. Full Phase 1
+is incomplete. Last committed foundation: 345fb44. Core IDE milestone commit
+follows; use `git log -1` for its identity after commit.
 
-Next: (1) finish desktop reload checks and commit foundation; (2) safe file service
-and Monaco editing; (3) real compilation, PDF preview, and SyncTeX.
+Working: selected local roots, bounded explorer, UTF8 Monaco tabs/undo, safe saves,
+create/rename/trash, recent/pinned projects, file-manager/VSCode actions, revision
+conflicts, unsaved close/switch checks, TeX discovery, fixed presets, real bounded
+cancellable builds, diagnostics, PDF.js pages/zoom/search, two-way SyncTeX including
+chapters, settings import/export, project overrides and setup test compile.
+No AI/network source sharing. See KNOWN_ISSUES for remaining features/limitations.
 
-Verification: format/typecheck/lint/build and 45 unit/integration tests pass.
-Earlier native E2E passed 1 test, dev native window/CSS HMR passed exit0.
-Repeat desktop E2E and expanded main/preload restart check are in progress.
+Evidence: typecheck/lint/build pass; 138 tests in 12 files pass including real
+MiKTeX/BibTeX/latexmk/SyncTeX and filesystem junctions. Expanded native workflow
+passes editing/conflicts/five-page PDF/settings/setup/unsaved-discard/reopen.
+Final shell/reload checks passed, along with format/typecheck/lint/build/diff checks.
 
-Foundation gate passed: native E2E repeat 1/1, full dev/HMR/preload/main restart check exit0. Next active task: phase 1 files/build/PDF.
+Next three actions:
+
+1. Finish Phase 1 editable allowlisted pipelines and distribution install/manager
+   workflows with current metadata and explicit in-app user confirmation.
+2. Persist font/wrap, add context menus/collapsible tree/reveal-active and TEX-root
+   hints; validate additional engines and PDF crop/rotation/zoom navigation.
+3. Complete full Phase 1 acceptance matrix before proceeding to Phase 2.
+
+Launch: `npm run dev`. Checks: format:check, typecheck, lint, test, build,
+test:e2e, test:dev. Desktop permissions may be needed for sandbox-blocked output
+cleanup/junction tests. No installers, signing or cross-OS behavior verified.

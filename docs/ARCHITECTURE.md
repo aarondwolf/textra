@@ -25,3 +25,10 @@ and [Electron security guidance](https://www.electronjs.org/docs/latest/tutorial
 The sandboxed preload is bundled CommonJS. Runtime dependencies and development
 tools are pinned in package-lock.json; the DOMPurify override patches Monaco's
 transitive sanitizer dependency.
+
+Services now include projects (root tokens, tree, revisions, mutations, recents),
+latex (discovery, fixed presets, process lifecycle, PDF cache, SyncTeX), diagnostics,
+settings (project overrides/portable bundle), preferences, external-editor, logger.
+Renderer's workspace store protects dirty buffers and delayed reads. Main owns
+native dialogs and validates all privileged requests. Setup links use fixed official
+URLs after user clicks. No source content is transmitted.

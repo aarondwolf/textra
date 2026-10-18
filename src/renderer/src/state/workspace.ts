@@ -31,6 +31,7 @@ interface WorkspaceState {
   toolsReady: boolean;
   build: BuildState;
   engine: BuildEngine;
+  recipes: Record<string, BuildEngine>;
   rootFile: string;
   error: string | null;
   busy: boolean;
@@ -46,6 +47,7 @@ export const useWorkspace = create<WorkspaceState>(() => ({
   toolsReady: false,
   build: idleBuild,
   engine: 'pdflatex',
+  recipes: {},
   rootFile: '',
   error: null,
   busy: false,
@@ -77,6 +79,7 @@ export async function setProject(project: ProjectInfo): Promise<void> {
   useWorkspace.setState({
     project,
     documents: [],
+    recipes: {},
     activePath: null,
     rootFile:
       project.mainFile ?? project.files.find((file) => file.path.endsWith('.tex'))?.path ?? '',
@@ -94,10 +97,11 @@ export async function setProject(project: ProjectInfo): Promise<void> {
       !config.value.rootFile || project.files.some((file) => file.path === config.value.rootFile);
     useWorkspace.setState({
       engine: config.value.engine,
+      recipes:
+        config.value.recipes ??
+        (config.value.rootFile ? { [config.value.rootFile]: config.value.engine } : {}),
       ...(rootExists && config.value.rootFile ? { rootFile: config.value.rootFile } : {}),
     });
-    if (!rootExists)
-      showError('The saved root document is missing. Choose a root document from the toolbar.');
   }
 }
 export async function openDocument(path: string, location?: SourceLocation): Promise<void> {

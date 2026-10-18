@@ -1,5 +1,13 @@
 # Current state
 
+2026-10-18 UI refinement checkpoint: removed the build toolbar row. A top-bar
+Compile split button builds only the active .tex tab; recipe choices persist per
+document in .textra/project.json on compile. Settings provides the portable default
+recipe; old preferences and explicit root/engine settings remain readable. Open
+folder is an explorer icon. Verified 65 focused tests, native project workflow
+(including active-tab target, recipe restoration and new-document default), lint,
+typecheck and production build. User sandbox/test.tex is preserved.
+
 2026-10-18: Foundation complete; core Phase 1 workflow implemented. Full Phase 1
 is incomplete. Last passing implementation commit: ea4c1ef (core IDE).
 Foundation commit: 345fb44. All implementation and verification are committed.

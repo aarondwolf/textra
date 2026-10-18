@@ -1,15 +1,5 @@
 @import 'tailwindcss';
 
-.build-toolbar {
-  min-height: 43px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
 .toolbar-button {
   display: flex;
   align-items: center;
@@ -30,17 +20,10 @@
   font-size: 9px;
   opacity: 0.6;
 }
-.toolbar-divider {
-  height: 18px;
-  width: 1px;
-  background: var(--border);
-  margin: 0 3px;
-}
 .compile-button {
   background: var(--accent-bg);
   color: var(--accent);
 }
-.build-toolbar select,
 .editor-toolbar select {
   background: var(--surface);
   color: var(--muted);
@@ -50,12 +33,6 @@
   font-size: 11px;
   min-width: 0;
   max-width: 180px;
-}
-.build-toolbar .tool-status {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 10px;
-  text-transform: capitalize;
 }
 .text-button {
   background: transparent;
@@ -427,25 +404,6 @@
   padding-left: 18px;
   max-height: 130px;
   overflow: auto;
-}
-@media (max-width: 1050px) {
-  .build-toolbar {
-    gap: 5px;
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-  .build-toolbar select {
-    max-width: 130px;
-  }
-  .toolbar-button kbd {
-    display: none;
-  }
-  .build-toolbar .tool-status {
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 :root {
@@ -1221,4 +1179,51 @@ h1 > span {
     padding-top: 8px;
     padding-bottom: 8px;
   }
+}
+
+.compile-control {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.compile-control > .compile-button:first-child {
+  border-radius: 5px 0 0 5px;
+}
+.recipe-toggle {
+  border-radius: 0 5px 5px 0;
+  border-left: 1px solid var(--border);
+  padding-inline: 5px;
+}
+.recipe-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 50;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0003;
+}
+.recipe-menu .eyebrow {
+  display: block;
+  padding: 7px;
+}
+.recipe-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: left;
+}
+.recipe-menu button:hover,
+.recipe-menu button:focus-visible {
+  background: var(--hover);
+}
+.recipe-menu button[aria-pressed='true'] {
+  color: var(--accent);
 }

@@ -41,8 +41,10 @@ to `preferences.json` in Electron userData (`%APPDATA%/TeXtra` on Windows).
 1. Choose **Open folder**, then select a `.tex` file in the explorer. Multiple tabs
    preserve editor models and undo while open. Use Ctrl/Cmd+S to save, Shift+Ctrl/Cmd+S
    to save a copy, and Monaco's Ctrl/Cmd+F or Ctrl/Cmd+H for search/replace.
-2. Choose the root document and compiler. **Compile** (Ctrl/Cmd+Enter) saves all
-   dirty files first. Presets: direct pdfLaTeX, XeLaTeX, LuaLaTeX, latexmk, and
+2. **Compile** in the top bar (Ctrl/Cmd+Enter) builds the active `.tex` tab and saves all
+   dirty files first. Use its dropdown to choose a recipe. Each document remembers
+   its last used recipe; **Settings → Compilation** sets the default for new documents.
+   Presets: direct pdfLaTeX, XeLaTeX, LuaLaTeX, latexmk, and
    pdfLaTeX → BibTeX → pdfLaTeX twice. Cancel stops the process tree.
 3. Inspect Output or source-linked Problems. Successful PDFs load beside the
    editor. Navigate pages, zoom/fit width, search, or use **Go to source line**.
@@ -58,8 +60,9 @@ import/export. No installers or missing packages run automatically. Windows uses
 MiKTeX/TeX Live; macOS can use MacTeX; Linux users should use their distribution's
 TeX packages. Restart after PATH changes. Installer/manager actions remain planned.
 
-Layout/theme and recents live in Electron userData. Explicitly save root/compiler
-choices to `.textra/project.json`. Import/export accepts only versioned theme/layout
+Layout/theme, the default recipe, and recents live in Electron userData. Document
+recipe choices are saved to `.textra/project.json` when compiling. Open folders with
+the folder icon in the explorer. Import/export accepts only versioned theme/layout/recipe
 settings; unknown schemas and corrupt files are preserved. Recent folders, keys and
 tool paths are excluded. AI setup, key storage and cost controls remain planned;
 no credentials are currently stored or migrated. Offline operation is the default.

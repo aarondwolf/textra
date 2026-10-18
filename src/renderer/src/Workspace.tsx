@@ -6,11 +6,13 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   ArrowRight,
   Check,
   ChevronRight,
+  ChevronDown,
   FilePlus2,
   FileText,
   Folder,
@@ -23,7 +25,7 @@ import {
   Square,
   X,
 } from 'lucide-react';
-import type { BuildEngine, Result } from '../../shared/api';
+import { BUILD_RECIPES, type Result } from '../../shared/api';
 import { useUI } from './state/ui';
 import {
   checkExternalChanges,
@@ -177,7 +179,7 @@ function SplitHandle({ container }: { container: React.RefObject<HTMLDivElement 
   );
 }
 
-export function Workspace() {
+export function Workspace({ compileHost }: { compileHost: HTMLElement | null }) {
   const state = useWorkspace();
   const {
     project,
@@ -187,8 +189,7 @@ export function Workspace() {
     tools,
     toolsReady,
     build,
-    rootFile,
-    engine,
+    recipes,
     navigation,
     source,
     error,
@@ -205,6 +206,18 @@ export function Workspace() {
   const polling = useRef(false);
   const operations = useRef(0);
   const active = documents.find((document) => document.path === activePath);
+  const engine = (activePath && recipes[activePath]) || preferences.defaultRecipe;
+  const canCompile = !!active && /\.tex$/i.test(active.path);
+  const [recipeOpen, setRecipeOpen] = useState(false);
+  const recipeControl = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!recipeOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!recipeControl.current?.contains(event.target as Node)) setRecipeOpen(false);
+    };
+    document.addEventListener('mousedown', dismiss);
+    return () => document.removeEventListener('mousedown', dismiss);
+  }, [recipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
   useEffect(() => {
@@ -380,10 +393,20 @@ export function Workspace() {
     });
   }
   async function compile() {
-    if (!project || !rootFile || build.running || busy) return;
+    if (!project || !active || !canCompile || build.running || busy || prompt || pending) return;
+    const rootFile = active.path;
+    setRecipeOpen(false);
     await run(async () => {
       if (!(await saveAll()))
         throw new Error('Build stopped: save or resolve every unsaved file first.');
+      const config = unwrap(await window.textra.getProjectConfig(project.id));
+      unwrap(
+        await window.textra.setProjectConfig({
+          projectId: project.id,
+          config: { ...config, recipes: { ...config.recipes, [rootFile]: engine } },
+        }),
+      );
+      useWorkspace.setState((state) => ({ recipes: { ...state.recipes, [rootFile]: engine } }));
       updatePreferences({ outputVisible: true });
       setPanel('output');
       const result = await window.textra.compile({ projectId: project.id, rootFile, engine });
@@ -421,98 +444,89 @@ export function Workspace() {
 
   return (
     <>
-      <div className="build-toolbar">
-        <button
-          className="toolbar-button"
-          onClick={() => openFolder()}
-          disabled={busy || build.running}
-        >
-          <FolderOpen size={15} />
-          Open folder
-        </button>
-        <span className="toolbar-divider" />
-        <select
-          aria-label="Root document"
-          value={rootFile}
-          disabled={!project || busy || build.running}
-          onChange={(event) => useWorkspace.setState({ rootFile: event.target.value })}
-        >
-          <option value="">Root document</option>
-          {project?.files
-            .filter((file) => file.kind === 'file' && file.path.endsWith('.tex'))
-            .map((file) => (
-              <option key={file.path} value={file.path}>
-                {file.path}
-              </option>
-            ))}
-        </select>
-        <select
-          aria-label="Compiler"
-          value={engine}
-          disabled={busy || build.running}
-          onChange={(event) => useWorkspace.setState({ engine: event.target.value as BuildEngine })}
-        >
-          {(['pdflatex', 'xelatex', 'lualatex', 'latexmk', 'bibtex-pipeline'] as const).map(
-            (name) => (
-              <option key={name} value={name}>
-                {name === 'bibtex-pipeline' ? 'PDFLaTeX + BibTeX' : name}
-              </option>
-            ),
-          )}
-        </select>
-        {build.running ? (
-          <button
-            className="toolbar-button compile-button"
-            aria-label="Cancel build"
-            onClick={() =>
-              void run(async () => {
-                unwrap(await window.textra.cancelBuild());
-              })
-            }
+      {compileHost &&
+        createPortal(
+          <div
+            className="compile-control"
+            ref={recipeControl}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setRecipeOpen(false);
+                recipeControl.current
+                  ?.querySelector<HTMLButtonElement>('[aria-label="Choose compile recipe"]')
+                  ?.focus();
+              }
+            }}
           >
-            <Square size={13} />
-            Cancel build
-          </button>
-        ) : (
-          <button
-            className="toolbar-button compile-button"
-            aria-label="Compile project"
-            title={
-              missingTool
-                ? `Install ${engine} in MiKTeX or TeX Live, then restart TeXtra.`
-                : 'Save all and compile (Ctrl+Enter)'
-            }
-            disabled={!project || !rootFile || busy || !toolsReady || missingTool}
-            onClick={() => void compile()}
-          >
-            <Play size={13} />
-            Compile<kbd>Ctrl ↵</kbd>
-          </button>
+            <button
+              className="toolbar-button compile-button"
+              aria-label={build.running ? 'Cancel build' : 'Compile active document'}
+              title={
+                build.running
+                  ? 'Cancel build'
+                  : missingTool
+                    ? engine + ' not found. Check Settings & TeX setup.'
+                    : 'Compile ' +
+                      (activePath ?? 'active document') +
+                      ' with ' +
+                      engine +
+                      ' (Ctrl+Enter)'
+              }
+              disabled={!build.running && (!canCompile || busy || !toolsReady || missingTool)}
+              onClick={() =>
+                build.running
+                  ? void run(async () => {
+                      unwrap(await window.textra.cancelBuild());
+                    })
+                  : void compile()
+              }
+            >
+              {build.running ? <Square size={13} /> : <Play size={13} />}
+              {build.running ? 'Cancel' : 'Compile'}
+            </button>
+            <button
+              className="toolbar-button compile-button recipe-toggle"
+              aria-label="Choose compile recipe"
+              aria-expanded={recipeOpen}
+              aria-controls="compile-recipes"
+              disabled={!canCompile || busy || build.running}
+              title={'Recipe: ' + engine}
+              onClick={() => setRecipeOpen(!recipeOpen)}
+            >
+              <ChevronDown size={14} />
+            </button>
+            {recipeOpen && (
+              <div
+                className="recipe-menu"
+                id="compile-recipes"
+                role="group"
+                aria-label="Compile recipe"
+              >
+                <span className="eyebrow">COMPILE RECIPE</span>
+                {BUILD_RECIPES.map((recipe) => (
+                  <button
+                    key={recipe.value}
+                    aria-pressed={engine === recipe.value}
+                    onClick={() => {
+                      if (activePath)
+                        useWorkspace.setState((state) => ({
+                          recipes: { ...state.recipes, [activePath]: recipe.value },
+                        }));
+                      setRecipeOpen(false);
+                      recipeControl.current
+                        ?.querySelector<HTMLButtonElement>('[aria-label="Choose compile recipe"]')
+                        ?.focus();
+                    }}
+                  >
+                    <span>{recipe.label}</span>
+                    {engine === recipe.value && <Check size={14} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>,
+          compileHost,
         )}
-        <span className="tool-status">
-          {!toolsReady
-            ? 'Detecting TeX…'
-            : missingTool
-              ? `${engine} not found`
-              : currentBuild
-                ? currentBuild.outcome === 'idle'
-                  ? 'Ready'
-                  : currentBuild.outcome
-                : 'Local TeX ready'}
-        </span>
-        {missingTool && (
-          <button
-            className="text-button"
-            onClick={() =>
-              void run(async () => {
-                useWorkspace.setState({ tools: unwrap(await window.textra.detectTools()) });
-              })
-            }
-          >
-            Check again
-          </button>
-        )}
-      </div>
       {error && (
         <div className="error-banner workspace-error" role="alert">
           <span>{error}</span>
@@ -526,6 +540,15 @@ export function Workspace() {
           <aside className="sidebar" aria-label="Project sidebar">
             <div className="sidebar-title">
               <span className="eyebrow">EXPLORER</span>
+              <button
+                className="icon-button small"
+                aria-label="Open folder"
+                title="Open folder"
+                onClick={() => openFolder()}
+                disabled={busy || build.running}
+              >
+                <FolderOpen size={15} />
+              </button>
               {project && (
                 <div className="inline-actions">
                   <button

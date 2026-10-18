@@ -11,6 +11,7 @@ export interface Preferences {
   sidebarVisible: boolean;
   outputVisible: boolean;
   editorWidth: number;
+  defaultRecipe: BuildEngine;
 }
 export const DEFAULT_PREFERENCES: Preferences = {
   version: 1,
@@ -18,6 +19,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sidebarVisible: true,
   outputVisible: true,
   editorWidth: 55,
+  defaultRecipe: 'pdflatex',
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 export interface FileEntry {
@@ -63,6 +65,13 @@ export interface RecentProject {
   pinned: boolean;
 }
 export type BuildEngine = 'pdflatex' | 'xelatex' | 'lualatex' | 'latexmk' | 'bibtex-pipeline';
+export const BUILD_RECIPES: { value: BuildEngine; label: string }[] = [
+  { value: 'pdflatex', label: 'pdfLaTeX' },
+  { value: 'xelatex', label: 'XeLaTeX' },
+  { value: 'lualatex', label: 'LuaLaTeX' },
+  { value: 'latexmk', label: 'latexmk' },
+  { value: 'bibtex-pipeline', label: 'pdfLaTeX + BibTeX' },
+];
 export interface ToolInfo {
   name: string;
   path: string | null;
@@ -77,6 +86,7 @@ export interface ProjectConfig {
   schemaVersion: 1;
   rootFile: string | null;
   engine: BuildEngine;
+  recipes?: Record<string, BuildEngine>;
 }
 export type SetupLink = 'miktex' | 'texlive' | 'mactex';
 export interface Diagnostic {

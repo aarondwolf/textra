@@ -81,13 +81,11 @@ test('real project editing preserves external changes, compiles, and renders a P
       !canCompile,
       'Real editing/conflict steps passed; pdflatex/BibTeX unavailable, native compile/PDF remains unverified.',
     );
-    await page
-      .getByRole('combobox', { name: 'Root document', exact: true })
-      .selectOption('main.tex');
-    await page
-      .getByRole('combobox', { name: 'Compiler', exact: true })
-      .selectOption('bibtex-pipeline');
-    await page.getByRole('button', { name: 'Compile project', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Root document', exact: true })).toHaveCount(0);
+    await expect(page.locator('.build-toolbar')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
+    await page.getByRole('button', { name: 'pdfLaTeX + BibTeX', exact: true }).click();
+    await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
     await expect
       .poll(
         async () => {
@@ -129,11 +127,12 @@ test('real project editing preserves external changes, compiles, and renders a P
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings & TeX setup', exact: true });
-    await settings.getByRole('button', { name: 'Save project preferences', exact: true }).click();
-    await expect(settings.getByRole('status')).toContainText('Project preferences saved');
     expect(
       JSON.parse(await readFile(join(projectRoot, '.textra', 'project.json'), 'utf8')),
-    ).toMatchObject({ schemaVersion: 1, rootFile: 'main.tex', engine: 'bibtex-pipeline' });
+    ).toMatchObject({ schemaVersion: 1, recipes: { 'main.tex': 'bibtex-pipeline' } });
+    await settings
+      .getByRole('combobox', { name: 'Default recipe for new documents', exact: true })
+      .selectOption('xelatex');
     const exportFile = join(directory, 'settings.json');
     await application.evaluate(({ dialog }, path) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
@@ -142,7 +141,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await expect(settings.getByRole('status')).toContainText('Settings exported');
     expect(JSON.parse(await readFile(exportFile, 'utf8'))).toMatchObject({
       schemaVersion: 1,
-      preferences: { theme: 'dark' },
+      preferences: { theme: 'dark', defaultRecipe: 'xelatex' },
     });
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
@@ -175,9 +174,34 @@ test('real project editing preserves external changes, compiles, and renders a P
     await unsaved.getByRole('button', { name: 'Discard and continue', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
-    await expect(page.getByRole('combobox', { name: 'Compiler', exact: true })).toHaveValue(
-      'bibtex-pipeline',
+    await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'pdfLaTeX + BibTeX', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Open preserved-copy.tex', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'XeLaTeX', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
+    await page.getByRole('button', { name: 'pdfLaTeX', exact: true }).click();
+    await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
+    await expect
+      .poll(
+        async () => {
+          const result = await page.evaluate(() => window.textra.getBuildState());
+          return result.ok && !result.value.running ? result.value.rootFile : null;
+        },
+        { timeout: 60000 },
+      )
+      .toBe('preserved-copy.tex');
+    expect(
+      JSON.parse(await readFile(join(projectRoot, '.textra', 'project.json'), 'utf8')).recipes,
+    ).toEqual({
+      'main.tex': 'bibtex-pipeline',
+      'preserved-copy.tex': 'pdflatex',
+    });
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).not.toContain(
       'Discard only after',
     );

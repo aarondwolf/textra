@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DEFAULT_PREFERENCES, type Preferences } from '../../shared/api';
+import { BUILD_RECIPES, DEFAULT_PREFERENCES, type Preferences } from '../../shared/api';
 
 const preferenceKeys = Object.keys(DEFAULT_PREFERENCES);
 
@@ -11,8 +11,12 @@ export function validatePreferences(value: unknown): Preferences {
   }
   const candidate = value as Record<string, unknown>;
   if (
-    Object.keys(candidate).length !== preferenceKeys.length ||
-    !preferenceKeys.every((key) => Object.hasOwn(candidate, key)) ||
+    Object.keys(candidate).some((key) => !preferenceKeys.includes(key)) ||
+    !preferenceKeys
+      .filter((key) => key !== 'defaultRecipe')
+      .every((key) => Object.hasOwn(candidate, key)) ||
+    (Object.hasOwn(candidate, 'defaultRecipe') &&
+      !BUILD_RECIPES.some((recipe) => recipe.value === candidate.defaultRecipe)) ||
     candidate.version !== 1 ||
     (candidate.theme !== 'dark' && candidate.theme !== 'light') ||
     typeof candidate.sidebarVisible !== 'boolean' ||
@@ -30,6 +34,8 @@ export function validatePreferences(value: unknown): Preferences {
     sidebarVisible: candidate.sidebarVisible,
     outputVisible: candidate.outputVisible,
     editorWidth: candidate.editorWidth,
+    defaultRecipe: (candidate.defaultRecipe ??
+      DEFAULT_PREFERENCES.defaultRecipe) as Preferences['defaultRecipe'],
   };
 }
 

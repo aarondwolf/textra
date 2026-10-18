@@ -36,6 +36,13 @@ describe('portable settings validation', () => {
 });
 
 describe('project config validation', () => {
+  it('round-trips per-document recipes and rejects unsafe paths or commands', () => {
+    const config = { ...DEFAULT_PROJECT_CONFIG, recipes: { 'chapters/one.tex': 'xelatex' } };
+    expect(validateProjectConfig(config)).toEqual(config);
+    for (const recipes of [{ '../outside.tex': 'pdflatex' }, { 'main.tex': 'sh' }, null, []]) {
+      expect(() => validateProjectConfig({ ...DEFAULT_PROJECT_CONFIG, recipes })).toThrow();
+    }
+  });
   it('accepts nested root files and only allowlisted engines', () => {
     for (const engine of ['pdflatex', 'xelatex', 'lualatex', 'latexmk', 'bibtex-pipeline']) {
       const config = { schemaVersion: 1, rootFile: 'chapters/résumé.tex', engine };

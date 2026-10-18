@@ -1,5 +1,11 @@
 # Decisions
 
+- 2026-10-18: Compile lives in the top bar and always targets the active .tex tab.
+  Recipe dropdown replaces root/compiler controls. Remember each document's last
+  used recipe in project.json; defaultRecipe is a portable app preference with
+  legacy preferences migration. Existing explicit root/engine configs seed only
+  that document's remembered recipe. Open folder moves into the explorer.
+
 - 2026-10-18: Follow Electron/main/preload/renderer separation and electron-vite.
   Native Electron is required; a hosted website is not a substitute.
 - 2026-10-18: Use explicit relative-path APIs and revision-checked writes to protect

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import type { SetupLink } from '../../../../shared/api';
+import { BUILD_RECIPES, type BuildEngine, type SetupLink } from '../../../../shared/api';
 import { useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
 import './setup.css';
@@ -13,7 +13,8 @@ export default function SetupDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { tools, project, rootFile, engine, build } = useWorkspace();
+  const { tools, build } = useWorkspace();
+  const { preferences, updatePreferences } = useUI();
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -139,32 +140,31 @@ export default function SetupDialog({
               On Linux, use your distribution’s package manager. After installation, restart TeXtra
               and test the detected tools.
             </p>
-            <h3>Project build preferences</h3>
-            <p>
-              {project
-                ? `Save ${rootFile || 'automatic root selection'} and ${engine} for ${project.name}.`
-                : 'Open a project to save its compiler and root document.'}
+            <h3>Compilation</h3>
+            <label className="field-label">
+              Default recipe for new documents
+              <select
+                aria-label="Default recipe for new documents"
+                value={preferences.defaultRecipe}
+                onChange={(event) =>
+                  updatePreferences({ defaultRecipe: event.target.value as BuildEngine })
+                }
+              >
+                {BUILD_RECIPES.map((recipe) => (
+                  <option key={recipe.value} value={recipe.value}>
+                    {recipe.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="setup-hint">
+              Compile builds the active .tex document. Each document remembers its last used recipe
+              in the project settings.
             </p>
-            <button
-              disabled={!project || busy || build.running}
-              onClick={() =>
-                void perform(async () => {
-                  if (!project) return;
-                  const result = await window.textra.setProjectConfig({
-                    projectId: project.id,
-                    config: { schemaVersion: 1, rootFile: rootFile || null, engine },
-                  });
-                  if (!result.ok) throw new Error(result.error);
-                  return 'Project preferences saved in .textra/project.json.';
-                })
-              }
-            >
-              Save project preferences
-            </button>
             <h3>Portable app settings</h3>
             <p>
-              Export your theme and pane layout. Imports are validated before you apply them. Recent
-              folders and credentials are excluded.
+              Export your theme, pane layout, and default compile recipe. Imports are validated
+              before you apply them. Recent folders and credentials are excluded.
             </p>
             <div className="setup-actions">
               <button

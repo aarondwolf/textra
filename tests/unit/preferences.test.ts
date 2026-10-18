@@ -3,6 +3,15 @@ import { validatePreferences } from '../../src/main/services/preferences';
 import { DEFAULT_PREFERENCES } from '../../src/shared/api';
 
 describe('preference boundary validation', () => {
+  it('migrates existing settings and validates the default recipe', () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+    delete legacy.defaultRecipe;
+    expect(validatePreferences(legacy)).toEqual(DEFAULT_PREFERENCES);
+    expect(validatePreferences({ ...legacy, defaultRecipe: 'xelatex' }).defaultRecipe).toBe(
+      'xelatex',
+    );
+    expect(() => validatePreferences({ ...legacy, defaultRecipe: 'shell' })).toThrow();
+  });
   it('accepts both supported themes and boundary split widths', () => {
     for (const theme of ['light', 'dark']) {
       for (const editorWidth of [25, 55.5, 75]) {

@@ -144,6 +144,7 @@ function CommandPalette() {
 
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [compileHost, setCompileHost] = useState<HTMLDivElement | null>(null);
   const { preferences, hydrated, error, updatePreferences, setPaletteOpen } = useUI();
   const { project, documents, source } = useWorkspace();
   useEffect(() => {
@@ -194,6 +195,7 @@ export function App() {
           <kbd>Ctrl K</kbd>
         </button>
         <div className="topbar-actions">
+          <div ref={setCompileHost} />
           <button
             className="icon-button"
             aria-label="Toggle sidebar"
@@ -241,7 +243,7 @@ export function App() {
           {error}
         </div>
       )}
-      <Workspace />
+      <Workspace compileHost={compileHost} />
       <footer className="statusbar">
         <div>
           <span className="local-dot" />

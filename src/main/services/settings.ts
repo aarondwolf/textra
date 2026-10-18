@@ -86,7 +86,13 @@ export function importSettings(text: unknown): Preferences {
 }
 
 export function validateProjectConfig(value: unknown): ProjectConfig {
-  const candidate = exactRecord(value, ['schemaVersion', 'rootFile', 'engine']);
+  const hasRecipes = !!value && typeof value === 'object' && Object.hasOwn(value, 'recipes');
+  const candidate = exactRecord(value, [
+    'schemaVersion',
+    'rootFile',
+    'engine',
+    ...(hasRecipes ? ['recipes'] : []),
+  ]);
   if (
     candidate.schemaVersion !== 1 ||
     typeof candidate.engine !== 'string' ||
@@ -95,7 +101,35 @@ export function validateProjectConfig(value: unknown): ProjectConfig {
     return invalid();
   const rootFile = candidate.rootFile === null ? null : validateRelativePath(candidate.rootFile);
   if (rootFile !== null && !/\.tex$/i.test(rootFile)) return invalid();
-  return { schemaVersion: 1, rootFile, engine: candidate.engine as BuildEngine };
+  let recipes: Record<string, BuildEngine> | undefined;
+  if (hasRecipes) {
+    if (
+      !candidate.recipes ||
+      typeof candidate.recipes !== 'object' ||
+      Array.isArray(candidate.recipes)
+    )
+      return invalid();
+    const entries = Object.entries(candidate.recipes);
+    if (entries.length > 10000) return invalid();
+    recipes = Object.fromEntries(
+      entries.map(([path, engine]) => {
+        validateRelativePath(path);
+        if (
+          !/\.tex$/i.test(path) ||
+          typeof engine !== 'string' ||
+          !engines.has(engine as BuildEngine)
+        )
+          return invalid();
+        return [path, engine as BuildEngine];
+      }),
+    );
+  }
+  return {
+    schemaVersion: 1,
+    rootFile,
+    engine: candidate.engine as BuildEngine,
+    ...(recipes ? { recipes } : {}),
+  };
 }
 
 function missing(error: unknown): boolean {

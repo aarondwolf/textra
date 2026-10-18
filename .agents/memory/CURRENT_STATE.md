@@ -1,8 +1,8 @@
 # Current state
 
 2026-10-18: Foundation complete; core Phase 1 workflow implemented. Full Phase 1
-is incomplete. Last committed foundation: 345fb44. Core IDE milestone commit
-follows; use `git log -1` for its identity after commit.
+is incomplete. Last passing implementation commit: ea4c1ef (core IDE).
+Foundation commit: 345fb44. All implementation and verification are committed.
 
 Working: selected local roots, bounded explorer, UTF8 Monaco tabs/undo, safe saves,
 create/rename/trash, recent/pinned projects, file-manager/VSCode actions, revision

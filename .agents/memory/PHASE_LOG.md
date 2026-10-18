@@ -8,4 +8,5 @@
 - 2026-10-18: Core Phase1 IDE slice: safe projects/editor/conflict recovery, fixed
   real TeX pipelines, PDF.js/SyncTeX, settings/project overrides/setup compile.
   138 tests and2 native workflow tests pass. Full Phase1 remains open; see roadmap
-  and CURRENT_STATE for exact next work. Milestone commit follows final checks.
+  and CURRENT_STATE for exact next work. Core IDE commit: ea4c1ef. Final HMR,
+  preload reload, main restart and static/build checks passed; clean checkpoint.

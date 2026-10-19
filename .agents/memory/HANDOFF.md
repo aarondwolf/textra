@@ -80,6 +80,14 @@ environments synchronously and suggests the closest unmatched `\\begin{…}` at
 `\\end{…}`. The stack skips unescaped-comment text. Typecheck, lint, format
 check, and production build pass; verify the two flows in the native window.
 
+## Empty environment completion
+
+Accepting a local `\\begin{…}` suggestion now creates the complete empty
+environment with a cursor placeholder on the interior line. It deliberately
+does not insert `\\item`, labels, captions, or other environment-specific
+content. Context-aware environment templates are deferred to Phase 3. Typecheck,
+lint, format check, and production build pass.
+
 ## Verification and current limits
 
 Passed after TexLab:

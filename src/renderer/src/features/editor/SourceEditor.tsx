@@ -532,11 +532,19 @@ export function SourceEditor({
         .map((environment) => ({
           label: environment,
           kind: monaco.languages.CompletionItemKind.Keyword,
-          insertText: environment,
+          insertText:
+            command === 'begin'
+              ? `${environment}}\n\t$0\n\\end{${environment}}`
+              : environment,
+          ...(command === 'begin'
+            ? { insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet }
+            : {}),
           detail:
             command === 'end' && open.includes(environment)
               ? 'Close open environment'
-              : 'LaTeX environment',
+              : command === 'begin'
+                ? 'Insert empty environment'
+                : 'LaTeX environment',
           range,
         }));
     };

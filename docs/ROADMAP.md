@@ -10,7 +10,7 @@ Each phase depends on the preceding gate. Do not describe a partial gate as comp
 | 1c Preview     | PDF.js, navigation, search, SyncTeX                                          | Real PDF rendering and source mapping                                          | Core passed          |
 | 1d Workflow    | Project CRUD, settings, onboarding, pipelines                                | Full phase 1 workflow and missing-tool fallbacks                               | Implemented; verify  |
 | 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                               | Offline insertions/undo, diagnostics and explicit AI consent                   | In progress          |
-| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer                         | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
+| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer, environment content templates | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
 | 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help | Security review, Windows install/uninstall, release matrix                     | Planned              |
 
 Common gate: `npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.

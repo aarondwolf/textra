@@ -1,5 +1,12 @@
 # Current state
 
+2026-10-19 Empty environment completion (working tree): accepting a local
+`\\begin{…}` suggestion now uses a Monaco snippet to insert the closing brace,
+an empty indented line with the cursor, and matching `\\end{…}`. It does not
+add `\\item`, labels, captions, or any other environment-specific content.
+Context-aware content templates are deferred to Phase 3 by owner decision.
+Typecheck, lint, format check, and production build pass.
+
 2026-10-19 Environment completion reliability (working tree): asynchronous
 TexLab requests can be cancelled while Monaco replaces completion requests as a
 user types, so environment suggestions were intermittent. `SourceEditor.tsx`

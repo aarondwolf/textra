@@ -1,5 +1,14 @@
 # Current state
 
+2026-10-19 Environment Enter fallback (working tree): terminal output showed
+repeated failed `textra:texlab:request` calls. These are language-server
+failures, not an Electron crash. To make paired environments independent of the
+suggestion widget and TexLab, Enter after a complete `\\begin{name}` now inserts
+an empty indented line and matching `\\end{name}`. It leaves a nearby existing
+matching end alone. TexLab errors now carry their safe error code in main-process
+logs and return a local-fallback message to the renderer. Typecheck, lint,
+format check, and production build pass.
+
 2026-10-19 Empty environment completion (working tree): accepting a local
 `\\begin{…}` suggestion now uses a Monaco snippet to insert the closing brace,
 an empty indented line with the cursor, and matching `\\end{…}`. It does not

@@ -30,6 +30,7 @@ import { ConfigService, exportSettings, importSettings } from './services/settin
 import { validateRecipeSettings } from '../shared/recipes';
 import { LanguageService } from './services/language';
 import { TexlabManager } from './services/texlab-manager';
+import { TexlabError } from './services/texlab';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -105,6 +106,13 @@ function errorResult(error: unknown): { ok: false; error: string; code: string }
       code: typeof code === 'string' ? code : 'BUILD_ERROR',
       error: error.message,
     };
+  if (error instanceof TexlabError)
+    return {
+      ok: false,
+      code: error.code,
+      error:
+        'TexLab could not complete this language request. TeXtra local suggestions remain available.',
+    };
   return {
     ok: false,
     code: 'REQUEST_FAILED',
@@ -137,8 +145,9 @@ function handle<T>(
       return { ok: true, value: await action(...args) };
     } catch (error) {
       // Raw errors can contain local paths or private preference data.
-      log('warn', 'ipc-request-failed', { channel });
-      return errorResult(error);
+      const result = errorResult(error);
+      log('warn', 'ipc-request-failed', { channel, code: result.code });
+      return result;
     }
   });
 }

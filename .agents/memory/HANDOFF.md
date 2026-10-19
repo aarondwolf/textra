@@ -88,6 +88,16 @@ does not insert `\\item`, labels, captions, or other environment-specific
 content. Context-aware environment templates are deferred to Phase 3. Typecheck,
 lint, format check, and production build pass.
 
+## Environment Enter fallback and TexLab diagnostics
+
+The owner's terminal showed repeated `textra:texlab:request` failures. They are
+TexLab request failures, not Electron crashes. To make paired environments
+reliable without the suggestion widget or TexLab, Enter immediately after a
+complete `\\begin{name}` now inserts the blank interior and matching end, unless
+that end already immediately follows. Main-process IPC logs now include a safe
+error code and the renderer receives a local-fallback explanation. Typecheck,
+lint, format check, and production build pass.
+
 ## Verification and current limits
 
 Passed after TexLab:

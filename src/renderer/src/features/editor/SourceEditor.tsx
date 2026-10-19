@@ -533,9 +533,7 @@ export function SourceEditor({
           label: environment,
           kind: monaco.languages.CompletionItemKind.Keyword,
           insertText:
-            command === 'begin'
-              ? `${environment}}\n\t$0\n\\end{${environment}}`
-              : environment,
+            command === 'begin' ? `${environment}}\n\t$0\n\\end{${environment}}` : environment,
           ...(command === 'begin'
             ? { insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet }
             : {}),
@@ -548,6 +546,61 @@ export function SourceEditor({
           range,
         }));
     };
+    const environmentEnter = instance.onKeyDown((event) => {
+      if (
+        event.keyCode !== monaco.KeyCode.Enter ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.shiftKey
+      )
+        return;
+      const model = instance.getModel();
+      const position = instance.getPosition();
+      if (!model || !position) return;
+      const before = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
+      const match = /\\begin\s*\{([^}\s]+)\}$/.exec(stripLatexComment(before));
+      if (!match) return;
+      const environment = match[1];
+      const after = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: position.column,
+        endLineNumber: model.getLineCount(),
+        endColumn: model.getLineMaxColumn(model.getLineCount()),
+      });
+      if (after.trimStart().startsWith(`\\end{${environment}}`)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const indentation = /^\s*/.exec(model.getLineContent(position.lineNumber))?.[0] ?? '';
+      const innerIndentation = `${indentation}\t`;
+      const eol = model.getEOL();
+      instance.pushUndoStop();
+      model.pushEditOperations(
+        [],
+        [
+          {
+            range: new monaco.Range(
+              position.lineNumber,
+              position.column,
+              position.lineNumber,
+              position.column,
+            ),
+            text: `${eol}${innerIndentation}${eol}${indentation}\\end{${environment}}`,
+            forceMoveMarkers: true,
+          },
+        ],
+        () => null,
+      );
+      instance.pushUndoStop();
+      instance.setPosition(
+        new monaco.Position(position.lineNumber + 1, innerIndentation.length + 1),
+      );
+    });
     const completion = monaco.languages.registerCompletionItemProvider('latex', {
       triggerCharacters: ['\\', '{', ',', '['],
       async provideCompletionItems(model, position) {
@@ -735,6 +788,7 @@ export function SourceEditor({
       window.removeEventListener('textra:insert-source', insertSource);
       content.dispose();
       cursor.dispose();
+      environmentEnter.dispose();
       completion.dispose();
       hover.dispose();
       definition.dispose();

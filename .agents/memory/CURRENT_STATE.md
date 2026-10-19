@@ -1,5 +1,13 @@
 # Current state
 
+2026-10-19 Environment completion reliability (working tree): asynchronous
+TexLab requests can be cancelled while Monaco replaces completion requests as a
+user types, so environment suggestions were intermittent. `SourceEditor.tsx`
+now serves standard `\\begin{…}` environments locally and synchronously, and
+uses the closest unmatched `\\begin{…}` for `\\end{…}` completion. It ignores
+unescaped LaTeX comments when building that environment stack. Typecheck, lint,
+format check, and production build pass.
+
 2026-10-19 Monaco completion widget fix (working tree): LaTeX automatic
 suggestions were enabled but the modular Monaco build had omitted its Suggest
 Controller contribution, so no suggestion widget could render. The contribution

@@ -55,6 +55,72 @@ monaco.languages.setMonarchTokensProvider('latex', {
   },
 });
 
+const COMMON_LATEX_ENVIRONMENTS = [
+  'abstract',
+  'align',
+  'align*',
+  'array',
+  'center',
+  'description',
+  'document',
+  'enumerate',
+  'equation',
+  'equation*',
+  'figure',
+  'figure*',
+  'flushleft',
+  'flushright',
+  'gather',
+  'gather*',
+  'itemize',
+  'matrix',
+  'minipage',
+  'multline',
+  'multline*',
+  'pmatrix',
+  'proof',
+  'quotation',
+  'quote',
+  'split',
+  'table',
+  'table*',
+  'tabular',
+  'tabular*',
+  'thebibliography',
+  'theorem',
+  'tikzpicture',
+  'verbatim',
+] as const;
+
+function stripLatexComment(line: string): string {
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== '%') continue;
+    let escapes = 0;
+    for (let previous = index - 1; previous >= 0 && line[previous] === '\\'; previous -= 1)
+      escapes += 1;
+    if (escapes % 2 === 0) return line.slice(0, index);
+  }
+  return line;
+}
+
+function unmatchedEnvironments(source: string): string[] {
+  const stack: string[] = [];
+  for (const line of source.split(/\r?\n/)) {
+    const commands = stripLatexComment(line);
+    for (const match of commands.matchAll(/\\(begin|end)\s*\{([^}\s]+)\}/g)) {
+      const command = match[1];
+      const environment = match[2];
+      if (command === 'begin') {
+        stack.push(environment);
+        continue;
+      }
+      const index = stack.lastIndexOf(environment);
+      if (index >= 0) stack.splice(index, 1);
+    }
+  }
+  return stack;
+}
+
 const editorThemes: Record<string, monaco.editor.IStandaloneThemeData> = {
   'textra-dark': {
     base: 'vs-dark',
@@ -437,10 +503,52 @@ export function SourceEditor({
         range,
       }));
     };
+    const environmentCompletion = (
+      model: monaco.editor.ITextModel,
+      position: monaco.Position,
+    ): monaco.languages.CompletionItem[] => {
+      const before = model.getValueInRange({
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
+      const match = /\\(begin|end)\s*\{([^}]*)$/.exec(before);
+      if (!match) return [];
+      const [, command, partial] = match;
+      const range = new monaco.Range(
+        position.lineNumber,
+        position.column - partial.length,
+        position.lineNumber,
+        position.column,
+      );
+      const open = unmatchedEnvironments(before);
+      const candidates =
+        command === 'end'
+          ? [...open].reverse()
+          : [...new Set([...open, ...COMMON_LATEX_ENVIRONMENTS])];
+      return candidates
+        .filter((environment) => environment.toLowerCase().startsWith(partial.toLowerCase()))
+        .map((environment) => ({
+          label: environment,
+          kind: monaco.languages.CompletionItemKind.Keyword,
+          insertText: environment,
+          detail:
+            command === 'end' && open.includes(environment)
+              ? 'Close open environment'
+              : 'LaTeX environment',
+          range,
+        }));
+    };
     const completion = monaco.languages.registerCompletionItemProvider('latex', {
       triggerCharacters: ['\\', '{', ',', '['],
       async provideCompletionItems(model, position) {
+        // Environment suggestions are deliberately local and synchronous. They remain stable while
+        // Monaco cancels superseded asynchronous LSP requests as the user types.
+        const environments = environmentCompletion(model, position);
+        if (environments.length) return { suggestions: environments };
         const local = localCompletion(model, position);
+        if (local.length) return { suggestions: local };
         const document = sourceDocument(model);
         const adapter = texlabRef.current;
         if (!document || !adapter?.isReady || !adapter.requestCompletion)

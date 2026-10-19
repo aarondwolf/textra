@@ -71,6 +71,15 @@ production build pass; the development app reached `application-ready` after
 the cache was rebuilt. Native interaction testing of `\\begin{item` and
 Ctrl+Space remains the next check.
 
+## Environment completion reliability
+
+TexLab completion requests cross IPC and LSP asynchronously. Monaco cancels and
+replaces requests while the user types, which made environment lists appear only
+intermittently. `SourceEditor.tsx` now provides standard `\\begin{…}`
+environments synchronously and suggests the closest unmatched `\\begin{…}` at
+`\\end{…}`. The stack skips unescaped-comment text. Typecheck, lint, format
+check, and production build pass; verify the two flows in the native window.
+
 ## Verification and current limits
 
 Passed after TexLab:

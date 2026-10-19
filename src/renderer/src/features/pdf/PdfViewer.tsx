@@ -28,11 +28,13 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState<number[]>([]);
   const [searched, setSearched] = useState(false);
   const [location, setLocation] = useState<PdfLocation | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const preservedScroll = useRef<{ top: number; left: number } | null>(null);
   const pageInfo = useRef<{ page: PDFPageProxy; scale: number } | null>(null);
@@ -44,11 +46,36 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
   const pdfPath = build.projectId === activeProject ? build.pdfPath : null;
 
   useEffect(() => {
+    if (searchOpen && pdf) {
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    }
+  }, [searchOpen, pdf]);
+
+  useEffect(() => {
+    const findPdf = () => {
+      if (!pdf) return;
+      setSearchOpen(true);
+      searchInput.current?.focus();
+      searchInput.current?.select();
+    };
+    window.addEventListener('textra:find-pdf', findPdf);
+    return () => window.removeEventListener('textra:find-pdf', findPdf);
+  }, [pdf]);
+
+  function closeSearch() {
+    setSearchOpen(false);
+    cancelSearch();
+    setSearching(false);
+    scroll.current?.focus();
+  }
+
+  useEffect(() => {
     const element = scroll.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(Math.max(100, entry.contentRect.width - 40)),
-    );
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setWidth(Math.max(100, entry.contentRect.width - 40));
+    });
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
@@ -101,7 +128,7 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
       cancelSearch();
       if (task) void task.destroy().catch(() => undefined);
     };
-  }, [activeProject, pdfPath, cancelSearch]);
+  }, [activeProject, pdfPath, build.pdfVersion, cancelSearch]);
 
   useEffect(() => {
     if (!pdf || !canvas.current) return;
@@ -230,82 +257,103 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
   }
 
   return (
-    <section className="pdf-viewer" aria-label="PDF preview">
-      <div className="pdf-toolbar">
-        <span className="pdf-label">Preview</span>
-        {pdf && (
-          <>
-            <button
-              aria-label="Previous PDF page"
-              disabled={pageNumber <= 1}
-              onClick={() => {
-                setLocation(null);
-                setPageNumber(pageNumber - 1);
-              }}
-            >
-              ‹
-            </button>
-            <label className="pdf-page-control">
-              <span className="sr-only">PDF page</span>
-              <input
-                aria-label="PDF page"
-                type="number"
-                min={1}
-                max={pdf.numPages}
-                value={pageNumber}
-                onChange={(event) => {
-                  setLocation(null);
-                  setPageNumber(
-                    Math.min(pdf.numPages, Math.max(1, Number(event.target.value) || 1)),
-                  );
-                }}
-              />{' '}
-              / {pdf.numPages}
-            </label>
-            <button
-              aria-label="Next PDF page"
-              disabled={pageNumber >= pdf.numPages}
-              onClick={() => {
-                setLocation(null);
-                setPageNumber(pageNumber + 1);
-              }}
-            >
-              ›
-            </button>
-            <select
-              aria-label="PDF zoom"
-              value={fit ? 'fit' : String(zoom)}
-              onChange={(event) => {
-                setFit(event.target.value === 'fit');
-                if (event.target.value !== 'fit') setZoom(Number(event.target.value));
-              }}
-            >
-              <option value="fit">Fit width</option>
-              {[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((value) => (
-                <option key={value} value={value}>
-                  {value * 100}%
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => void forward()}
-              disabled={!source}
-              title="Find editor cursor in the PDF"
-            >
-              Go to source line
-            </button>
-          </>
-        )}
-      </div>
+    <section
+      className="pdf-viewer"
+      aria-label="PDF preview"
+      onKeyDown={(event) => {
+        if (event.ctrlKey || event.metaKey) {
+          if (event.key.toLowerCase() === 'f') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (pdf) {
+              setSearchOpen(true);
+              searchInput.current?.focus();
+              searchInput.current?.select();
+            }
+          } else if (event.key.toLowerCase() === 'h') {
+            event.preventDefault();
+            event.stopPropagation();
+            window.dispatchEvent(new Event('textra:replace-source'));
+          }
+        } else if (event.key === 'Escape' && searchOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeSearch();
+        }
+      }}
+    >
       {pdf && (
+        <div className="pdf-toolbar">
+          <button
+            aria-label="Previous PDF page"
+            disabled={pageNumber <= 1}
+            onClick={() => {
+              setLocation(null);
+              setPageNumber(pageNumber - 1);
+            }}
+          >
+            ‹
+          </button>
+          <label className="pdf-page-control">
+            <span className="sr-only">PDF page</span>
+            <input
+              aria-label="PDF page"
+              type="number"
+              min={1}
+              max={pdf.numPages}
+              value={pageNumber}
+              onChange={(event) => {
+                setLocation(null);
+                setPageNumber(Math.min(pdf.numPages, Math.max(1, Number(event.target.value) || 1)));
+              }}
+            />{' '}
+            / {pdf.numPages}
+          </label>
+          <button
+            aria-label="Next PDF page"
+            disabled={pageNumber >= pdf.numPages}
+            onClick={() => {
+              setLocation(null);
+              setPageNumber(pageNumber + 1);
+            }}
+          >
+            ›
+          </button>
+          <select
+            aria-label="PDF zoom"
+            value={fit ? 'fit' : String(zoom)}
+            onChange={(event) => {
+              setFit(event.target.value === 'fit');
+              if (event.target.value !== 'fit') setZoom(Number(event.target.value));
+            }}
+          >
+            <option value="fit">Fit width</option>
+            {[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((value) => (
+              <option key={value} value={value}>
+                {value * 100}%
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => void forward()}
+            disabled={!source}
+            title="Find editor cursor in the PDF"
+          >
+            Go to source line
+          </button>
+        </div>
+      )}
+      {pdf && searchOpen && (
         <form
           className="pdf-search"
           onSubmit={(event) => {
             event.preventDefault();
+            searchInput.current?.focus();
             void findText();
           }}
         >
           <input
+            ref={searchInput}
             aria-label="Search PDF"
             placeholder="Find in PDF…"
             value={query}
@@ -313,6 +361,9 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
           />
           <button type="submit" disabled={searching || !query.trim()}>
             Find
+          </button>
+          <button type="button" aria-label="Close PDF search" onClick={closeSearch}>
+            ×
           </button>
           {searching && (
             <button
@@ -349,7 +400,20 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
           {error}
         </div>
       )}
-      <div className="pdf-scroll" ref={scroll}>
+      <div
+        className="pdf-scroll"
+        ref={scroll}
+        tabIndex={0}
+        aria-label="PDF pages"
+        aria-keyshortcuts="Control+f Meta+f Control+h Meta+h"
+        onPointerDown={(event) => {
+          if (
+            event.target instanceof HTMLElement &&
+            !event.target.closest('button, input, select, a, canvas')
+          )
+            event.currentTarget.focus();
+        }}
+      >
         {loading ? (
           <div className="pdf-empty" role="status">
             Loading PDF…
@@ -357,27 +421,18 @@ export default function PdfViewer({ project, build, source, onNavigate }: Props)
         ) : pdf ? (
           <canvas
             ref={canvas}
+            tabIndex={0}
             aria-label={`PDF page ${pageNumber}`}
             onDoubleClick={(event) => void inverse(event)}
             title="Double-click to find this position in the source"
           />
         ) : (
           <div className="pdf-empty">
-            <span className="pdf-glyph">∫</span>
-            <h2>Your words, typeset.</h2>
-            <p>Compile a document to preview it here.</p>
-            <small>Local rendering · No account needed</small>
+            <h2>PDF preview</h2>
+            <p>Compile to see your document.</p>
           </div>
         )}
       </div>
-      {pdf && (
-        <div className="pdf-footnote">
-          Double-click a page to jump to source ·{' '}
-          {build.outcome === 'failed' || build.outcome === 'cancelled'
-            ? 'Showing last successful build'
-            : 'SyncTeX'}
-        </div>
-      )}
     </section>
   );
 }

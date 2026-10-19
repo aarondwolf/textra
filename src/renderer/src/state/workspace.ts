@@ -4,6 +4,7 @@ import type {
   BuildState,
   FileSnapshot,
   ProjectInfo,
+  ProjectConfig,
   RecentProject,
   SourceLocation,
   ToolInfo,
@@ -31,7 +32,8 @@ interface WorkspaceState {
   toolsReady: boolean;
   build: BuildState;
   engine: BuildEngine;
-  recipes: Record<string, BuildEngine>;
+  recipes: Record<string, string>;
+  projectConfig: ProjectConfig | null;
   rootFile: string;
   error: string | null;
   busy: boolean;
@@ -48,6 +50,7 @@ export const useWorkspace = create<WorkspaceState>(() => ({
   build: idleBuild,
   engine: 'pdflatex',
   recipes: {},
+  projectConfig: null,
   rootFile: '',
   error: null,
   busy: false,
@@ -80,6 +83,7 @@ export async function setProject(project: ProjectInfo): Promise<void> {
     project,
     documents: [],
     recipes: {},
+    projectConfig: null,
     activePath: null,
     rootFile:
       project.mainFile ?? project.files.find((file) => file.path.endsWith('.tex'))?.path ?? '',
@@ -97,6 +101,7 @@ export async function setProject(project: ProjectInfo): Promise<void> {
       !config.value.rootFile || project.files.some((file) => file.path === config.value.rootFile);
     useWorkspace.setState({
       engine: config.value.engine,
+      projectConfig: config.value,
       recipes:
         config.value.recipes ??
         (config.value.rootFile ? { [config.value.rootFile]: config.value.engine } : {}),

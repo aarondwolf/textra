@@ -11,7 +11,8 @@ optional and planned for a later phase.
 - [x] Phase 0: native Electron shell, themes, pane controls, command palette
 - [x] Core IDE: real folders, Monaco tabs, safe saves, local builds, PDF.js, SyncTeX
 - [x] Recent/pinned projects, file CRUD, portable settings, project build preferences
-- [ ] Full Phase 1: custom pipelines, installer management, further workflow polish
+- [x] Editable ordered build recipes, project settings JSON and recipe builder
+- [ ] Full Phase 1: installer management, further workflow polish
 - [ ] Phase 2: writing tools, diagnostics, optional AI
 - [ ] Phase 3: research and presentation workflows
 - [ ] Phase 4: installers and distribution
@@ -34,20 +35,32 @@ concurrent source edits because it temporarily appends and restores test probes.
 
 ## Workflow and setup
 
-Use Ctrl/Cmd+K for commands, Ctrl/Cmd+B for the sidebar, Ctrl/Cmd+J for the bottom
-panel, and drag the split or use arrow keys on it. Themes and layouts are saved
+Use Ctrl/Cmd+K for commands, Ctrl/Cmd+B for the sidebar, Ctrl/Cmd+J to switch between
+the preview and its Output tab, and drag the split or use arrow keys on it. Collapse
+either side pane with its small collapse icon. Settings lives at the bottom of the
+left rail, including the theme selector. Themes and layouts are saved
 to `preferences.json` in Electron userData (`%APPDATA%/TeXtra` on Windows).
+The rail also has File Explorer and an Extensions placeholder for future additions.
+Recent Projects is a collapsible section at the bottom of the explorer, closed by default.
 
 1. Choose **Open folder**, then select a `.tex` file in the explorer. Multiple tabs
    preserve editor models and undo while open. Use Ctrl/Cmd+S to save, Shift+Ctrl/Cmd+S
    to save a copy, and Monaco's Ctrl/Cmd+F or Ctrl/Cmd+H for search/replace.
-2. **Compile** in the top bar (Ctrl/Cmd+Enter) builds the active `.tex` tab and saves all
+   Left-click an explorer entry for Rename, Delete, Reveal, and VS Code actions;
+   files open in the editor as well. Right-click and Shift+F10 also open this menu.
+2. **Compile** in the preview pane (Ctrl/Cmd+Enter) builds the active `.tex` tab and saves all
    dirty files first. Use its dropdown to choose a recipe. Each document remembers
    its last used recipe; **Settings → Compilation** sets the default for new documents.
+   **Compile ▾ → Manage recipes…** edits defaults, creates recipes and opens the
+   project JSON editor. See [project settings and recipes](docs/RECIPES.md).
    Presets: direct pdfLaTeX, XeLaTeX, LuaLaTeX, latexmk, and
    pdfLaTeX → BibTeX → pdfLaTeX twice. Cancel stops the process tree.
-3. Inspect Output or source-linked Problems. Successful PDFs load beside the
-   editor. Navigate pages, zoom/fit width, search, or use **Go to source line**.
+3. Switch between Preview, Output, and source-linked Problems inside the preview pane.
+   Compile, the view tabs, and the collapse control share one compact row.
+   Compiling preserves your selected view. Successful PDFs load beside the editor.
+   Ctrl/Cmd+F within the preview opens PDF search; Escape closes it. Ctrl/Cmd+H opens
+   replacement in the source editor, where edits can be recompiled. Navigate pages,
+   zoom/fit width, or use **Go to source line**.
    Double-click the PDF to jump back to source with the installed SyncTeX tool.
 
 External changes produce a conflict notice. Your open buffer is retained; reload
@@ -61,15 +74,16 @@ MiKTeX/TeX Live; macOS can use MacTeX; Linux users should use their distribution
 TeX packages. Restart after PATH changes. Installer/manager actions remain planned.
 
 Layout/theme, the default recipe, and recents live in Electron userData. Document
-recipe choices are saved to `.textra/project.json` when compiling. Open folders with
+recipe choices and tool definitions live in `.textra/settings.json`, created when
+opening a project. Legacy `project.json` is migrated without deletion. Open folders with
 the folder icon in the explorer. Import/export accepts only versioned theme/layout/recipe
 settings; unknown schemas and corrupt files are preserved. Recent folders, keys and
 tool paths are excluded. AI setup, key storage and cost controls remain planned;
 no credentials are currently stored or migrated. Offline operation is the default.
 
-Builds use unique `build/textra/` directories and retain the last successful PDF
-through failures. Only this session's generated directories are pruned (five recent
-builds); older session outputs may need manual cleanup.
+Recipes default to `build/textra/<relative document>/` and retain the last successful
+PDF through failures. Custom output folders are never automatically pruned. The
+temporary installation health check uses an isolated folder.
 
 ## Architecture and contribution
 

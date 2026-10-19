@@ -1,4 +1,5 @@
 .pdf-viewer {
+  flex: 1;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -14,10 +15,6 @@
   padding: 10px 14px;
   border-bottom: 1px solid var(--border, #353a3b);
   font-size: 12px;
-}
-.pdf-label {
-  margin-right: auto;
-  opacity: 0.7;
 }
 .pdf-viewer button,
 .pdf-viewer select,
@@ -78,13 +75,12 @@
   padding: 24px;
 }
 .pdf-empty h2 {
-  font:
-    normal 26px Georgia,
-    serif;
-  margin: 18px 0 8px;
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 8px;
 }
 .pdf-empty p {
-  font-size: 13px;
+  font-size: 12px;
 }
 .pdf-empty small {
   font-size: 10px;
@@ -101,9 +97,8 @@
   color: #ce775e;
   font-size: 12px;
 }
-.pdf-footnote {
-  padding: 6px 12px;
-  font-size: 10px;
-  opacity: 0.65;
-  border-top: 1px solid var(--border, #353a3b);
+.pdf-scroll:focus-visible,
+.pdf-scroll canvas:focus-visible {
+  outline: 2px solid var(--accent, #63b6a8);
+  outline-offset: -2px;
 }

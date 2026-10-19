@@ -36,6 +36,31 @@ describe('portable settings validation', () => {
 });
 
 describe('project config validation', () => {
+  it('explains unsupported imported commands while retaining the preservation notice', () => {
+    expect(() =>
+      validateProjectConfig({
+        'latex-workshop.latex.tools': [{ name: 'custom', command: 'sh', args: [] }],
+      }),
+    ).toThrow(/Supported commands: .* Existing settings were preserved\./);
+  });
+
+  it('normalizes Workshop settings and accepts custom per-document recipes', () => {
+    const config = validateProjectConfig({
+      'latex-workshop.latex.recipes': [{ name: 'My draft', tools: ['pdflatex'] }],
+      recipes: { 'main.tex': 'My draft' },
+    });
+    expect(config.recipes).toEqual({ 'main.tex': 'My draft' });
+    expect(config['latex-workshop.latex.outDir']).toBe(
+      DEFAULT_PROJECT_CONFIG['latex-workshop.latex.outDir'],
+    );
+    expect(validateProjectConfig({})).toEqual(DEFAULT_PROJECT_CONFIG);
+  });
+
+  it('does not share mutable defaults between project reads', () => {
+    const config = validateProjectConfig({});
+    config['latex-workshop.latex.tools']![0]!.args.push('changed');
+    expect(validateProjectConfig({})).toEqual(DEFAULT_PROJECT_CONFIG);
+  });
   it('round-trips per-document recipes and rejects unsafe paths or commands', () => {
     const config = { ...DEFAULT_PROJECT_CONFIG, recipes: { 'chapters/one.tex': 'xelatex' } };
     expect(validateProjectConfig(config)).toEqual(config);
@@ -45,7 +70,7 @@ describe('project config validation', () => {
   });
   it('accepts nested root files and only allowlisted engines', () => {
     for (const engine of ['pdflatex', 'xelatex', 'lualatex', 'latexmk', 'bibtex-pipeline']) {
-      const config = { schemaVersion: 1, rootFile: 'chapters/résumé.tex', engine };
+      const config = { ...DEFAULT_PROJECT_CONFIG, rootFile: 'chapters/résumé.tex', engine };
       expect(validateProjectConfig(config)).toEqual(config);
     }
     expect(validateProjectConfig(DEFAULT_PROJECT_CONFIG)).toEqual(DEFAULT_PROJECT_CONFIG);

@@ -61,6 +61,20 @@ export default function SetupDialog({
             No account or API key is required. Editing works without a TeX installation.
           </Dialog.Description>
           <div className="setup-scroll">
+            <h3>Appearance</h3>
+            <label className="field-label">
+              Theme
+              <select
+                aria-label="Theme"
+                value={preferences.theme}
+                onChange={(event) =>
+                  updatePreferences({ theme: event.target.value as 'dark' | 'light' })
+                }
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </label>
             <h3>Local tools</h3>
             <div className="tool-list">
               {tools.map((tool) => (
@@ -141,6 +155,15 @@ export default function SetupDialog({
               and test the detected tools.
             </p>
             <h3>Compilation</h3>
+            <button
+              disabled={!useWorkspace.getState().project || busy || build.running}
+              onClick={() => {
+                onOpenChange(false);
+                useUI.getState().setRecipeEditorOpen(true);
+              }}
+            >
+              Edit project build recipes
+            </button>
             <label className="field-label">
               Default recipe for new documents
               <select

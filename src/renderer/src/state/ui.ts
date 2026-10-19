@@ -6,10 +6,12 @@ interface UIState {
   hydrated: boolean;
   error: string | null;
   paletteOpen: boolean;
-  panel: 'problems' | 'output';
+  recipeEditorOpen: boolean;
+  panel: 'preview' | 'problems' | 'output';
   updatePreferences: (patch: Partial<Omit<Preferences, 'version'>>) => void;
   setPaletteOpen: (open: boolean) => void;
-  setPanel: (panel: 'problems' | 'output') => void;
+  setRecipeEditorOpen: (open: boolean) => void;
+  setPanel: (panel: 'preview' | 'problems' | 'output') => void;
 }
 
 let pending: Preferences | null = null;
@@ -39,7 +41,8 @@ export const useUI = create<UIState>((set, get) => ({
   hydrated: false,
   error: null,
   paletteOpen: false,
-  panel: 'problems',
+  recipeEditorOpen: false,
+  panel: 'preview',
   updatePreferences: (patch) => {
     if (!get().hydrated) return;
     const preferences = { ...get().preferences, ...patch };
@@ -48,6 +51,7 @@ export const useUI = create<UIState>((set, get) => ({
     void savePreferences();
   },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  setRecipeEditorOpen: (recipeEditorOpen) => set({ recipeEditorOpen }),
   setPanel: (panel) => set({ panel }),
 }));
 
@@ -56,7 +60,11 @@ export function hydratePreferences(): Promise<void> {
   hydration ??= (async () => {
     try {
       const result = await window.textra.getPreferences();
-      if (result.ok) useUI.setState({ preferences: result.value, hydrated: true });
+      if (result.ok)
+        useUI.setState({
+          preferences: { ...DEFAULT_PREFERENCES, ...result.value },
+          hydrated: true,
+        });
       else useUI.setState({ error: result.error, hydrated: true });
     } catch {
       useUI.setState({

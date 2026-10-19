@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
+import 'monaco-editor/editor/contrib/find/browser/findController.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
 import { editDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
@@ -72,6 +73,12 @@ export function SourceEditor({
       theme: 'vs-dark',
     });
     editor.current = instance;
+    const replaceSource = () => {
+      if (!instance.getModel()) return;
+      instance.focus();
+      void instance.getAction('editor.action.startFindReplaceAction')?.run();
+    };
+    window.addEventListener('textra:replace-source', replaceSource);
     const content = instance.onDidChangeModelContent(() => {
       if (current.current) editDocument(current.current, instance.getValue());
     });
@@ -83,6 +90,7 @@ export function SourceEditor({
     });
     const retainedModels = models.current;
     return () => {
+      window.removeEventListener('textra:replace-source', replaceSource);
       content.dispose();
       cursor.dispose();
       instance.dispose();

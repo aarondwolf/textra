@@ -10,6 +10,16 @@ test('real project editing preserves external changes, compiles, and renders a P
   const projectRoot = join(directory, 'résumé project with spaces');
   const userData = join(directory, 'user-data');
   await mkdir(userData);
+  await writeFile(
+    join(userData, 'preferences.json'),
+    JSON.stringify({
+      version: 1,
+      theme: 'dark',
+      sidebarVisible: true,
+      outputVisible: false,
+      editorWidth: 55,
+    }),
+  );
   await cp(join(process.cwd(), 'tests', 'fixtures', 'dissertation'), projectRoot, {
     recursive: true,
   });
@@ -24,6 +34,12 @@ test('real project editing preserves external changes, compiles, and renders a P
   try {
     application = await electron.launch({ args: ['.'], env: environment });
     const page = await application.firstWindow();
+    await expect(
+      page.getByRole('button', { name: 'Compile active document', exact: true }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: 'Compile active document', exact: true }),
+    ).toHaveAttribute('title', 'Open a .tex document to compile it.');
     // The native file chooser is the only mocked integration. Files, Monaco,
     // IPC, compiler, SyncTeX, and PDF rendering use their real implementations.
     await application.evaluate(({ dialog }, selectedRoot) => {
@@ -31,6 +47,35 @@ test('real project editing preserves external changes, compiles, and renders a P
     }, projectRoot);
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
+    await expect(page.locator('.file-actions')).toHaveCount(0);
+    const fileActions = page.getByRole('menu', { name: 'Actions for main.tex', exact: true });
+    await expect(fileActions).toBeVisible();
+    for (const name of ['Rename', 'Delete', 'Reveal', 'VS Code']) {
+      await expect(fileActions.getByRole('menuitem', { name, exact: true })).toBeVisible();
+    }
+    await fileActions.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+    const renameDialog = page.getByRole('dialog', { name: 'Rename entry', exact: true });
+    await expect(renameDialog.getByRole('textbox', { name: 'Path', exact: true })).toHaveValue(
+      'main.tex',
+    );
+    await renameDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    const controls = [
+      page.getByRole('button', { name: 'Compile active document', exact: true }),
+      page.getByRole('tab', { name: 'Preview', exact: true }),
+      page.getByRole('tab', { name: 'Problems', exact: true }),
+      page.getByRole('tab', { name: 'Output', exact: true }),
+      page.getByRole('button', { name: 'Collapse preview', exact: true }),
+    ];
+    const centers = await Promise.all(
+      controls.map(async (control) => {
+        const bounds = (await control.boundingBox())!;
+        return bounds.y + bounds.height / 2;
+      }),
+    );
+    expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
+    await expect(
+      page.getByRole('button', { name: 'Compile active document', exact: true }),
+    ).toBeEnabled();
     const editor = page.getByRole('textbox', { name: 'LaTeX source editor' });
     await expect(editor).toBeVisible();
     await editor.focus();
@@ -58,7 +103,13 @@ test('real project editing preserves external changes, compiles, and renders a P
     await saveCopy.getByRole('textbox', { name: 'Path' }).fill('preserved-copy.tex');
     await saveCopy.getByRole('button', { name: 'Save copy', exact: true }).click();
     await expect
-      .poll(() => readFile(join(projectRoot, 'preserved-copy.tex'), 'utf8'))
+      .poll(() =>
+        readFile(join(projectRoot, 'preserved-copy.tex'), 'utf8').catch((error: unknown) => {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+            return '';
+          throw error;
+        }),
+      )
       .toContain('Unsaved buffer must survive an external change.');
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
 
@@ -120,15 +171,43 @@ test('real project editing preserves external changes, compiles, and renders a P
       .toBe(true);
     await page.getByRole('button', { name: 'Next PDF page', exact: true }).click();
     await expect(page.locator('canvas[aria-label="PDF page 2"]')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.getByRole('textbox', { name: 'Search PDF', exact: true })).toBeHidden();
+    await page.locator('canvas[aria-label="PDF page 2"]').focus();
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+f' : 'Control+f');
     await page.getByRole('textbox', { name: 'Search PDF', exact: true }).fill('Introduction');
     await page.getByRole('button', { name: 'Find', exact: true }).click();
     await expect(page.locator('.pdf-search [role="status"]')).toContainText('Pages:');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('textbox', { name: 'Search PDF', exact: true })).toBeHidden();
+    await page.locator('.pdf-scroll canvas').focus();
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+h' : 'Control+h');
+    await expect(page.locator('.monaco-editor .find-widget.visible')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'Output', exact: true }).click();
+    await expect(page.getByLabel('Build output', { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: /Problems/ }).click();
+    await expect(page.getByRole('tabpanel', { name: /Problems/ })).toBeVisible();
+    await page.getByRole('tab', { name: 'Preview', exact: true }).click();
+    const editorWidth = (await page
+      .getByRole('region', { name: 'Editor', exact: true })
+      .boundingBox())!.width;
+    await page.getByRole('button', { name: 'Collapse preview', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Preview pane', exact: true })).toBeHidden();
+    expect(
+      (await page.getByRole('region', { name: 'Editor', exact: true }).boundingBox())!.width,
+    ).toBeGreaterThan(editorWidth);
+    await page.getByRole('button', { name: 'Expand preview', exact: true }).click();
+    await expect(page.locator('canvas[aria-label="PDF page 2"]')).toBeVisible();
     await page.screenshot({ path: join(testRoot, 'native-project-workflow.png') });
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings & TeX setup', exact: true });
     expect(
-      JSON.parse(await readFile(join(projectRoot, '.textra', 'project.json'), 'utf8')),
+      JSON.parse(await readFile(join(projectRoot, '.textra', 'settings.json'), 'utf8')),
     ).toMatchObject({ schemaVersion: 1, recipes: { 'main.tex': 'bibtex-pipeline' } });
     await settings
       .getByRole('combobox', { name: 'Default recipe for new documents', exact: true })
@@ -144,8 +223,8 @@ test('real project editing preserves external changes, compiles, and renders a P
       preferences: { theme: 'dark', defaultRecipe: 'xelatex' },
     });
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+    await settings.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
     await application.evaluate(({ dialog }, path) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
       dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
@@ -197,11 +276,37 @@ test('real project editing preserves external changes, compiles, and renders a P
       )
       .toBe('preserved-copy.tex');
     expect(
-      JSON.parse(await readFile(join(projectRoot, '.textra', 'project.json'), 'utf8')).recipes,
+      JSON.parse(await readFile(join(projectRoot, '.textra', 'settings.json'), 'utf8')).recipes,
     ).toEqual({
       'main.tex': 'bibtex-pipeline',
       'preserved-copy.tex': 'pdflatex',
     });
+    await page.getByRole('tab', { name: 'Output', exact: true }).click();
+    // Recipe persistence is optional: a settings failure must not prevent a build.
+    await application.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler('textra:config:set');
+      ipcMain.handle('textra:config:set', () => ({ ok: false, error: 'Settings are read-only.' }));
+    });
+    await page.getByRole('tab', { name: 'Edit main.tex', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
+    await page.getByRole('button', { name: 'pdfLaTeX', exact: true }).click();
+    await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.locator('.workspace-error')).toContainText(
+      'The recipe could not be remembered',
+    );
+    await expect
+      .poll(
+        async () => {
+          const result = await page.evaluate(() => window.textra.getBuildState());
+          return result.ok && !result.value.running ? result.value.rootFile : null;
+        },
+        { timeout: 60000 },
+      )
+      .toBe('main.tex');
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).not.toContain(
       'Discard only after',
     );

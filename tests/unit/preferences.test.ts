@@ -6,6 +6,7 @@ describe('preference boundary validation', () => {
   it('migrates existing settings and validates the default recipe', () => {
     const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
     delete legacy.defaultRecipe;
+    delete legacy.previewVisible;
     expect(validatePreferences(legacy)).toEqual(DEFAULT_PREFERENCES);
     expect(validatePreferences({ ...legacy, defaultRecipe: 'xelatex' }).defaultRecipe).toBe(
       'xelatex',
@@ -30,6 +31,7 @@ describe('preference boundary validation', () => {
     { ...DEFAULT_PREFERENCES, theme: 'system' },
     { ...DEFAULT_PREFERENCES, sidebarVisible: 'true' },
     { ...DEFAULT_PREFERENCES, outputVisible: 1 },
+    { ...DEFAULT_PREFERENCES, previewVisible: 'yes' },
     { ...DEFAULT_PREFERENCES, editorWidth: '55' },
     { ...DEFAULT_PREFERENCES, editorWidth: NaN },
     { ...DEFAULT_PREFERENCES, editorWidth: Infinity },

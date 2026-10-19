@@ -65,7 +65,9 @@ try {
   await expect(page.getByRole('main', { name: 'Document workspace' })).toBeVisible({
     timeout: 30000,
   });
-  await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   const sentinel = randomUUID();
   await page.evaluate((value) => {
     window.__textraHmrSmoke = value;

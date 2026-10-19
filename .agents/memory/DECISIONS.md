@@ -1,5 +1,22 @@
 # Decisions
 
+- 2026-10-18: Canonical project settings are .textra/settings.json with JSONC support
+  and preserved legacy project.json migration. Recipe/tool keys use LaTeX Workshop
+  syntax; main keeps a positive execution allowlist. Builder and JSON view share
+  the same schema and stale-snapshot save protection. Stable configured PDF paths
+  use a success version counter for reload, and default paths include RELATIVE_DOC
+  to avoid same-name document collisions. Separate aux is limited to verified
+  direct MiKTeX engines; custom output folders are never automatically deleted.
+
+- 2026-10-18: User prefers thin, inset rounded source tabs; fill only active tabs.
+  Keep inactive tabs transparent with close buttons revealed on hover/focus.
+
+- 2026-10-18: Remove application header/status footer; keep Settings in a left
+  activity rail. Preview owns Compile and Preview/Problems/Output tabs; compilation
+  never changes tab selection. Persist sideways preview collapse in previewVisible;
+  retain legacy outputVisible field only for preferences compatibility. PDF search
+  is scoped Ctrl/Cmd+F; replacement routes to source with Ctrl/Cmd+H.
+
 - 2026-10-18: Compile lives in the top bar and always targets the active .tex tab.
   Recipe dropdown replaces root/compiler controls. Remember each document's last
   used recipe in project.json; defaultRecipe is a portable app preference with

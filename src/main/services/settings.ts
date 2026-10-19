@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { BuildEngine, Preferences, ProjectConfig } from '../../shared/api';
+import { parse, type ParseError } from 'jsonc-parser';
+import { createDefaultRecipeSettings, validateRecipeSettings } from '../../shared/recipes';
 import { validatePreferences } from './preferences';
 import { ProjectError, validateRelativePath } from './projects';
 
@@ -30,6 +33,7 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   schemaVersion: 1,
   rootFile: null,
   engine: 'pdflatex',
+  ...createDefaultRecipeSettings(),
 };
 
 function invalid(): never {
@@ -86,23 +90,40 @@ export function importSettings(text: unknown): Preferences {
 }
 
 export function validateProjectConfig(value: unknown): ProjectConfig {
-  const hasRecipes = !!value && typeof value === 'object' && Object.hasOwn(value, 'recipes');
-  const candidate = exactRecord(value, [
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();
+  const candidate = value as Record<string, unknown>;
+  const allowed = new Set([
     'schemaVersion',
     'rootFile',
     'engine',
-    ...(hasRecipes ? ['recipes'] : []),
+    'recipes',
+    ...Object.keys(createDefaultRecipeSettings()),
   ]);
+  if (Object.keys(candidate).some((key) => !allowed.has(key))) return invalid();
+  const engine = candidate.engine === undefined ? 'pdflatex' : candidate.engine;
   if (
-    candidate.schemaVersion !== 1 ||
-    typeof candidate.engine !== 'string' ||
-    !engines.has(candidate.engine as BuildEngine)
+    (candidate.schemaVersion !== undefined && candidate.schemaVersion !== 1) ||
+    typeof engine !== 'string' ||
+    !engines.has(engine as BuildEngine)
   )
     return invalid();
-  const rootFile = candidate.rootFile === null ? null : validateRelativePath(candidate.rootFile);
+  const rootFile =
+    candidate.rootFile === undefined || candidate.rootFile === null
+      ? null
+      : validateRelativePath(candidate.rootFile);
   if (rootFile !== null && !/\.tex$/i.test(rootFile)) return invalid();
-  let recipes: Record<string, BuildEngine> | undefined;
-  if (hasRecipes) {
+  let recipeSettings: ReturnType<typeof validateRecipeSettings>;
+  try {
+    recipeSettings = validateRecipeSettings(candidate);
+  } catch (error) {
+    if (!(error instanceof Error)) return invalid();
+    throw new SettingsError(
+      'INVALID_SETTINGS',
+      `${error.message} Existing settings were preserved.`,
+    );
+  }
+  let recipes: Record<string, string> | undefined;
+  if (Object.hasOwn(candidate, 'recipes')) {
     if (
       !candidate.recipes ||
       typeof candidate.recipes !== 'object' ||
@@ -112,22 +133,24 @@ export function validateProjectConfig(value: unknown): ProjectConfig {
     const entries = Object.entries(candidate.recipes);
     if (entries.length > 10000) return invalid();
     recipes = Object.fromEntries(
-      entries.map(([path, engine]) => {
+      entries.map(([path, recipe]) => {
         validateRelativePath(path);
         if (
           !/\.tex$/i.test(path) ||
-          typeof engine !== 'string' ||
-          !engines.has(engine as BuildEngine)
+          typeof recipe !== 'string' ||
+          (!engines.has(recipe as BuildEngine) &&
+            !recipeSettings['latex-workshop.latex.recipes'].some((item) => item.name === recipe))
         )
           return invalid();
-        return [path, engine as BuildEngine];
+        return [path, recipe];
       }),
     );
   }
   return {
     schemaVersion: 1,
     rootFile,
-    engine: candidate.engine as BuildEngine,
+    engine: engine as BuildEngine,
+    ...recipeSettings,
     ...(recipes ? { recipes } : {}),
   };
 }
@@ -136,7 +159,7 @@ function missing(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT';
 }
 
-/** Owns only optional project overrides, separate from the portable preferences bundle. */
+/** Owns canonical project settings separately from portable application preferences. */
 export class ConfigService {
   private pending: Promise<unknown> = Promise.resolve();
 
@@ -155,7 +178,10 @@ export class ConfigService {
     return this.getRoot(projectId);
   }
 
-  private async paths(projectId: string): Promise<{
+  private async paths(
+    projectId: string,
+    basename = 'settings.json',
+  ): Promise<{
     directory: string;
     filename: string;
     directoryExists: boolean;
@@ -169,7 +195,7 @@ export class ConfigService {
         'The project folder changed or contains an unsafe link.',
       );
     const directory = join(root, '.textra');
-    const filename = join(directory, 'project.json');
+    const filename = join(directory, basename);
     let directoryExists = false;
     let fileExists = false;
     try {
@@ -200,9 +226,12 @@ export class ConfigService {
     return { directory, filename, directoryExists, fileExists };
   }
 
-  private async read(projectId: string): Promise<{ config: ProjectConfig; text: string | null }> {
-    const paths = await this.paths(projectId);
-    if (!paths.fileExists) return { config: { ...DEFAULT_PROJECT_CONFIG }, text: null };
+  private async read(
+    projectId: string,
+  ): Promise<{ config: ProjectConfig; text: string | null; filename: string | null }> {
+    let paths = await this.paths(projectId);
+    if (!paths.fileExists) paths = await this.paths(projectId, 'project.json');
+    if (!paths.fileExists) return { config: validateProjectConfig({}), text: null, filename: null };
     const file = await open(paths.filename, 'r');
     let text: string;
     try {
@@ -225,7 +254,13 @@ export class ConfigService {
       await file.close();
     }
     await this.paths(projectId);
-    return { config: validateProjectConfig(parseText(text)), text };
+    const errors: ParseError[] = [];
+    const value: unknown = parse(text, errors, {
+      allowTrailingComma: true,
+      disallowComments: false,
+    });
+    if (errors.length) return invalid();
+    return { config: validateProjectConfig(value), text, filename: paths.filename };
   }
 
   async getProjectConfig(projectId: string): Promise<ProjectConfig> {
@@ -233,46 +268,134 @@ export class ConfigService {
     return (await this.read(projectId)).config;
   }
 
-  setProjectConfig(value: { projectId: string; config: ProjectConfig }): Promise<ProjectConfig> {
+  ensureProjectConfig(projectId: string): Promise<ProjectConfig> {
     const write = this.pending
       .catch(() => undefined)
       .then(async () => {
-        const request = exactRecord(value, ['projectId', 'config']);
+        const before = await this.read(projectId);
+        if ((await this.paths(projectId)).fileExists) return (await this.read(projectId)).config;
+        return this.write(projectId, before.config, before);
+      });
+    this.pending = write;
+    return write;
+  }
+
+  setProjectConfig(value: {
+    projectId: string;
+    config: ProjectConfig;
+    expectedConfig?: ProjectConfig;
+  }): Promise<ProjectConfig> {
+    const write = this.pending
+      .catch(() => undefined)
+      .then(async () => {
+        const hasExpected =
+          !!value && typeof value === 'object' && Object.hasOwn(value, 'expectedConfig');
+        const request = exactRecord(value, [
+          'projectId',
+          'config',
+          ...(hasExpected ? ['expectedConfig'] : []),
+        ]);
         if (typeof request.projectId !== 'string')
           throw new ProjectError('INVALID_ARGUMENT', 'Invalid project identifier.');
         const projectId = request.projectId;
         const config = validateProjectConfig(request.config);
         const before = await this.read(projectId);
-        let paths = await this.paths(projectId);
-        if (!paths.directoryExists) {
-          await mkdir(paths.directory);
-          paths = await this.paths(projectId);
-        }
-        const temporary = join(paths.directory, `.project-${randomUUID()}.tmp`);
-        try {
-          const file = await open(temporary, 'wx', 0o600);
-          try {
-            await file.writeFile(`${JSON.stringify(config, null, 2)}\n`, 'utf8');
-            await file.sync();
-          } finally {
-            await file.close();
-          }
-          // Preparing the complete replacement must not overwrite an intervening edit.
-          if ((await this.read(projectId)).text !== before.text)
-            throw new ProjectError(
-              'CONFLICT',
-              'Project settings changed on disk. Reload before saving.',
-            );
-          await this.paths(projectId);
-          await rename(temporary, paths.filename);
-        } finally {
-          await unlink(temporary).catch((error: unknown) => {
-            if (!missing(error)) throw error;
-          });
-        }
-        return config;
+        if (
+          hasExpected &&
+          !sameConfig(validateProjectConfig(request.expectedConfig), before.config)
+        )
+          conflict();
+        return this.write(projectId, config, before);
       });
     this.pending = write;
     return write;
   }
+
+  private async write(
+    projectId: string,
+    config: ProjectConfig,
+    before: { text: string | null; filename: string | null },
+  ): Promise<ProjectConfig> {
+    const serialized = `${JSON.stringify(config, null, 2)}\n`;
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_SETTINGS_BYTES) return invalid();
+    let paths = await this.paths(projectId);
+    const existed = paths.fileExists;
+    if (!paths.directoryExists) {
+      try {
+        await mkdir(paths.directory);
+      } catch (error) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EEXIST')
+          throw error;
+      }
+      paths = await this.paths(projectId);
+    }
+    const temporary = join(paths.directory, `.settings-${randomUUID()}.tmp`);
+    try {
+      const file = await open(temporary, 'wx', 0o600);
+      try {
+        await file.writeFile(serialized, 'utf8');
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await retryTransient(async () => {
+        // Revalidate every retry: a lock must never turn into permission to overwrite new edits.
+        const current = await this.read(projectId);
+        if (current.text !== before.text || current.filename !== before.filename) conflict();
+        await this.paths(projectId);
+        if (existed) await rename(temporary, paths.filename);
+        else {
+          try {
+            await link(temporary, paths.filename);
+          } catch (error) {
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')
+              conflict();
+            throw error;
+          }
+        }
+      });
+    } finally {
+      await retryTransient(() => unlink(temporary)).catch((error: unknown) => {
+        if (!missing(error)) throw error;
+      });
+    }
+    return config;
+  }
+}
+
+async function retryTransient<T>(action: () => Promise<T>): Promise<T> {
+  const delays = [50, 100, 200, 400, 800];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await action();
+    } catch (error) {
+      if (
+        attempt >= delays.length ||
+        !error ||
+        typeof error !== 'object' ||
+        !('code' in error) ||
+        !['EPERM', 'EBUSY', 'EACCES'].includes(String(error.code))
+      )
+        throw error;
+      await delay(delays[attempt]);
+    }
+  }
+}
+
+function conflict(): never {
+  throw new ProjectError('CONFLICT', 'Project settings changed on disk. Reload before saving.');
+}
+
+function sameConfig(left: ProjectConfig, right: ProjectConfig): boolean {
+  const normalize = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(normalize)
+      : value && typeof value === 'object'
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, child]) => [key, normalize(child)]),
+          )
+        : value;
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }

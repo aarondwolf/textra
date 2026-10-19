@@ -19,6 +19,7 @@ import { ProjectError, ProjectService, validateRelativePath } from './services/p
 import { findCodeExecutable, openInExternalEditor } from './services/external-editor';
 import { BuildService, detectTools } from './services/latex';
 import { ConfigService, exportSettings, importSettings } from './services/settings';
+import { validateRecipeSettings } from '../shared/recipes';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -230,7 +231,11 @@ void app.whenReady().then(() => {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     requireIdleProject();
-    return projects.openRoot(result.filePaths[0]);
+    const project = await projects.openRoot(result.filePaths[0]);
+    await config
+      .ensureProjectConfig(project.id)
+      .catch((error: unknown) => log('warn', 'project-settings-unavailable', error));
+    return project;
   });
   handleRequest<'refreshProject'>('textra:project:refresh', (id) => projects.refreshProject(id));
   handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
@@ -281,9 +286,13 @@ void app.whenReady().then(() => {
     openInExternalEditor(await projects.resolvePath(request, true)),
   );
   handle('textra:recent:get', 0, () => projects.getRecentProjects());
-  handleRequest<'openRecentProject'>('textra:recent:open', (id) => {
+  handleRequest<'openRecentProject'>('textra:recent:open', async (id) => {
     requireIdleProject();
-    return projects.openRecentProject(id);
+    const project = await projects.openRecentProject(id);
+    await config
+      .ensureProjectConfig(project.id)
+      .catch((error: unknown) => log('warn', 'project-settings-unavailable', error));
+    return project;
   });
   handleRequest<'setProjectPinned'>('textra:recent:pin', (request) =>
     projects.setProjectPinned(request),
@@ -297,11 +306,14 @@ void app.whenReady().then(() => {
     ...(await detectTools()),
     { name: 'vscode', path: await findCodeExecutable(), version: null },
   ]);
-  handleRequest<'compile'>('textra:build:compile', (request) => {
+  handleRequest<'compile'>('textra:build:compile', async (request) => {
     if (healthBuild)
       throw new ProjectError('BUILD_RUNNING', 'Wait for the TeX setup test to finish.');
     if (dirty) throw new ProjectError('DIRTY_FILES', 'Save your edits before compiling.');
-    return builds.compile(request);
+    const settings = request?.recipe
+      ? validateRecipeSettings(await config.getProjectConfig(request.projectId))
+      : undefined;
+    return builds.compile(request, settings);
   });
   handle('textra:build:cancel', 0, async () => {
     await Promise.all([builds.cancel(), healthBuild?.cancel()]);

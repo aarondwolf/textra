@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { access, lstat, mkdir, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { basename, delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   BuildRequest,
   BuildState,
@@ -14,6 +14,8 @@ import type {
   ToolInfo,
 } from '../../shared/api';
 import { parseDiagnostics } from './diagnostics';
+import type { RecipeSettings } from '../../shared/recipes';
+import { planRecipe, recipeArguments, recipeDirectory, type RecipePlan } from './recipe-plan';
 
 export class BuildError extends Error {
   constructor(message: string) {
@@ -42,7 +44,7 @@ export async function findExecutable(name: string): Promise<string | null> {
   return null;
 }
 
-function probe(executable: string): Promise<string | null> {
+function probe(executable: string, timeoutMs = 4000): Promise<string | null> {
   return new Promise((done) => {
     let output = '';
     const child = spawn(executable, ['--version'], {
@@ -53,7 +55,7 @@ function probe(executable: string): Promise<string | null> {
     const timer = setTimeout(() => {
       child.kill();
       done(null);
-    }, 4000);
+    }, timeoutMs);
     child.stdout?.on('data', (data: Buffer) => {
       output = (output + data.toString()).slice(0, 4096);
     });
@@ -151,7 +153,11 @@ export class BuildService {
     path: string;
     absolute: string;
     bytes: Uint8Array;
+    auxiliary?: string;
+    version: number;
+    syncValid?: boolean;
   } | null = null;
+  private pdfVersion = 0;
   private created: string[] = [];
   private stopping: Promise<void> | null = null;
   constructor(
@@ -240,7 +246,7 @@ export class BuildService {
     });
   }
 
-  async compile(request: BuildRequest): Promise<BuildState> {
+  async compile(request: BuildRequest, settings?: RecipeSettings): Promise<BuildState> {
     if (this.state.running) throw new BuildError('A build is already running. Cancel it first.');
     if (
       !request ||
@@ -259,6 +265,8 @@ export class BuildService {
       log: '',
       diagnostics: [],
       pdfPath: this.successful?.projectId === request.projectId ? this.successful.path : null,
+      pdfVersion:
+        this.successful?.projectId === request.projectId ? this.successful.version : undefined,
       projectId: request.projectId,
       rootFile,
     };
@@ -268,122 +276,133 @@ export class BuildService {
     }, this.timeoutMs);
     try {
       await checkedPath(root, rootFile);
-      const compilerName =
-        request.engine === 'bibtex-pipeline' || request.engine === 'latexmk'
-          ? 'pdflatex'
-          : request.engine;
-      const compiler = await findExecutable(compilerName);
-      if (!compiler)
-        throw new BuildError(
-          `${compilerName} was not found on PATH. Install a TeX distribution, then restart TeXtra.`,
-        );
-      const version = await probe(compiler);
-      if (this.cancelled) throw new BuildError('Build cancelled.');
-      const miktex = /MiKTeX/i.test(version ?? '');
-      const safeFlags = miktex
-        ? ['-disable-installer', '-disable-write18', '-dont-parse-first-line']
-        : ['-no-shell-escape', '-no-parse-first-line'];
-      const targetKey = createHash('sha256').update(rootFile).digest('hex').slice(0, 12);
-      const outputRelative = `build/textra/${targetKey}/${randomUUID()}`;
-      const output = await checkedPath(root, outputRelative, true);
-      this.created.push(output);
-      // TeX \include writes aux files under matching relative subdirectories.
-      let mirrored = 0;
-      const mirror = async (source: string, destination: string, depth = 0): Promise<void> => {
-        if (this.cancelled) throw new BuildError('Build cancelled.');
-        if (depth > 20 || mirrored > 5000)
-          throw new BuildError('Project has too many folders to prepare a bounded build.');
-        for (const entry of await readdir(source, { withFileTypes: true })) {
-          if (
-            entry.isDirectory() &&
-            !entry.isSymbolicLink() &&
-            !['build', 'node_modules', '.git', '.textra', '.agents'].includes(entry.name) &&
-            !entry.name.startsWith('.')
-          ) {
-            await mkdir(join(destination, entry.name), { recursive: true });
-            mirrored++;
-            await mirror(join(source, entry.name), join(destination, entry.name), depth + 1);
-          }
-        }
-      };
-      await mirror(root, output);
-      const flags = [
-        ...safeFlags,
-        '-interaction=nonstopmode',
-        '-halt-on-error',
-        '-file-line-error',
-        '-synctex=1',
-        `-output-directory=${output}`,
-        `./${rootFile}`,
-      ];
-      let code: number;
-      if (request.engine === 'latexmk') {
-        const executable = await findExecutable('latexmk');
-        if (!executable) throw new BuildError('latexmk was not found on PATH.');
-        if (/["'`$&|<>^%!()\r\n]/.test(root + rootFile + output))
-          throw new BuildError(
-            'For paths with shell metacharacters use a direct TeX engine instead of latexmk.',
-          );
-        code = await this.run(
-          executable,
-          [
-            '-norc',
-            '-pdf',
-            '-view=none',
-            '-interaction=nonstopmode',
-            '-halt-on-error',
-            '-file-line-error',
-            '-synctex=1',
-            ...safeFlags.map((flag) => `-latexoption=${flag}`),
-            `-outdir=${output}`,
-            `./${rootFile}`,
-          ],
-          root,
-        );
+      if (request.recipe !== undefined) {
+        if (typeof request.recipe !== 'string' || !settings)
+          throw new BuildError('Configured recipe settings are required.');
+        await this.compileRecipe(request, root, settings);
       } else {
-        code = await this.run(compiler, flags, root);
-        if (code === 0 && request.engine === 'bibtex-pipeline' && !this.cancelled) {
-          const bibtex = await findExecutable('bibtex');
-          if (!bibtex) throw new BuildError('BibTeX was not found on PATH.');
-          code = await this.run(
-            bibtex,
-            [...(miktex ? ['-disable-installer'] : []), basename(rootFile).replace(/\.tex$/i, '')],
-            output,
-            {
-              BIBINPUTS: `${root}${delimiter}${process.env.BIBINPUTS ?? ''}`,
-              BSTINPUTS: `${root}${delimiter}${process.env.BSTINPUTS ?? ''}`,
-            },
+        const compilerName =
+          request.engine === 'bibtex-pipeline' || request.engine === 'latexmk'
+            ? 'pdflatex'
+            : request.engine;
+        const compiler = await findExecutable(compilerName);
+        if (!compiler)
+          throw new BuildError(
+            `${compilerName} was not found on PATH. Install a TeX distribution, then restart TeXtra.`,
           );
-        }
-        if (code === 0 && !this.cancelled) code = await this.run(compiler, flags, root);
-        if (code === 0 && request.engine === 'bibtex-pipeline' && !this.cancelled)
-          code = await this.run(compiler, flags, root);
-      }
-      this.state.diagnostics = parseDiagnostics(this.state.log, rootFile, root);
-      if (this.cancelled) this.state.outcome = this.timedOut ? 'failed' : 'cancelled';
-      else if (code !== 0) this.state.outcome = 'failed';
-      else {
-        const pdfPath = `${outputRelative}/${basename(rootFile).replace(/\.tex$/i, '')}.pdf`;
-        const absolute = await checkedPath(root, pdfPath);
-        if ((await stat(absolute)).size > MAX_PDF)
-          throw new BuildError('PDF exceeds the 64 MiB preview limit.');
-        const bytes = await readFile(absolute);
-        if (bytes.subarray(0, 5).toString() !== '%PDF-')
-          throw new BuildError('Compiler did not produce a valid PDF header.');
-        this.successful = {
-          projectId: request.projectId,
-          rootFile,
-          path: pdfPath,
-          absolute,
-          bytes: new Uint8Array(bytes),
+        const version = await probe(compiler);
+        if (this.cancelled) throw new BuildError('Build cancelled.');
+        const miktex = /MiKTeX/i.test(version ?? '');
+        const safeFlags = miktex
+          ? ['-disable-installer', '-disable-write18', '-dont-parse-first-line']
+          : ['-no-shell-escape', '-no-parse-first-line'];
+        const targetKey = createHash('sha256').update(rootFile).digest('hex').slice(0, 12);
+        const outputRelative = `build/textra/${targetKey}/${randomUUID()}`;
+        const output = await checkedPath(root, outputRelative, true);
+        this.created.push(output);
+        // TeX \include writes aux files under matching relative subdirectories.
+        let mirrored = 0;
+        const mirror = async (source: string, destination: string, depth = 0): Promise<void> => {
+          if (this.cancelled) throw new BuildError('Build cancelled.');
+          if (depth > 20 || mirrored > 5000)
+            throw new BuildError('Project has too many folders to prepare a bounded build.');
+          for (const entry of await readdir(source, { withFileTypes: true })) {
+            if (
+              entry.isDirectory() &&
+              !entry.isSymbolicLink() &&
+              !['build', 'node_modules', '.git', '.textra', '.agents'].includes(entry.name) &&
+              !entry.name.startsWith('.')
+            ) {
+              await mkdir(join(destination, entry.name), { recursive: true });
+              mirrored++;
+              await mirror(join(source, entry.name), join(destination, entry.name), depth + 1);
+            }
+          }
         };
-        this.state.pdfPath = pdfPath;
-        this.state.outcome = 'success';
-        // Only remove directories created by this service instance, never arbitrary user build folders.
-        while (this.created.length > 5) {
-          const old = this.created.shift();
-          if (old && old !== output && old.startsWith(join(root, 'build', 'textra') + sep))
-            await rm(old, { recursive: true, force: true }).catch(() => undefined);
+        await mirror(root, output);
+        const flags = [
+          ...safeFlags,
+          '-interaction=nonstopmode',
+          '-halt-on-error',
+          '-file-line-error',
+          '-synctex=1',
+          `-output-directory=${output}`,
+          `./${rootFile}`,
+        ];
+        let code: number;
+        if (request.engine === 'latexmk') {
+          const executable = await findExecutable('latexmk');
+          if (!executable) throw new BuildError('latexmk was not found on PATH.');
+          if (/["'`$&|<>^%!()\r\n]/.test(root + rootFile + output))
+            throw new BuildError(
+              'For paths with shell metacharacters use a direct TeX engine instead of latexmk.',
+            );
+          code = await this.run(
+            executable,
+            [
+              '-norc',
+              '-pdf',
+              '-view=none',
+              '-interaction=nonstopmode',
+              '-halt-on-error',
+              '-file-line-error',
+              '-synctex=1',
+              ...safeFlags.map((flag) => `-latexoption=${flag}`),
+              `-outdir=${output}`,
+              `./${rootFile}`,
+            ],
+            root,
+          );
+        } else {
+          code = await this.run(compiler, flags, root);
+          if (code === 0 && request.engine === 'bibtex-pipeline' && !this.cancelled) {
+            const bibtex = await findExecutable('bibtex');
+            if (!bibtex) throw new BuildError('BibTeX was not found on PATH.');
+            code = await this.run(
+              bibtex,
+              [
+                ...(miktex ? ['-disable-installer'] : []),
+                basename(rootFile).replace(/\.tex$/i, ''),
+              ],
+              output,
+              {
+                BIBINPUTS: `${root}${delimiter}${process.env.BIBINPUTS ?? ''}`,
+                BSTINPUTS: `${root}${delimiter}${process.env.BSTINPUTS ?? ''}`,
+              },
+            );
+          }
+          if (code === 0 && !this.cancelled) code = await this.run(compiler, flags, root);
+          if (code === 0 && request.engine === 'bibtex-pipeline' && !this.cancelled)
+            code = await this.run(compiler, flags, root);
+        }
+        this.state.diagnostics = parseDiagnostics(this.state.log, rootFile, root);
+        if (this.cancelled) this.state.outcome = this.timedOut ? 'failed' : 'cancelled';
+        else if (code !== 0) this.state.outcome = 'failed';
+        else {
+          const pdfPath = `${outputRelative}/${basename(rootFile).replace(/\.tex$/i, '')}.pdf`;
+          const absolute = await checkedPath(root, pdfPath);
+          if ((await stat(absolute)).size > MAX_PDF)
+            throw new BuildError('PDF exceeds the 64 MiB preview limit.');
+          const bytes = await readFile(absolute);
+          if (bytes.subarray(0, 5).toString() !== '%PDF-')
+            throw new BuildError('Compiler did not produce a valid PDF header.');
+          this.successful = {
+            projectId: request.projectId,
+            rootFile,
+            path: pdfPath,
+            absolute,
+            bytes: new Uint8Array(bytes),
+            version: ++this.pdfVersion,
+          };
+          this.state.pdfPath = pdfPath;
+          this.state.pdfVersion = this.successful.version;
+          this.state.outcome = 'success';
+          // Only remove directories created by this service instance, never arbitrary user build folders.
+          while (this.created.length > 5) {
+            const old = this.created.shift();
+            if (old && old !== output && old.startsWith(join(root, 'build', 'textra') + sep))
+              await rm(old, { recursive: true, force: true }).catch(() => undefined);
+          }
         }
       }
     } catch (error) {
@@ -403,6 +422,167 @@ export class BuildService {
       this.state.running = false;
     }
     return this.getState();
+  }
+
+  private async compileRecipe(
+    request: BuildRequest,
+    root: string,
+    settings: RecipeSettings,
+  ): Promise<void> {
+    const plan = await planRecipe(root, request.rootFile, request.recipe!, settings);
+    // Validate the entire sequence before starting even the first process.
+    const prepared = [];
+    const capabilities = new Map<string, { executable: string; miktex: boolean }>();
+    for (const step of plan.steps) {
+      let capability = capabilities.get(step.command);
+      if (!capability) {
+        const executable = await findExecutable(step.command);
+        if (!executable) throw new BuildError(`${step.command} was not found on PATH.`);
+        const probeExecutable =
+          step.command === 'latexmk' ? await findExecutable('pdflatex') : executable;
+        if (!probeExecutable) throw new BuildError('pdflatex was not found on PATH.');
+        const version = await probe(probeExecutable, 10000);
+        if (!version)
+          throw new BuildError(
+            `Could not verify ${step.command}. Check the TeX installation and try again.`,
+          );
+        capability = { executable, miktex: /MiKTeX/i.test(version) };
+        capabilities.set(step.command, capability);
+      }
+      prepared.push({
+        ...step,
+        executable: capability.executable,
+        args: recipeArguments(step, plan, capability.miktex),
+      });
+      if (this.cancelled) throw new BuildError('Build cancelled.');
+    }
+    const previous = await this.pdfFingerprint(plan.pdf);
+    await this.prepareRecipeDirectories(plan);
+    // Stable output paths can acquire partial sidecars in a failed build.
+    // Retain the PDF bytes without mapping them through newer SyncTeX data.
+    if (this.successful?.absolute === plan.pdf) this.successful.syncValid = false;
+    let code = -1;
+    for (const step of prepared) {
+      if (this.cancelled) break;
+      await recipeDirectory(root, step.cwd);
+      await this.checkRecipeArtifacts(plan);
+      const bibliography = ['bibtex', 'biber'].includes(step.command);
+      code = await this.run(step.executable, step.args, step.cwd, {
+        ...(bibliography
+          ? {
+              BIBINPUTS: `${dirname(plan.document)}${delimiter}${root}${delimiter}${process.env.BIBINPUTS ?? ''}`,
+              BSTINPUTS: `${dirname(plan.document)}${delimiter}${root}${delimiter}${process.env.BSTINPUTS ?? ''}`,
+            }
+          : {}),
+        ...step.env,
+      });
+      if (code !== 0) break;
+    }
+    this.state.diagnostics = parseDiagnostics(this.state.log, request.rootFile, root);
+    if (this.cancelled) {
+      this.state.outcome = this.timedOut ? 'failed' : 'cancelled';
+      return;
+    }
+    if (code !== 0) {
+      this.state.outcome = 'failed';
+      return;
+    }
+    const current = await this.pdfFingerprint(plan.pdf);
+    if (!current || current === previous)
+      throw new BuildError(
+        'The recipe did not generate a fresh PDF. Check the output directory and compiler steps.',
+      );
+    const pdfPath = relative(root, plan.pdf).split(sep).join('/');
+    const absolute = await checkedPath(root, pdfPath);
+    if ((await stat(absolute)).size > MAX_PDF)
+      throw new BuildError('PDF exceeds the 64 MiB preview limit.');
+    const bytes = await readFile(absolute);
+    if (bytes.subarray(0, 5).toString() !== '%PDF-')
+      throw new BuildError('Compiler did not produce a valid PDF header.');
+    this.successful = {
+      projectId: request.projectId,
+      rootFile: request.rootFile,
+      path: pdfPath,
+      absolute,
+      auxiliary: plan.auxiliary,
+      bytes: new Uint8Array(bytes),
+      version: ++this.pdfVersion,
+    };
+    this.state.pdfPath = pdfPath;
+    this.state.pdfVersion = this.successful.version;
+    this.state.outcome = 'success';
+    // Configured paths belong to the project; they are never added to retention/pruning.
+  }
+
+  private async pdfFingerprint(path: string): Promise<string | null> {
+    try {
+      const info = await lstat(path, { bigint: true });
+      if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1n)
+        throw new BuildError('Generated artifacts cannot be links.');
+      // ctime also changes when a sync client updates metadata on an untouched PDF.
+      return `${info.ino}:${info.size}:${info.mtimeNs}`;
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
+  private async checkRecipeArtifacts(plan: RecipePlan): Promise<void> {
+    await recipeDirectory(plan.root, plan.output);
+    await recipeDirectory(plan.root, plan.auxiliary);
+    for (const directory of new Set([plan.output, plan.auxiliary])) {
+      for (const extension of [
+        'pdf',
+        'aux',
+        'log',
+        'synctex',
+        'synctex.gz',
+        'toc',
+        'out',
+        'bbl',
+        'blg',
+        'bcf',
+        'run.xml',
+        'fls',
+        'fdb_latexmk',
+        'xdv',
+        'dvi',
+      ])
+        await this.pdfFingerprint(join(directory, `${plan.jobName}.${extension}`));
+    }
+  }
+
+  private async prepareRecipeDirectories(plan: RecipePlan): Promise<void> {
+    // \include writes auxiliary files in matching source subdirectories.
+    let mirrored = 0;
+    const mirror = async (source: string, destination: string, depth = 0): Promise<void> => {
+      if (this.cancelled) throw new BuildError('Build cancelled.');
+      if (depth > 20 || mirrored > 5000)
+        throw new BuildError('Project has too many folders to prepare a bounded build.');
+      for (const entry of await readdir(source, { withFileTypes: true })) {
+        const directory = join(source, entry.name);
+        if (
+          !entry.isDirectory() ||
+          entry.isSymbolicLink() ||
+          entry.name.startsWith('.') ||
+          ['build', 'node_modules'].includes(entry.name)
+        )
+          continue;
+        if (
+          [plan.output, plan.auxiliary].some(
+            (output) => output === directory || output.startsWith(directory + sep),
+          )
+        )
+          continue;
+        const target = join(destination, entry.name);
+        await recipeDirectory(plan.root, target, true);
+        mirrored++;
+        if (directory !== target) await mirror(directory, target, depth + 1);
+      }
+    };
+    if (dirname(plan.document) !== plan.auxiliary)
+      await mirror(dirname(plan.document), plan.auxiliary);
+    await this.checkRecipeArtifacts(plan);
   }
 
   async readPdf(request: FileRef): Promise<Uint8Array> {
@@ -450,7 +630,8 @@ export class BuildService {
     if (
       !this.successful ||
       this.successful.projectId !== projectId ||
-      this.successful.rootFile !== rootFile
+      this.successful.rootFile !== rootFile ||
+      this.successful.syncValid === false
     )
       throw new BuildError('Compile this root document successfully before using SyncTeX.');
     return this.successful;
@@ -461,7 +642,14 @@ export class BuildService {
     const last = this.successfulFor(request.projectId, request.rootFile);
     const source = await checkedPath(this.getRoot(request.projectId), request.path);
     const output = await this.sync(
-      ['view', '-i', `${request.line}:1:${source}`, '-o', last.absolute],
+      [
+        'view',
+        '-i',
+        `${request.line}:1:${source}`,
+        '-o',
+        last.absolute,
+        ...(last.auxiliary ? ['-d', last.auxiliary] : []),
+      ],
       request.projectId,
     );
     const number = (key: string) => Number(new RegExp(`^${key}:([\\d.-]+)`, 'm').exec(output)?.[1]);
@@ -489,7 +677,12 @@ export class BuildService {
       throw new BuildError('Invalid PDF coordinates.');
     const last = this.successfulFor(request.projectId, request.rootFile);
     const output = await this.sync(
-      ['edit', '-o', `${request.page}:${request.x}:${request.y}:${last.absolute}`],
+      [
+        'edit',
+        '-o',
+        `${request.page}:${request.x}:${request.y}:${last.absolute}`,
+        ...(last.auxiliary ? ['-d', last.auxiliary] : []),
+      ],
       request.projectId,
     );
     const input = /^Input:(.+)$/m.exec(output)?.[1]?.trim();

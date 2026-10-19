@@ -1,20 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import {
-  ArrowRight,
-  Columns2,
-  Moon,
-  PanelBottom,
-  PanelLeft,
-  Search,
-  Settings,
-  Sun,
-} from 'lucide-react';
-import { DEFAULT_PREFERENCES, PRODUCT_NAME } from '../../shared/api';
+import { ArrowRight, Columns2, PanelLeft, Search } from 'lucide-react';
+import { DEFAULT_PREFERENCES } from '../../shared/api';
 import { hydratePreferences, useUI } from './state/ui';
-import { useWorkspace, dirty } from './state/workspace';
 import { Workspace } from './Workspace';
 import SetupDialog from './features/onboarding/SetupDialog';
+import RecipeDialog from './features/onboarding/RecipeDialog';
 function CommandPalette() {
   const { preferences, updatePreferences, paletteOpen, setPaletteOpen } = useUI();
   const [query, setQuery] = useState('');
@@ -28,16 +19,10 @@ function CommandPalette() {
       run: () => updatePreferences({ sidebarVisible: !preferences.sidebarVisible }),
     },
     {
-      label: 'Toggle bottom panel',
-      shortcut: 'Ctrl J',
-      icon: PanelBottom,
-      run: () => updatePreferences({ outputVisible: !preferences.outputVisible }),
-    },
-    {
-      label: `Switch to ${preferences.theme === 'dark' ? 'light' : 'dark'} theme`,
+      label: 'Toggle preview pane',
       shortcut: '',
-      icon: preferences.theme === 'dark' ? Sun : Moon,
-      run: () => updatePreferences({ theme: preferences.theme === 'dark' ? 'light' : 'dark' }),
+      icon: Columns2,
+      run: () => updatePreferences({ previewVisible: !preferences.previewVisible }),
     },
     {
       label: 'Reset layout',
@@ -46,7 +31,7 @@ function CommandPalette() {
       run: () =>
         updatePreferences({
           sidebarVisible: DEFAULT_PREFERENCES.sidebarVisible,
-          outputVisible: DEFAULT_PREFERENCES.outputVisible,
+          previewVisible: DEFAULT_PREFERENCES.previewVisible,
           editorWidth: DEFAULT_PREFERENCES.editorWidth,
         }),
     },
@@ -144,9 +129,8 @@ function CommandPalette() {
 
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [compileHost, setCompileHost] = useState<HTMLDivElement | null>(null);
   const { preferences, hydrated, error, updatePreferences, setPaletteOpen } = useUI();
-  const { project, documents, source } = useWorkspace();
+  const { recipeEditorOpen, setRecipeEditorOpen } = useUI();
   useEffect(() => {
     void hydratePreferences();
   }, []);
@@ -167,7 +151,8 @@ export function App() {
       }
       if (key === 'j') {
         event.preventDefault();
-        updatePreferences({ outputVisible: !useUI.getState().preferences.outputVisible });
+        updatePreferences({ previewVisible: true });
+        useUI.getState().setPanel(useUI.getState().panel === 'output' ? 'preview' : 'output');
       }
     };
     window.addEventListener('keydown', handleKey);
@@ -175,94 +160,15 @@ export function App() {
   }, [hydrated, setPaletteOpen, updatePreferences]);
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-symbol" aria-hidden="true">
-            T<span>ε</span>
-          </span>
-          <span>{PRODUCT_NAME}</span>
-        </div>
-        <span className="topbar-divider" />
-        <span className="workspace-name">{project?.name ?? 'Personal workspace'}</span>
-        <button
-          className="palette-trigger"
-          aria-label="Command palette"
-          onClick={() => setPaletteOpen(true)}
-          disabled={!hydrated}
-        >
-          <Search size={15} />
-          <span>Search commands</span>
-          <kbd>Ctrl K</kbd>
-        </button>
-        <div className="topbar-actions">
-          <div ref={setCompileHost} />
-          <button
-            className="icon-button"
-            aria-label="Toggle sidebar"
-            aria-pressed={preferences.sidebarVisible}
-            title="Toggle sidebar (Ctrl+B)"
-            disabled={!hydrated}
-            onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
-          >
-            <PanelLeft size={18} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="Toggle bottom panel"
-            aria-pressed={preferences.outputVisible}
-            title="Toggle bottom panel (Ctrl+J)"
-            disabled={!hydrated}
-            onClick={() => updatePreferences({ outputVisible: !preferences.outputVisible })}
-          >
-            <PanelBottom size={18} />
-          </button>
-          <span className="action-divider" />
-          <button
-            className="icon-button"
-            aria-label="Settings and TeX setup"
-            title="Settings and TeX setup"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Settings size={18} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label={`Switch to ${preferences.theme === 'dark' ? 'light' : 'dark'} theme`}
-            title="Change theme"
-            disabled={!hydrated}
-            onClick={() =>
-              updatePreferences({ theme: preferences.theme === 'dark' ? 'light' : 'dark' })
-            }
-          >
-            {preferences.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-        </div>
-      </header>
       {error && (
         <div className="error-banner" role="alert">
           {error}
         </div>
       )}
-      <Workspace compileHost={compileHost} />
-      <footer className="statusbar">
-        <div>
-          <span className="local-dot" />
-          <span>{hydrated ? 'Local workspace' : 'Loading preferences…'}</span>
-          <span className="status-divider">/</span>
-          <span>{project?.name ?? 'No project open'}</span>
-          {documents.some(dirty) && <span>• Unsaved changes</span>}
-        </div>
-        <div>
-          {source && <span>Ln {source.line}</span>}
-          <span>LaTeX</span>
-          <span className="status-divider">·</span>
-          <span>UTF-8</span>
-          <span className="status-divider">·</span>
-          <span>{PRODUCT_NAME}</span>
-        </div>
-      </footer>
+      <Workspace onOpenSettings={() => setSettingsOpen(true)} />
       <CommandPalette />
       <SetupDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <RecipeDialog open={recipeEditorOpen} onOpenChange={setRecipeEditorOpen} />
     </div>
   );
 }

@@ -63,7 +63,10 @@ test('native shell keeps security boundaries and persists representative UI acti
       'testDistribution',
     ]);
 
-    await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
+    await expect(page.locator('.topbar, .statusbar, .bottom-panel')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.getByRole('button', { name: 'Toggle sidebar', exact: true }).click();
     await expect(page.getByRole('complementary', { name: 'Project sidebar' })).toBeHidden();
@@ -71,19 +74,17 @@ test('native shell keeps security boundaries and persists representative UI acti
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
     const palette = page.getByRole('dialog', { name: 'Command palette' });
     await expect(palette).toBeVisible();
-    await palette.getByRole('textbox', { name: 'Search commands' }).fill('bottom');
-    await palette.getByRole('button', { name: 'Toggle bottom panel', exact: true }).click();
+    await palette.getByRole('textbox', { name: 'Search commands' }).fill('preview');
+    await palette.getByRole('button', { name: 'Toggle preview pane', exact: true }).click();
     await expect(palette).toBeHidden();
-    await expect(
-      page.getByRole('button', { name: 'Toggle bottom panel', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('button', { name: 'Expand preview', exact: true })).toBeVisible();
 
     await expect
       .poll(async () => {
         const result = await page.evaluate(() => window.textra.getPreferences());
         return result.ok ? result.value : undefined;
       })
-      .toMatchObject({ theme: 'light', sidebarVisible: false, outputVisible: false });
+      .toMatchObject({ theme: 'light', sidebarVisible: false, previewVisible: false });
     await application.close();
     application = await launch();
     const restored = await application.firstWindow();
@@ -92,8 +93,13 @@ test('native shell keeps security boundaries and persists representative UI acti
       restored.getByRole('button', { name: 'Toggle sidebar', exact: true }),
     ).toHaveAttribute('aria-pressed', 'false');
     await expect(
-      restored.getByRole('button', { name: 'Toggle bottom panel', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'false');
+      restored.getByRole('button', { name: 'Expand preview', exact: true }),
+    ).toBeVisible();
+    await restored.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+    await expect(restored.getByRole('combobox', { name: 'Theme', exact: true })).toHaveValue(
+      'light',
+    );
+    await restored.getByRole('button', { name: 'Close settings', exact: true }).click();
   } finally {
     await application?.close();
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

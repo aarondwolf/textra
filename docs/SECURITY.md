@@ -17,6 +17,13 @@ No AI/network source transmission is implemented initially. Future providers nee
 explicit context disclosure, secure key storage, cancellation, and spending controls.
 Logs must redact secret-like values. Never include environment dumps or keys.
 
+Project recipe JSON does not grant arbitrary process execution. Commands and flags
+are allowlisted, all steps are checked before execution, output/auxiliary paths stay
+inside the project, and environment overrides are limited to TeX search paths.
+LaTeX Workshop script tools and shell-command overrides are unsupported. External
+settings edits are read on compile; stale popup writes conflict instead of replacing
+newer settings. Invalid or future settings are preserved. See RECIPES.md.
+
 Review focus: IPC, symlinks, traversal, concurrent edits, process lifecycle, PDF
 input bounds, safe URLs, and restore paths. Report vulnerabilities privately to
 the owner; a public security contact remains an owner decision.

@@ -17,8 +17,10 @@ Common gate: `npm run format:check && npm run typecheck && npm run lint && npm t
 Use PowerShell commands individually if the shell does not support `&&`.
 Record blockers and exact next actions in memory; continue independent tasks when external software is unavailable.
 
-Full Phase 1 remains open: editable allowlisted ordered pipelines, installer and
-distribution-manager actions, engine/path preferences, TEX-root hints, file context
-menus/collapsing/reveal-active, persisted font/wrap, PDF-beside-source configuration,
-and broader SyncTeX/PDF edge fixtures. Core CRUD, recent/pinned, settings transfer,
-project root/compiler overrides and setup detection/test compile work now.
+Full Phase 1 remains open: installer/distribution-manager actions, custom executable
+path preferences, collapsible explorer folders/reveal-active, persisted font/wrap,
+and broader engine/platform/SyncTeX/PDF fixtures. Editable ordered recipes, canonical
+project JSON, the recipe builder, context menus and preview collapse now work.
+PDF-beside-source output is configurable through recipes. The user's active-document
+Compile rule supersedes automatic TEX-root redirection. See RECIPES.md for supported
+commands/placeholders and separate-auxiliary-directory limitations.

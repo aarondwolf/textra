@@ -13,13 +13,14 @@ export function validatePreferences(value: unknown): Preferences {
   if (
     Object.keys(candidate).some((key) => !preferenceKeys.includes(key)) ||
     !preferenceKeys
-      .filter((key) => key !== 'defaultRecipe')
+      .filter((key) => key !== 'defaultRecipe' && key !== 'previewVisible')
       .every((key) => Object.hasOwn(candidate, key)) ||
     (Object.hasOwn(candidate, 'defaultRecipe') &&
       !BUILD_RECIPES.some((recipe) => recipe.value === candidate.defaultRecipe)) ||
     candidate.version !== 1 ||
     (candidate.theme !== 'dark' && candidate.theme !== 'light') ||
     typeof candidate.sidebarVisible !== 'boolean' ||
+    (Object.hasOwn(candidate, 'previewVisible') && typeof candidate.previewVisible !== 'boolean') ||
     typeof candidate.outputVisible !== 'boolean' ||
     typeof candidate.editorWidth !== 'number' ||
     !Number.isFinite(candidate.editorWidth) ||
@@ -32,6 +33,7 @@ export function validatePreferences(value: unknown): Preferences {
     version: 1,
     theme: candidate.theme,
     sidebarVisible: candidate.sidebarVisible,
+    previewVisible: (candidate.previewVisible ?? DEFAULT_PREFERENCES.previewVisible) as boolean,
     outputVisible: candidate.outputVisible,
     editorWidth: candidate.editorWidth,
     defaultRecipe: (candidate.defaultRecipe ??

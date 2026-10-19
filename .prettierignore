@@ -4,6 +4,8 @@ dist
 coverage
 test-results
 playwright-report
+.test-data
+**/.textra
 package-lock.json
 docs/FEATURE_SPEC.md
 **/build

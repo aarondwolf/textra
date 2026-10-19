@@ -1,3 +1,4 @@
+import type { RecipeSettings } from './recipes';
 export const PRODUCT_NAME = 'TeXtra';
 export type Theme = 'dark' | 'light';
 export interface AppInfo {
@@ -9,6 +10,7 @@ export interface Preferences {
   version: 1;
   theme: Theme;
   sidebarVisible: boolean;
+  previewVisible: boolean;
   outputVisible: boolean;
   editorWidth: number;
   defaultRecipe: BuildEngine;
@@ -17,6 +19,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   version: 1,
   theme: 'dark',
   sidebarVisible: true,
+  previewVisible: true,
   outputVisible: true,
   editorWidth: 55,
   defaultRecipe: 'pdflatex',
@@ -81,12 +84,13 @@ export interface BuildRequest {
   projectId: string;
   rootFile: string;
   engine: BuildEngine;
+  recipe?: string;
 }
-export interface ProjectConfig {
+export interface ProjectConfig extends Partial<RecipeSettings> {
   schemaVersion: 1;
   rootFile: string | null;
   engine: BuildEngine;
-  recipes?: Record<string, BuildEngine>;
+  recipes?: Record<string, string>;
 }
 export type SetupLink = 'miktex' | 'texlive' | 'mactex';
 export interface Diagnostic {
@@ -101,6 +105,7 @@ export interface BuildState {
   diagnostics: Diagnostic[];
   outcome: 'idle' | 'running' | 'success' | 'failed' | 'cancelled';
   pdfPath: string | null;
+  pdfVersion?: number;
   projectId: string | null;
   rootFile: string | null;
 }
@@ -157,6 +162,7 @@ export interface TextraAPI {
   setProjectConfig(request: {
     projectId: string;
     config: ProjectConfig;
+    expectedConfig?: ProjectConfig;
   }): Promise<Result<ProjectConfig>>;
   exportSettings(): Promise<Result<boolean>>;
   importSettings(): Promise<Result<Preferences | null>>;

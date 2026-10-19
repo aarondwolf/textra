@@ -40,6 +40,7 @@ const api: TextraAPI = {
   lintLatex: (request) => ipcRenderer.invoke('textra:language:lint', request),
   formatLatex: (request) => ipcRenderer.invoke('textra:language:format', request),
   openStackExchangeSearch: (query) => ipcRenderer.invoke('textra:language:stackexchange', query),
+  copyText: (text) => ipcRenderer.invoke('textra:clipboard:copy', text),
 };
 
 contextBridge.exposeInMainWorld('textra', Object.freeze(api));

@@ -1,6 +1,32 @@
 import { isAbsolute, relative } from 'node:path';
 import type { Diagnostic } from '../../shared/api';
 
+/**
+ * TeX wraps long `-file-line-error` messages across physical log lines. Keep the
+ * continuation when it immediately follows a located error so search and copied
+ * context use the actual diagnostic text instead of a clipped fragment.
+ */
+function locatedMessage(lines: string[], index: number, initial: string): string {
+  let message = initial.trim();
+  for (let next = index + 1; next < Math.min(lines.length, index + 4); next++) {
+    const continuation = lines[next];
+    const trimmed = continuation.trim();
+    if (
+      !trimmed ||
+      /^l\.\d+\b/.test(trimmed) ||
+      /^.+?\.(?:tex|sty|cls):\d+:\s*/.test(continuation) ||
+      trimmed.startsWith('!') ||
+      /^(?:LaTeX|Package .+|Class .+) Warning:/.test(trimmed)
+    )
+      break;
+    // Wrapped TeX lines begin at column zero; an indented line is a separate
+    // log detail and should not become part of the user-facing error message.
+    if (/^\s/.test(continuation)) break;
+    message += continuation;
+  }
+  return message;
+}
+
 /** TeX logs are inconsistent; retain unlocated messages rather than invent locations. */
 export function parseDiagnostics(
   log: string,
@@ -18,7 +44,7 @@ export function parseDiagnostics(
       const safe = !isAbsolute(file) && !file.startsWith('../') && !file.includes(':');
       issues.push({
         severity: /warning/i.test(located[3]) ? 'warning' : 'error',
-        message: located[3],
+        message: locatedMessage(lines, index, located[3]),
         ...(safe ? { file, line: Number(located[2]) } : {}),
       });
     } else if (line.startsWith('!')) {

@@ -10,6 +10,12 @@ shows counts, cursor-aware outline, TODO/FIXME, and a quiet focus control. The l
 is comment/verbatim aware and scans up to 250 project .tex files for label/reference/image
 checks. TexLab is optional-tool detection only; its full LSP transport is outstanding.
 
+2026-10-19 Problems follow-up (working tree): compiler diagnostics now reassemble immediate
+unindented TeX line-wrap continuations, so searches and prompt copies receive messages such
+as “Undefined control sequence.” instead of the clipped physical log line. Prompt copying
+uses the main-process clipboard bridge because renderer clipboard permission is denied by
+the secure Electron session. Save completes before best-effort linting begins.
+
 2026-10-19 Phase 1 checkpoint: owner manually verified XeLaTeX and LuaLaTeX compilation.
 SyncTeX remains untested in this UI round; macOS/Linux and crop/rotation fixture coverage
 remain follow-up verification. The Phase 1 implementation is being committed as the

@@ -350,6 +350,11 @@ void app.whenReady().then(() => {
     url.searchParams.set('q', query.trim());
     await shell.openExternal(url.toString());
   });
+  handle('textra:clipboard:copy', 1, (text) => {
+    if (typeof text !== 'string' || text.length > 512_000)
+      throw new ProjectError('INVALID_ARGUMENT', 'Text is too large to copy.');
+    clipboard.writeText(text);
+  });
   handleRequest<'compile'>('textra:build:compile', async (request) => {
     if (healthBuild)
       throw new ProjectError('BUILD_RUNNING', 'Wait for the TeX setup test to finish.');

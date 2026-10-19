@@ -885,7 +885,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     ]);
   }
   async function saveAndLint(path: string) {
-    if (await saveDocument(path)) await lintDocument(path);
+    const saved = await saveDocument(path);
+    if (saved)
+      void lintDocument(path).catch(() => {
+        // Linting is optional and must never make Ctrl+S look like a failed save.
+      });
+    return saved;
   }
   async function formatActive() {
     if (!project || !active || !/\.tex$/i.test(active.path)) return;
@@ -925,7 +930,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       '',
       'Please explain the likely cause and suggest the smallest safe correction.',
     ].join('\n');
-    await navigator.clipboard.writeText(prompt);
+    const result = await window.textra.copyText(prompt);
+    if (!result.ok) throw new Error(result.error);
   }
   async function compile() {
     if (!project || !active || !canCompile || build.running || busy || prompt || pending) return;

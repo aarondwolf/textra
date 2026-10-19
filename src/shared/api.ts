@@ -217,6 +217,7 @@ export interface TextraAPI {
   lintLatex(request: LintRequest): Promise<Result<Diagnostic[]>>;
   formatLatex(request: FormatRequest): Promise<Result<FormatResult>>;
   openStackExchangeSearch(query: string): Promise<Result<void>>;
+  copyText(text: string): Promise<Result<void>>;
 }
 declare global {
   interface Window {

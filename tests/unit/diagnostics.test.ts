@@ -29,6 +29,18 @@ describe('TeX diagnostics from actual compiler log forms', () => {
     expect(result[0].line).toBeUndefined();
   });
 
+  it('reassembles a TeX error wrapped between physical log lines', () => {
+    const [diagnostic] = parseDiagnostics(
+      'st.tex:33: Undefined control sequ\nence.\nl.33     \\toprule\n',
+      'st.tex',
+    );
+    expect(diagnostic).toMatchObject({
+      file: 'st.tex',
+      line: 33,
+      message: 'Undefined control sequence.',
+    });
+  });
+
   it('retains warnings, box warnings, and raw diagnostic text', () => {
     const log = [
       "LaTeX Warning: Reference `missing' on page 1 undefined on input line 8.",

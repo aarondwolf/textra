@@ -353,6 +353,26 @@
 .diagnostic button:hover {
   color: var(--accent);
 }
+
+.format-preview-dialog {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.format-preview-source {
+  max-height: min(52vh, 520px);
+  margin: 14px 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--preview);
+  color: var(--text);
+  font:
+    12px/1.55 'Cascadia Code',
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+}
 .action-dialog {
   width: min(530px, calc(100vw - 48px));
   position: fixed;

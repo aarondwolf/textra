@@ -23,3 +23,6 @@
   build retention prunes current-process directories only. PDF search covers the first 2,000 pages and has no text selection. Crop/rotation SyncTeX cases need broader fixtures.
 - Renderer includes Monaco/PDF.js (~6.5MB); lazy loading remains performance work.
   No critical runtime/data-loss failure remains known after the bounded review.
+- Phase 2: TexLab is detected but its protocol bridge and capability-backed hover/definition
+  UI are not yet implemented. ChkTeX and latexindent are optional PATH tools; TeXtra keeps
+  local reference and writing analysis available when they are absent.

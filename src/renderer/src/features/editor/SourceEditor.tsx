@@ -11,6 +11,7 @@ import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js'
 import 'monaco-editor/editor/contrib/comment/browser/comment.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
+import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
 import { editDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
@@ -173,6 +174,10 @@ export function SourceEditor({
   const models = useRef(new Map<string, monaco.editor.ITextModel>());
   const views = useRef(new Map<string, monaco.editor.ICodeEditorViewState>());
   const current = useRef<string | null>(null);
+  const documentsRef = useRef(documents);
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
   useEffect(() => {
     const instance = monaco.editor.create(container.current!, {
       ariaLabel: 'LaTeX source editor',
@@ -229,12 +234,53 @@ export function SourceEditor({
           source: { path: current.current, line: event.position.lineNumber },
         });
     });
+    const completion = monaco.languages.registerCompletionItemProvider('latex', {
+      triggerCharacters: ['{', ','],
+      provideCompletionItems(model, position) {
+        const before = model.getValueInRange({
+          startLineNumber: position.lineNumber,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        });
+        const match = /\\([A-Za-z@]+)\*?(?:\[[^\]]*\])?\{[^}]*$/.exec(before);
+        if (!match || !/^(?:ref|eqref|pageref|autoref|cite)/i.test(match[1]))
+          return { suggestions: [] };
+        const labels = documentsRef.current.flatMap((document) =>
+          analyzeLatexDocument(document.content).labels.map((label) => ({
+            ...label,
+            path: document.path,
+          })),
+        );
+        const citations = documentsRef.current.flatMap((document) =>
+          analyzeLatexDocument(document.content).citations.map((citation) => citation.value),
+        );
+        const values = /cite/i.test(match[1]) ? citations : labels.map((label) => label.value);
+        const word = model.getWordUntilPosition(position);
+        const range = new monaco.Range(
+          position.lineNumber,
+          word.startColumn,
+          position.lineNumber,
+          word.endColumn,
+        );
+        return {
+          suggestions: [...new Set(values)].map((value) => ({
+            label: value,
+            kind: monaco.languages.CompletionItemKind.Reference,
+            insertText: value,
+            detail: /cite/i.test(match[1]) ? 'Citation key' : 'LaTeX label',
+            range,
+          })),
+        };
+      },
+    });
     const retainedModels = models.current;
     return () => {
       window.removeEventListener('textra:replace-source', replaceSource);
       window.removeEventListener('textra:insert-source', insertSource);
       content.dispose();
       cursor.dispose();
+      completion.dispose();
       instance.dispose();
       retainedModels.forEach((model) => model.dispose());
       retainedModels.clear();

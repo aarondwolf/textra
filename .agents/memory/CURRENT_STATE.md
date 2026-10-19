@@ -1,5 +1,15 @@
 # Current state
 
+2026-10-19 Phase 2 language tooling slice (working tree): ChkTeX runs on explicit save
+when available and returns source-linked diagnostics; latexindent formats through stdin and
+shows a proposal before replacing the open buffer. The Problems panel merges build, ChkTeX,
+and deterministic local reference diagnostics. Each problem has TeX Stack Exchange search,
+copy troubleshooting prompt, and a disabled Ask in Chat placeholder. Prompt context uses the
+smallest enclosing completed environment, otherwise 100 lines either side. Writing sidebar
+shows counts, cursor-aware outline, TODO/FIXME, and a quiet focus control. The local parser
+is comment/verbatim aware and scans up to 250 project .tex files for label/reference/image
+checks. TexLab is optional-tool detection only; its full LSP transport is outstanding.
+
 2026-10-19 Phase 1 checkpoint: owner manually verified XeLaTeX and LuaLaTeX compilation.
 SyncTeX remains untested in this UI round; macOS/Linux and crop/rotation fixture coverage
 remain follow-up verification. The Phase 1 implementation is being committed as the

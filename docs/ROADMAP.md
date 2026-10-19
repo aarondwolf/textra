@@ -9,7 +9,7 @@ Each phase depends on the preceding gate. Do not describe a partial gate as comp
 | 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                         | Real minimal/multi-file TeX and failed/cancelled builds                        | Fixed presets passed |
 | 1c Preview     | PDF.js, navigation, search, SyncTeX                                          | Real PDF rendering and source mapping                                          | Core passed          |
 | 1d Workflow    | Project CRUD, settings, onboarding, pipelines                                | Full phase 1 workflow and missing-tool fallbacks                               | Implemented; verify  |
-| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                               | Offline insertions/undo, diagnostics and explicit AI consent                   | Planned              |
+| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                               | Offline insertions/undo, diagnostics and explicit AI consent                   | In progress          |
 | 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer                         | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
 | 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help | Security review, Windows install/uninstall, release matrix                     | Planned              |
 
@@ -34,3 +34,9 @@ labelled segmented control at the top of the sidebar (for example Files | Docume
 Cites) so the sidebar stops resembling an editor activity bar. Not started. Further views
 (bibliography entries, review/history) would slot into the same switcher. Also pending:
 highlight the outline heading that contains the editor cursor.
+
+Phase 2 status (2026-10-19): offline writing analysis, reference diagnostics, ChkTeX
+and latexindent integration seams, a unified Problems view, and writing utilities are in
+progress. The owner deferred AI work, custom snippet libraries, and equation-helper work.
+TexLab is detected as an optional external tool; its full protocol bridge remains a
+follow-up so TeXtra continues to provide the deterministic local fallback when it is absent.

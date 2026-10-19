@@ -39,6 +39,7 @@ import {
   Play,
   Scroll,
   Warning,
+  Pencil,
   RefreshCw,
   Save,
   Square,
@@ -59,6 +60,7 @@ import {
   closeDocument,
   dirty,
   discardAll,
+  editDocument,
   initializeWorkspace,
   openDocument,
   reloadDocument,
@@ -73,6 +75,14 @@ import PdfViewer from './features/pdf/PdfViewer';
 import EquationPalette from './features/equations/EquationPalette';
 import SnippetPalette from './features/snippets/SnippetPalette';
 import { DocumentView } from './features/document/DocumentView';
+import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
+import { WritingPanel } from './features/writing/WritingPanel';
+import {
+  analyzeLatexDocument,
+  extractPromptContext,
+  findReferenceIssues,
+  type SourceOccurrence,
+} from '../../shared/writing-analysis';
 
 interface Prompt {
   title: string;
@@ -377,8 +387,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [creating, setCreating] = useState<{ kind: 'file' | 'directory'; parent: string } | null>(
     null,
   );
-  type SidebarView = 'explorer' | 'document' | 'equations' | 'snippets' | 'recents';
+  type SidebarView = 'explorer' | 'document' | 'writing' | 'equations' | 'snippets' | 'recents';
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
+  const [focusMode, setFocusMode] = useState(false);
+  const [projectSources, setProjectSources] = useState<Record<string, string>>({});
+  const [lintDiagnostics, setLintDiagnostics] = useState<ProblemDiagnostic[]>([]);
+  const [formatPreview, setFormatPreview] = useState<{ path: string; content: string } | null>(
+    null,
+  );
   /** Clicking the icon of the view that is already showing collapses the sidebar. */
   function selectSidebarView(view: SidebarView) {
     if (preferences.sidebarVisible && sidebarView === view) {
@@ -427,7 +443,37 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const editorOptions = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setExpandedFolders(new Set());
-  }, [project?.id]);
+  }, [project]);
+  useEffect(() => {
+    if (!project) {
+      setProjectSources({});
+      return;
+    }
+    let cancelled = false;
+    const texFiles = project.files
+      .filter((file) => file.kind === 'file' && /\.tex$/i.test(file.path))
+      .slice(0, 250);
+    void Promise.all(
+      texFiles.map(async (file) => {
+        const result = await window.textra.readFile({ projectId: project.id, path: file.path });
+        return result.ok ? ([file.path, result.value.content] as const) : null;
+      }),
+    )
+      .then((entries) => {
+        if (!cancelled)
+          setProjectSources(
+            Object.fromEntries(
+              entries.filter((entry): entry is readonly [string, string] => entry !== null),
+            ),
+          );
+      })
+      .catch(() => {
+        if (!cancelled) setProjectSources({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project]);
   useEffect(() => {
     if (!activePath) return;
     setExpandedFolders((previous) =>
@@ -559,9 +605,68 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }, [recipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
-  const errorCount = currentBuild?.diagnostics.filter((d) => d.severity === 'error').length ?? 0;
-  const warningCount =
-    currentBuild?.diagnostics.filter((d) => d.severity === 'warning').length ?? 0;
+  const analysisSources = useMemo(() => {
+    const next = { ...projectSources };
+    for (const document of documents)
+      if (/\.tex$/i.test(document.path)) next[document.path] = document.content;
+    return next;
+  }, [documents, projectSources]);
+  const documentAnalysis = useMemo(
+    () => (active && /\.tex$/i.test(active.path) ? analyzeLatexDocument(active.content) : null),
+    [active],
+  );
+  const referenceDiagnostics = useMemo<ProblemDiagnostic[]>(() => {
+    const labels: Array<SourceOccurrence & { file: string }> = [];
+    const references: Array<SourceOccurrence & { file: string }> = [];
+    const graphics: Array<SourceOccurrence & { file: string }> = [];
+    for (const [path, content] of Object.entries(analysisSources)) {
+      const analysis = analyzeLatexDocument(content);
+      labels.push(...analysis.labels.map((item) => ({ ...item, file: path })));
+      references.push(...analysis.references.map((item) => ({ ...item, file: path })));
+      graphics.push(...analysis.graphics.map((item) => ({ ...item, file: path })));
+    }
+    const issues: ProblemDiagnostic[] = [];
+    for (const issue of findReferenceIssues(labels, references))
+      for (const occurrence of issue.occurrences as Array<SourceOccurrence & { file: string }>)
+        issues.push({
+          severity: 'warning',
+          source: 'reference',
+          code: issue.kind,
+          message:
+            issue.kind === 'duplicate-label'
+              ? `Duplicate label: ${issue.value}`
+              : `Missing label: ${issue.value}`,
+          file: occurrence.file,
+          line: occurrence.line,
+          column: occurrence.column,
+        });
+    const knownFiles = new Set(
+      project?.files.filter((file) => file.kind === 'file').map((file) => file.path) ?? [],
+    );
+    for (const graphic of graphics) {
+      const candidate = graphic.value.replace(/^\{+|\}+$/g, '').replace(/^\.\//, '');
+      const exists = [...knownFiles].some(
+        (path) => path === candidate || path.replace(/\.[^.]+$/, '') === candidate,
+      );
+      if (!exists)
+        issues.push({
+          severity: 'warning',
+          source: 'reference',
+          code: 'missing-graphic',
+          message: `Missing graphic: ${graphic.value}`,
+          file: graphic.file,
+          line: graphic.line,
+          column: graphic.column,
+        });
+    }
+    return issues;
+  }, [analysisSources, project?.files]);
+  const problemDiagnostics = useMemo<ProblemDiagnostic[]>(
+    () => [...(currentBuild?.diagnostics ?? []), ...lintDiagnostics, ...referenceDiagnostics],
+    [currentBuild?.diagnostics, lintDiagnostics, referenceDiagnostics],
+  );
+  const errorCount = problemDiagnostics.filter((d) => d.severity === 'error').length;
+  const warningCount = problemDiagnostics.filter((d) => d.severity === 'warning').length;
   const issueCount = errorCount + warningCount;
   const issueSeverity: 'error' | 'warning' | 'ok' | 'none' = errorCount
     ? 'error'
@@ -764,6 +869,64 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       });
     });
   }
+  async function lintDocument(path: string) {
+    if (!project || !/\.tex$/i.test(path)) return;
+    const result = await window.textra.lintLatex({ projectId: project.id, path });
+    if (!result.ok) {
+      // ChkTeX is optional, so a missing executable does not interrupt saving.
+      if (result.code !== 'TOOL_MISSING') showError(result.error);
+      return;
+    }
+    setLintDiagnostics((previous) => [
+      ...previous.filter(
+        (diagnostic) => diagnostic.source !== 'chktex' || diagnostic.file !== path,
+      ),
+      ...result.value,
+    ]);
+  }
+  async function saveAndLint(path: string) {
+    if (await saveDocument(path)) await lintDocument(path);
+  }
+  async function formatActive() {
+    if (!project || !active || !/\.tex$/i.test(active.path)) return;
+    const result = await window.textra.formatLatex({
+      projectId: project.id,
+      path: active.path,
+      content: active.content,
+    });
+    if (!result.ok) throw new Error(result.error);
+    setFormatPreview({ path: active.path, content: result.value.content });
+  }
+  async function copyProblemPrompt(diagnostic: ProblemDiagnostic) {
+    let source = diagnostic.file ? analysisSources[diagnostic.file] : undefined;
+    if (!source && project && diagnostic.file) {
+      const result = await window.textra.readFile({ projectId: project.id, path: diagnostic.file });
+      if (result.ok) source = result.value.content;
+    }
+    const context = source ? extractPromptContext(source, diagnostic.line ?? 1) : null;
+    const location = diagnostic.file ? ` in \`${diagnostic.file}:${diagnostic.line ?? '?'}\`` : '';
+    const prompt = [
+      '# LaTeX troubleshooting request',
+      '',
+      `I am working on a LaTeX document and received this ${diagnostic.severity}${location}:`,
+      '',
+      `> ${diagnostic.code ? `${diagnostic.code}: ` : ''}${diagnostic.message}`,
+      ...(context
+        ? [
+            '',
+            `## Source context${context.environment ? ` (${context.environment} environment)` : ''}`,
+            `Lines ${context.startLine}-${context.endLine}:`,
+            '',
+            '```latex',
+            context.text,
+            '```',
+          ]
+        : []),
+      '',
+      'Please explain the likely cause and suggest the smallest safe correction.',
+    ].join('\n');
+    await navigator.clipboard.writeText(prompt);
+  }
   async function compile() {
     if (!project || !active || !canCompile || build.running || busy || prompt || pending) return;
     const rootFile = active.path;
@@ -810,7 +973,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           if (event.shiftKey) saveAs();
           else
             void run(async () => {
-              await saveDocument(activePath);
+              await saveAndLint(activePath);
             });
         }
       }
@@ -901,6 +1064,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <button
             className="icon-button activity-view"
+            aria-label="Writing tools"
+            title="Writing: outline, counts and notes"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'writing'}
+            onClick={() => selectSidebarView('writing')}
+          >
+            <Pencil
+              size={19}
+              weight={preferences.sidebarVisible && sidebarView === 'writing' ? 'duotone' : 'light'}
+            />
+          </button>
+          <button
+            className="icon-button activity-view"
             aria-label="Snippets"
             title="Snippets: tables, figures and more"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'snippets'}
@@ -947,6 +1122,36 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           >
             {sidebarView === 'document' ? (
               <DocumentView />
+            ) : sidebarView === 'writing' ? (
+              <WritingPanel
+                summary={{
+                  words: documentAnalysis?.counts.words ?? 0,
+                  characters: active?.content.length ?? 0,
+                  sections: documentAnalysis?.counts.sections ?? 0,
+                  equations: documentAnalysis?.counts.equations ?? 0,
+                  figures: documentAnalysis?.counts.figures ?? 0,
+                  tables: documentAnalysis?.counts.tables ?? 0,
+                  outline: (documentAnalysis?.outline ?? []).map((item, index) => ({
+                    id: `${item.line}:${index}`,
+                    title: item.title,
+                    line: item.line,
+                    level: item.level,
+                  })),
+                  todos: (documentAnalysis?.todos ?? []).map((item, index) => ({
+                    id: `${item.line}:${index}`,
+                    line: item.line,
+                    kind: item.kind,
+                    text: item.text,
+                  })),
+                }}
+                activeLine={source?.path === active?.path ? (source?.line ?? null) : null}
+                focusMode={focusMode}
+                onJumpToLine={(line) => {
+                  if (active)
+                    void openDocument(active.path, { path: active.path, line, column: 1 });
+                }}
+                onToggleFocusMode={() => setFocusMode((value) => !value)}
+              />
             ) : sidebarView === 'snippets' ? (
               <>
                 <div className="sidebar-title">
@@ -1279,7 +1484,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       disabled={!dirty(active) || busy || active.conflict}
                       onClick={() =>
                         void run(async () => {
-                          await saveDocument(active.path);
+                          await saveAndLint(active.path);
                         })
                       }
                     >
@@ -1371,6 +1576,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                             onClick={() => setWrap(!wrap)}
                           >
                             Word wrap <span>{wrap ? 'On' : 'Off'}</span>
+                          </button>
+                          <button
+                            className="text-button"
+                            aria-label="Format document with latexindent"
+                            disabled={busy || !/\.tex$/i.test(active.path)}
+                            onClick={() => {
+                              setEditorOptionsOpen(false);
+                              void run(formatActive);
+                            }}
+                          >
+                            Format document…
                           </button>
                         </div>
                       )}
@@ -1606,8 +1822,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                                 : name === 'problems'
                                   ? 'Problems'
                                   : 'Output'}
-                              {name === 'problems' && !!currentBuild?.diagnostics.length && (
-                                <span className="count">{currentBuild.diagnostics.length}</span>
+                              {name === 'problems' && !!problemDiagnostics.length && (
+                                <span className="count">{problemDiagnostics.length}</span>
                               )}
                             </button>
                           ))}
@@ -1674,8 +1890,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                               : name === 'problems'
                                 ? 'Problems'
                                 : 'Output')}
-                          {name === 'problems' && !!currentBuild?.diagnostics.length && (
-                            <span className="count">{currentBuild.diagnostics.length}</span>
+                          {name === 'problems' && !!problemDiagnostics.length && (
+                            <span className="count">{problemDiagnostics.length}</span>
                           )}
                         </button>
                       ))}
@@ -1766,32 +1982,30 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                         'No build output yet. Compile a root document to begin.'}
                       <div ref={logEnd} />
                     </pre>
-                  ) : currentBuild?.diagnostics.length ? (
-                    <ul className="diagnostic-list">
-                      {currentBuild.diagnostics.map((diagnostic, index) => (
-                        <li key={index} className={`diagnostic ${diagnostic.severity}`}>
-                          <span className="diagnostic-severity">{diagnostic.severity}</span>
-                          {diagnostic.file ? (
-                            <button
-                              onClick={() =>
-                                void openDocument(diagnostic.file!, {
-                                  path: diagnostic.file!,
-                                  line: diagnostic.line ?? 1,
-                                  column: 1,
-                                })
-                              }
-                            >
-                              {diagnostic.message}
-                              <span>
-                                {diagnostic.file}:{diagnostic.line ?? '?'}
-                              </span>
-                            </button>
-                          ) : (
-                            <span>{diagnostic.message}</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                  ) : problemDiagnostics.length ? (
+                    <ProblemsPanel
+                      diagnostics={problemDiagnostics}
+                      onNavigate={(diagnostic) => {
+                        if (diagnostic.file)
+                          void openDocument(diagnostic.file, {
+                            path: diagnostic.file,
+                            line: diagnostic.line ?? 1,
+                            column: diagnostic.column ?? 1,
+                          });
+                      }}
+                      onSearchStackExchange={(diagnostic) => {
+                        void window.textra
+                          .openStackExchangeSearch(
+                            `${diagnostic.code ?? ''} ${diagnostic.message}`.trim(),
+                          )
+                          .then((result) => {
+                            if (!result.ok) showError(result.error);
+                          });
+                      }}
+                      onCopyPrompt={(diagnostic) =>
+                        void copyProblemPrompt(diagnostic).catch(showError)
+                      }
+                    />
                   ) : (
                     <div className="panel-content">
                       <Check size={16} />
@@ -1992,6 +2206,30 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           ))}
         </div>
       )}
+      <Dialog.Root open={!!formatPreview} onOpenChange={(open) => !open && setFormatPreview(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="action-dialog format-preview-dialog">
+            <Dialog.Title>Format preview</Dialog.Title>
+            <Dialog.Description>
+              latexindent generated a proposed rewrite. Review it before replacing your open buffer.
+            </Dialog.Description>
+            <pre className="format-preview-source">{formatPreview?.content}</pre>
+            <div className="dialog-actions">
+              <button onClick={() => setFormatPreview(null)}>Discard</button>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  if (formatPreview) editDocument(formatPreview.path, formatPreview.content);
+                  setFormatPreview(null);
+                }}
+              >
+                Apply formatted text
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <PromptDialog prompt={prompt} close={() => setPrompt(null)} />
       <Dialog.Root
         open={!!pending}

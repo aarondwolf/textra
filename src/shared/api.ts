@@ -121,6 +121,22 @@ export interface Diagnostic {
   message: string;
   file?: string;
   line?: number;
+  column?: number;
+  code?: string;
+  source?: 'build' | 'chktex' | 'reference' | 'texlab';
+}
+export interface LanguageToolStatus {
+  texlab: boolean;
+  chktex: boolean;
+  latexindent: boolean;
+}
+export type LintRequest = FileRef;
+export interface FormatRequest extends FileRef {
+  content: string;
+}
+export interface FormatResult {
+  content: string;
+  formatter: 'latexindent';
 }
 export interface BuildState {
   running: boolean;
@@ -197,6 +213,10 @@ export interface TextraAPI {
   importSettings(): Promise<Result<Preferences | null>>;
   openSetupLink(target: SetupLink): Promise<Result<void>>;
   testDistribution(): Promise<Result<{ success: boolean; log: string }>>;
+  getLanguageToolStatus(): Promise<Result<LanguageToolStatus>>;
+  lintLatex(request: LintRequest): Promise<Result<Diagnostic[]>>;
+  formatLatex(request: FormatRequest): Promise<Result<FormatResult>>;
+  openStackExchangeSearch(query: string): Promise<Result<void>>;
 }
 declare global {
   interface Window {

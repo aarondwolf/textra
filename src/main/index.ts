@@ -28,6 +28,7 @@ import { BuildService, detectTools } from './services/latex';
 import { setToolPaths, validateToolPath } from './services/tool-paths';
 import { ConfigService, exportSettings, importSettings } from './services/settings';
 import { validateRecipeSettings } from '../shared/recipes';
+import { LanguageService } from './services/language';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -49,6 +50,7 @@ const preferences = new PreferencesStore(app.getPath('userData'));
 const projects = new ProjectService(app.getPath('userData'));
 const builds = new BuildService((id) => projects.getRoot(id));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
+const language = new LanguageService(projects);
 let healthBuild: BuildService | null = null;
 let dirty = false;
 let forceClose = false;
@@ -338,6 +340,16 @@ void app.whenReady().then(() => {
     ...(await detectTools()),
     { name: 'vscode', path: await findCodeExecutable(), version: null },
   ]);
+  handle('textra:language:status', 0, () => language.status());
+  handleRequest<'lintLatex'>('textra:language:lint', (request) => language.lint(request));
+  handleRequest<'formatLatex'>('textra:language:format', (request) => language.format(request));
+  handle('textra:language:stackexchange', 1, async (query) => {
+    if (typeof query !== 'string' || !query.trim() || query.length > 1_200)
+      throw new ProjectError('INVALID_ARGUMENT', 'Provide a short error message to search.');
+    const url = new URL('https://tex.stackexchange.com/search');
+    url.searchParams.set('q', query.trim());
+    await shell.openExternal(url.toString());
+  });
   handleRequest<'compile'>('textra:build:compile', async (request) => {
     if (healthBuild)
       throw new ProjectError('BUILD_RUNNING', 'Wait for the TeX setup test to finish.');

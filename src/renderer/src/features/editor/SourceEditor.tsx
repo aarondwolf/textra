@@ -343,7 +343,11 @@ export function SourceEditor({
       scrollBeyondLastLine: false,
       renderWhitespace: 'selection',
       tabSize: 2,
-      quickSuggestions: false,
+      // TexLab filters its completion list as the command or environment name is typed.
+      // Keep this quiet in prose comments and math/text strings while enabling it in source.
+      quickSuggestions: { other: true, comments: false, strings: false },
+      quickSuggestionsDelay: 80,
+      suggestOnTriggerCharacters: true,
       folding: true,
       foldingStrategy: 'auto',
       showFoldingControls: 'mouseover',

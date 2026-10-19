@@ -872,6 +872,63 @@ h1 > span {
 .primary-button:hover {
   background: color-mix(in srgb, var(--accent-bg) 80%, var(--accent));
 }
+.welcome-choose-project {
+  border-color: var(--accent);
+  background: transparent;
+}
+.welcome-choose-project:hover {
+  background: var(--accent-bg);
+}
+.welcome-recents {
+  margin-top: 22px;
+}
+.welcome-recents h2 {
+  margin: 0 0 7px;
+  color: var(--faint);
+  font-family: var(--font-serif);
+  font-size: 12px;
+  font-weight: 500;
+}
+.welcome-recents ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.welcome-recents button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+}
+.welcome-recents button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--text);
+}
+.welcome-recents button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.welcome-recents button svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.welcome-recents button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .primary-button kbd {
   margin-left: auto;
   font-size: 9px;

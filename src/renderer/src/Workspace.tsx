@@ -1645,7 +1645,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       : 'Open a folder to begin.'}
                   </p>
                   <button
-                    className="primary-button"
+                    className={project ? 'primary-button' : 'primary-button welcome-choose-project'}
                     onClick={() => (project ? newEntry('file') : openFolder())}
                     disabled={busy}
                   >
@@ -1653,6 +1653,26 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     {project ? 'Create a source file' : 'Choose a project folder'}
                     <ArrowRight size={15} />
                   </button>
+                  {!project && recents.length > 0 && (
+                    <section className="welcome-recents" aria-labelledby="welcome-recents-heading">
+                      <h2 id="welcome-recents-heading">Recent projects</h2>
+                      <ul>
+                        {recents.slice(0, 5).map((recent) => (
+                          <li key={recent.id}>
+                            <button
+                              type="button"
+                              title={recent.rootPath}
+                              disabled={busy || build.running}
+                              onClick={() => openFolder(recent.id)}
+                            >
+                              <FolderOpen size={14} aria-hidden="true" />
+                              <span>{recent.name}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
                   {missingTool && (
                     <p className="setup-note">Set up a TeX distribution in Settings to compile.</p>
                   )}

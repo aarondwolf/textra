@@ -38,5 +38,7 @@ highlight the outline heading that contains the editor cursor.
 Phase 2 status (2026-10-19): offline writing analysis, reference diagnostics, ChkTeX
 and latexindent integration seams, a unified Problems view, and writing utilities are in
 progress. The owner deferred AI work, custom snippet libraries, and equation-helper work.
-TexLab is detected as an optional external tool; its full protocol bridge remains a
-follow-up so TeXtra continues to provide the deterministic local fallback when it is absent.
+TexLab 5.26.0 is bundled for Windows x64 and enabled by default. Its main-process LSP bridge
+provides completion, diagnostics, hover, definition/references, document symbols, folding and
+inlay hints, while TeXtra retains deterministic local fallbacks when TexLab is disabled or
+unavailable. Other platform bundles and installer packaging remain Phase 4 work.

@@ -1,0 +1,14 @@
+{
+  "name": "TexLab",
+  "version": "5.26.0",
+  "license": "GPL-3.0-only",
+  "source": "https://github.com/latex-lsp/texlab/tree/v5.26.0",
+  "release": "https://github.com/latex-lsp/texlab/releases/tag/v5.26.0",
+  "artifacts": {
+    "win32-x64": {
+      "archive": "texlab-x86_64-windows.zip",
+      "sha256": "cb028d44c3d2b85d36a2ed52d41a0ff43a341b1f04c500c56c4524c4eb72b316",
+      "executable": "texlab.exe"
+    }
+  }
+}

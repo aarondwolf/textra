@@ -17,6 +17,8 @@ export interface Preferences {
   fontSize: number;
   wrap: boolean;
   sidebarWidth: number;
+  /** TexLab is bundled and enabled by default; users may opt out of enhanced language tooling. */
+  texlabEnabled: boolean;
   /** Optional absolute executable overrides keyed by TeX tool name. Not secrets. */
   toolPaths: Partial<Record<ConfigurableTool, string>>;
 }
@@ -43,6 +45,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   fontSize: 14,
   wrap: false,
   sidebarWidth: 226,
+  texlabEnabled: true,
   toolPaths: {},
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
@@ -130,6 +133,37 @@ export interface LanguageToolStatus {
   chktex: boolean;
   latexindent: boolean;
 }
+export type TexlabInstallation = 'managed' | 'external' | 'missing' | 'error';
+export interface TexlabStatus {
+  enabled: boolean;
+  installation: TexlabInstallation;
+  path: string | null;
+  version: string | null;
+  detail: string | null;
+  running: boolean;
+}
+export interface TexlabDocumentRequest extends FileRef {
+  content: string;
+  /** Monaco model version, used to order full-text LSP updates. */
+  version: number;
+}
+export interface TexlabPositionRequest extends TexlabDocumentRequest {
+  /** Zero-based line and character position required by LSP. */
+  line: number;
+  character: number;
+}
+export interface TexlabRequest extends TexlabDocumentRequest {
+  method:
+    | 'completion'
+    | 'hover'
+    | 'definition'
+    | 'references'
+    | 'documentSymbols'
+    | 'foldingRanges'
+    | 'inlayHints';
+  line?: number;
+  character?: number;
+}
 export type LintRequest = FileRef;
 export interface FormatRequest extends FileRef {
   content: string;
@@ -214,6 +248,11 @@ export interface TextraAPI {
   openSetupLink(target: SetupLink): Promise<Result<void>>;
   testDistribution(): Promise<Result<{ success: boolean; log: string }>>;
   getLanguageToolStatus(): Promise<Result<LanguageToolStatus>>;
+  getTexlabStatus(): Promise<Result<TexlabStatus>>;
+  checkTexlab(): Promise<Result<TexlabStatus>>;
+  syncTexlabDocument(request: TexlabDocumentRequest): Promise<Result<void>>;
+  texlabRequest(request: TexlabRequest): Promise<Result<unknown>>;
+  getTexlabDiagnostics(request: FileRef): Promise<Result<Diagnostic[]>>;
   lintLatex(request: LintRequest): Promise<Result<Diagnostic[]>>;
   formatLatex(request: FormatRequest): Promise<Result<FormatResult>>;
   openStackExchangeSearch(query: string): Promise<Result<void>>;

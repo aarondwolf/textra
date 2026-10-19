@@ -7,9 +7,11 @@ import {
   type BuildEngine,
   type ConfigurableTool,
   type SetupLink,
+  type TexlabStatus,
 } from '../../../../shared/api';
 import { preferencesSaved, useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
+import { TexLabSettings } from './TexLabSettings';
 import './setup.css';
 
 type SectionId = 'appearance' | 'tools' | 'compilation' | 'backup';
@@ -34,12 +36,17 @@ export default function SetupDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [log, setLog] = useState('');
   const [platform, setPlatform] = useState('');
+  const [texLabStatus, setTexLabStatus] = useState<TexlabStatus | null>(null);
   const [section, setSection] = useState<SectionId>('appearance');
   useEffect(() => {
-    if (open)
+    if (open) {
       void window.textra.getAppInfo().then((result) => {
         if (result.ok) setPlatform(result.value.platform);
       });
+      void window.textra.getTexlabStatus().then((result) => {
+        if (result.ok) setTexLabStatus(result.value);
+      });
+    }
   }, [open]);
   async function perform(action: () => Promise<string | void>) {
     setBusy(true);
@@ -77,6 +84,14 @@ export default function SetupDialog({
   async function setupLink(target: SetupLink) {
     const result = await window.textra.openSetupLink(target);
     if (!result.ok) throw new Error(result.error);
+  }
+  async function refreshTexlab(check = false): Promise<TexlabStatus> {
+    const result = check
+      ? await window.textra.checkTexlab()
+      : await window.textra.getTexlabStatus();
+    if (!result.ok) throw new Error(result.error);
+    setTexLabStatus(result.value);
+    return result.value;
   }
   return (
     <Dialog.Root
@@ -182,6 +197,34 @@ export default function SetupDialog({
                       );
                     })}
                   </div>
+                  <TexLabSettings
+                    enabled={preferences.texlabEnabled}
+                    installation={texLabStatus?.installation ?? 'checking'}
+                    version={texLabStatus?.version}
+                    path={texLabStatus?.path}
+                    detail={texLabStatus?.detail}
+                    busy={busy}
+                    onEnabledChange={(enabled) => {
+                      updatePreferences({ texlabEnabled: enabled });
+                      void preferencesSaved()
+                        .then(() => refreshTexlab())
+                        .catch((error: unknown) => {
+                          setMessage(
+                            error instanceof Error
+                              ? error.message
+                              : 'TexLab preferences could not be saved.',
+                          );
+                        });
+                    }}
+                    onCheck={() =>
+                      perform(async () => {
+                        const status = await refreshTexlab(true);
+                        return status.installation === 'error'
+                          ? (status.detail ?? 'TexLab checks failed.')
+                          : `TexLab ${status.version ?? ''} passed its executable check.`.trim();
+                      })
+                    }
+                  />
                   <div className="setup-actions">
                     <button
                       disabled={busy}

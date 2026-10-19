@@ -1,5 +1,14 @@
 # Current state
 
+2026-10-19 TexLab integration (working tree): TexLab 5.26.0 is bundled under
+`resources/texlab/win32-x64/texlab.exe` for Windows x64. The pinned artifact hash, GPL-3.0
+license text, attribution, and source URL live beside it. The default-enabled preference
+controls an Electron-main JSON-RPC/LSP process, which owns document synchronization and returns
+completion, diagnostics, hover, definition/references, symbols, folding, and inlay hints through
+typed IPC. The renderer preserves local completion/folding fallbacks. Checks passed: the bundled
+binary reports version 5.26.0; typecheck, lint, format check, build, and native app launch.
+Remaining distribution work: provide matching macOS/Linux assets in installer packaging.
+
 2026-10-19 Phase 2 language tooling slice (working tree): ChkTeX runs on explicit save
 when available and returns source-linked diagnostics; latexindent formats through stdin and
 shows a proposal before replacing the open buffer. The Problems panel merges build, ChkTeX,
@@ -8,7 +17,7 @@ copy troubleshooting prompt, and a disabled Ask in Chat placeholder. Prompt cont
 smallest enclosing completed environment, otherwise 100 lines either side. Writing sidebar
 shows counts, cursor-aware outline, TODO/FIXME, and a quiet focus control. The local parser
 is comment/verbatim aware and scans up to 250 project .tex files for label/reference/image
-checks. TexLab is optional-tool detection only; its full LSP transport is outstanding.
+checks. This description predates the bundled TexLab integration above.
 
 2026-10-19 Problems follow-up (working tree): compiler diagnostics now reassemble immediate
 unindented TeX line-wrap continuations, so searches and prompt copies receive messages such

@@ -13,3 +13,4 @@ Thumbs.db
 .textra-cache/
 .test-data/
 *.tsbuildinfo
+resources/texlab/**/*.zip

@@ -52,6 +52,7 @@ import {
   SIDEBAR_WIDTH_RANGE,
   type BuildEngine,
   type Result,
+  type TexlabStatus,
 } from '../../shared/api';
 import { useUI } from './state/ui';
 import { validateRecipeSettings } from '../../shared/recipes';
@@ -70,7 +71,8 @@ import {
   showError,
   useWorkspace,
 } from './state/workspace';
-import { SourceEditor } from './features/editor/SourceEditor';
+import { SourceEditor, type TexlabDiagnostic } from './features/editor/SourceEditor';
+import { createTexlabAdapter, texlabMarkers } from './features/editor/texlabAdapter';
 import PdfViewer from './features/pdf/PdfViewer';
 import EquationPalette from './features/equations/EquationPalette';
 import SnippetPalette from './features/snippets/SnippetPalette';
@@ -94,6 +96,12 @@ interface Prompt {
 function unwrap<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(result.error);
   return result.value;
+}
+
+function projectFileUri(rootPath: string | undefined, relativePath: string): string | undefined {
+  if (!rootPath) return undefined;
+  const absolute = `${rootPath.replace(/\\/g, '/')}/${relativePath}`.replace(/\/+/g, '/');
+  return `file:///${encodeURI(absolute)}`;
 }
 
 function PromptDialog({ prompt, close }: { prompt: Prompt | null; close: () => void }) {
@@ -392,9 +400,60 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [focusMode, setFocusMode] = useState(false);
   const [projectSources, setProjectSources] = useState<Record<string, string>>({});
   const [lintDiagnostics, setLintDiagnostics] = useState<ProblemDiagnostic[]>([]);
+  const [texlabStatus, setTexlabStatus] = useState<TexlabStatus | null>(null);
+  const [texlabDiagnostics, setTexlabDiagnostics] = useState<
+    ReadonlyMap<string, readonly TexlabDiagnostic[]>
+  >(new Map());
+  const [texlabProblemDiagnostics, setTexlabProblemDiagnostics] = useState<
+    ReadonlyMap<string, readonly ProblemDiagnostic[]>
+  >(new Map());
   const [formatPreview, setFormatPreview] = useState<{ path: string; content: string } | null>(
     null,
   );
+  useEffect(() => {
+    let active = true;
+    setTexlabDiagnostics(new Map());
+    setTexlabProblemDiagnostics(new Map());
+    void window.textra.getTexlabStatus().then((result) => {
+      if (active && result.ok) setTexlabStatus(result.value);
+    });
+    return () => {
+      active = false;
+    };
+  }, [preferences.texlabEnabled, project?.id]);
+  const texlabAdapter = useMemo(() => {
+    const adapter = createTexlabAdapter({
+      documents,
+      ready:
+        preferences.texlabEnabled &&
+        (texlabStatus?.installation === 'managed' || texlabStatus?.installation === 'external'),
+      diagnostics: texlabDiagnostics,
+      onDiagnostics: (path, next) => {
+        setTexlabDiagnostics((current) => {
+          const updated = new Map(current);
+          updated.set(path, texlabMarkers(next));
+          return updated;
+        });
+        setTexlabProblemDiagnostics((current) => {
+          const updated = new Map(current);
+          updated.set(path, next);
+          return updated;
+        });
+      },
+    });
+    const rootPath = project?.rootPath;
+    return {
+      ...adapter,
+      documentUri: (document: { path: string }) =>
+        projectFileUri(rootPath, document.path) ?? `inmemory://textra/${document.path}`,
+    };
+  }, [
+    documents,
+    preferences.texlabEnabled,
+    project?.rootPath,
+    texlabDiagnostics,
+    texlabStatus?.installation,
+  ]);
   /** Clicking the icon of the view that is already showing collapses the sidebar. */
   function selectSidebarView(view: SidebarView) {
     if (preferences.sidebarVisible && sidebarView === view) {
@@ -662,8 +721,13 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     return issues;
   }, [analysisSources, project?.files]);
   const problemDiagnostics = useMemo<ProblemDiagnostic[]>(
-    () => [...(currentBuild?.diagnostics ?? []), ...lintDiagnostics, ...referenceDiagnostics],
-    [currentBuild?.diagnostics, lintDiagnostics, referenceDiagnostics],
+    () => [
+      ...(currentBuild?.diagnostics ?? []),
+      ...lintDiagnostics,
+      ...referenceDiagnostics,
+      ...[...texlabProblemDiagnostics.values()].flat(),
+    ],
+    [currentBuild?.diagnostics, lintDiagnostics, referenceDiagnostics, texlabProblemDiagnostics],
   );
   const errorCount = problemDiagnostics.filter((d) => d.severity === 'error').length;
   const warningCount = problemDiagnostics.filter((d) => d.severity === 'warning').length;
@@ -1634,6 +1698,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     fontSize={fontSize}
                     wrap={wrap}
                     readOnly={busy}
+                    texlab={texlabAdapter}
                   />
                 </>
               ) : (

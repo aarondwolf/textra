@@ -13,6 +13,7 @@ optional and planned for a later phase.
 - [x] Recent/pinned projects, file CRUD, portable settings, project build preferences
 - [x] Editable ordered build recipes, project settings JSON and recipe builder
 - [x] Phase 1 workflow: collapsible explorer, reveal-active, persisted editor settings, custom TeX paths, PDF match highlights
+- [x] TexLab 5.26.0: bundled Windows language intelligence and editor navigation
 - [ ] Phase 1 verification: XeLaTeX/LuaLaTeX, macOS/Linux, crop/rotation SyncTeX
 - [ ] Phase 2: writing tools, diagnostics, optional AI
 - [ ] Phase 3: research and presentation workflows
@@ -70,6 +71,12 @@ Recent Projects is a collapsible section at the bottom of the explorer, closed b
 External changes produce a conflict notice. Your open buffer is retained; reload
 only after explicitly discarding it, or save a separate copy. Save As never replaces
 an existing file. Closing/switching checks unsaved edits. Delete uses the OS trash.
+
+**TexLab language intelligence** is bundled for Windows x64 and enabled by default. It powers
+LaTeX completion, hover, definitions, references, document symbols, folding, inlay hints, and
+diagnostics. Disable it in **Settings → LaTeX tools** to use TeXtra's local fallback suggestions.
+The bundled release is TexLab 5.26.0; attribution and source details are in
+`resources/texlab/THIRD_PARTY_NOTICES.md`.
 
 The gear button opens **Settings**, with a side list of sections: Appearance,
 LaTeX tools (detected executables with an edit icon for each path, re-detection, a real

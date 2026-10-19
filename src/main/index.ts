@@ -29,6 +29,7 @@ import { setToolPaths, validateToolPath } from './services/tool-paths';
 import { ConfigService, exportSettings, importSettings } from './services/settings';
 import { validateRecipeSettings } from '../shared/recipes';
 import { LanguageService } from './services/language';
+import { TexlabManager } from './services/texlab-manager';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -51,6 +52,11 @@ const projects = new ProjectService(app.getPath('userData'));
 const builds = new BuildService((id) => projects.getRoot(id));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
 const language = new LanguageService(projects);
+const texlab = new TexlabManager(
+  projects,
+  app.isPackaged ? process.resourcesPath : join(process.cwd(), 'resources'),
+  async () => (await preferences.get()).texlabEnabled,
+);
 let healthBuild: BuildService | null = null;
 let dirty = false;
 let forceClose = false;
@@ -239,6 +245,7 @@ void app.whenReady().then(() => {
   handle('textra:preferences:set', 1, async (value) => {
     const saved = await preferences.set(value);
     setToolPaths(saved.toolPaths);
+    if (!saved.texlabEnabled) await texlab.stop();
     return saved;
   });
   handle('textra:tools:choose', 1, async (name) => {
@@ -341,6 +348,15 @@ void app.whenReady().then(() => {
     { name: 'vscode', path: await findCodeExecutable(), version: null },
   ]);
   handle('textra:language:status', 0, () => language.status());
+  handle('textra:texlab:status', 0, () => texlab.status());
+  handle('textra:texlab:check', 0, () => texlab.status(true));
+  handleRequest<'syncTexlabDocument'>('textra:texlab:sync', async (request) => {
+    await texlab.sync(request);
+  });
+  handleRequest<'texlabRequest'>('textra:texlab:request', (request) => texlab.request(request));
+  handleRequest<'getTexlabDiagnostics'>('textra:texlab:diagnostics', (request) =>
+    texlab.diagnosticsFor(request),
+  );
   handleRequest<'lintLatex'>('textra:language:lint', (request) => language.lint(request));
   handleRequest<'formatLatex'>('textra:language:format', (request) => language.format(request));
   handle('textra:language:stackexchange', 1, async (query) => {
@@ -476,4 +492,5 @@ app.on('window-all-closed', () => {
 });
 app.on('will-quit', () => {
   void builds.cancel();
+  void texlab.stop();
 });

@@ -9,6 +9,10 @@ import 'monaco-editor/editor/contrib/find/browser/findController.js';
 import 'monaco-editor/editor/contrib/folding/browser/folding.js';
 import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js';
 import 'monaco-editor/editor/contrib/comment/browser/comment.js';
+import 'monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols.js';
+import 'monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands.js';
+import 'monaco-editor/editor/contrib/hover/browser/hoverContribution.js';
+import 'monaco-editor/editor/contrib/inlayHints/browser/inlayHints.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
 import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
@@ -142,15 +146,157 @@ monaco.languages.setLanguageConfiguration('latex', {
   ],
 });
 
-monaco.languages.registerFoldingRangeProvider('latex', {
-  provideFoldingRanges(model) {
-    return latexFoldingRanges(model.getLinesContent()).map((range) => ({
-      start: range.start,
-      end: range.end,
-      ...(range.comment ? { kind: monaco.languages.FoldingRangeKind.Comment } : {}),
-    }));
-  },
-});
+/** A zero-based position, matching the Language Server Protocol. */
+export interface TexlabPosition {
+  line: number;
+  character: number;
+}
+
+/** A zero-based, end-exclusive range, matching the Language Server Protocol. */
+export interface TexlabRange {
+  start: TexlabPosition;
+  end: TexlabPosition;
+}
+
+/** The current editor snapshot supplied with every language-tool request. */
+export interface TexlabEditorDocument {
+  path: string;
+  uri: string;
+  languageId: string;
+  version: number;
+  text: string;
+}
+
+export interface TexlabDiagnostic {
+  range: TexlabRange;
+  severity: 'error' | 'warning' | 'info' | 'hint';
+  message: string;
+  code?: string;
+  source?: string;
+}
+
+export interface TexlabCompletion {
+  label: string;
+  detail?: string;
+  documentation?: string;
+  insertText?: string;
+  filterText?: string;
+  sortText?: string;
+  range?: TexlabRange;
+}
+
+export interface TexlabHover {
+  contents: string;
+  range?: TexlabRange;
+}
+
+export interface TexlabLocation {
+  path: string;
+  uri?: string;
+  range: TexlabRange;
+}
+
+export interface TexlabDocumentSymbol {
+  name: string;
+  detail?: string;
+  kind?: number;
+  range: TexlabRange;
+  selectionRange?: TexlabRange;
+  children?: TexlabDocumentSymbol[];
+}
+
+export interface TexlabFoldingRange {
+  startLine: number;
+  endLine: number;
+  startCharacter?: number;
+  endCharacter?: number;
+  kind?: 'comment' | 'imports' | 'region';
+}
+
+export interface TexlabInlayHint {
+  position: TexlabPosition;
+  label: string;
+  tooltip?: string;
+  kind?: 'type' | 'parameter';
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
+}
+
+/**
+ * Renderer-facing adapter for an optional TexLab client. It deliberately contains
+ * only plain data: Workspace can bridge it to typed IPC without exposing process
+ * access to Monaco. Missing methods leave TeXtra's local editor behavior intact.
+ */
+export interface TexlabEditorAdapter {
+  readonly isReady: boolean;
+  readonly diagnostics?: ReadonlyMap<string, readonly TexlabDiagnostic[]>;
+  /** Supplies the real project file URI so TexLab can resolve includes and bibliographies. */
+  documentUri?(document: Pick<OpenDocument, 'projectId' | 'path'>): string;
+  syncDocument?(document: TexlabEditorDocument): void | Promise<void>;
+  closeDocument?(document: Pick<TexlabEditorDocument, 'path' | 'uri'>): void | Promise<void>;
+  requestCompletion?(
+    document: TexlabEditorDocument,
+    position: TexlabPosition,
+  ): Promise<readonly TexlabCompletion[]>;
+  requestHover?(
+    document: TexlabEditorDocument,
+    position: TexlabPosition,
+  ): Promise<TexlabHover | null>;
+  requestDefinition?(
+    document: TexlabEditorDocument,
+    position: TexlabPosition,
+  ): Promise<readonly TexlabLocation[]>;
+  requestReferences?(
+    document: TexlabEditorDocument,
+    position: TexlabPosition,
+  ): Promise<readonly TexlabLocation[]>;
+  requestDocumentSymbols?(document: TexlabEditorDocument): Promise<readonly TexlabDocumentSymbol[]>;
+  requestFoldingRanges?(document: TexlabEditorDocument): Promise<readonly TexlabFoldingRange[]>;
+  requestInlayHints?(
+    document: TexlabEditorDocument,
+    range: TexlabRange,
+  ): Promise<readonly TexlabInlayHint[]>;
+}
+
+function texlabUri(document: Pick<OpenDocument, 'projectId' | 'path'>) {
+  return `file:///textra/${encodeURIComponent(document.projectId)}/${document.path
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}`;
+}
+
+function documentUri(
+  document: Pick<OpenDocument, 'projectId' | 'path'>,
+  adapter?: TexlabEditorAdapter,
+) {
+  return adapter?.documentUri?.(document) ?? texlabUri(document);
+}
+
+function toTexlabDocument(
+  model: monaco.editor.ITextModel,
+  document: OpenDocument,
+): TexlabEditorDocument {
+  return {
+    path: document.path,
+    uri: model.uri.toString(),
+    languageId: model.getLanguageId(),
+    version: model.getVersionId(),
+    text: model.getValue(),
+  };
+}
+
+function toTexlabPosition(position: monaco.Position): TexlabPosition {
+  return { line: position.lineNumber - 1, character: position.column - 1 };
+}
+
+function toMonacoRange(range: TexlabRange): monaco.IRange {
+  return {
+    startLineNumber: range.start.line + 1,
+    startColumn: range.start.character + 1,
+    endLineNumber: range.end.line + 1,
+    endColumn: range.end.character + 1,
+  };
+}
 
 export function SourceEditor({
   documents,
@@ -160,6 +306,7 @@ export function SourceEditor({
   fontSize,
   wrap,
   readOnly,
+  texlab,
 }: {
   documents: OpenDocument[];
   activePath: string;
@@ -168,6 +315,7 @@ export function SourceEditor({
   fontSize: number;
   wrap: boolean;
   readOnly: boolean;
+  texlab?: TexlabEditorAdapter;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -175,9 +323,13 @@ export function SourceEditor({
   const views = useRef(new Map<string, monaco.editor.ICodeEditorViewState>());
   const current = useRef<string | null>(null);
   const documentsRef = useRef(documents);
+  const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
+  useEffect(() => {
+    texlabRef.current = texlab;
+  }, [texlab]);
   useEffect(() => {
     const instance = monaco.editor.create(container.current!, {
       ariaLabel: 'LaTeX source editor',
@@ -226,7 +378,12 @@ export function SourceEditor({
     };
     window.addEventListener('textra:insert-source', insertSource);
     const content = instance.onDidChangeModelContent(() => {
-      if (current.current) editDocument(current.current, instance.getValue());
+      if (!current.current) return;
+      editDocument(current.current, instance.getValue());
+      const document = documentsRef.current.find(({ path }) => path === current.current);
+      const model = instance.getModel();
+      if (document && model && texlabRef.current?.isReady)
+        void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
     });
     const cursor = instance.onDidChangeCursorPosition((event) => {
       if (current.current)
@@ -234,44 +391,221 @@ export function SourceEditor({
           source: { path: current.current, line: event.position.lineNumber },
         });
     });
+    const sourceDocument = (model: monaco.editor.ITextModel) =>
+      documentsRef.current.find(
+        (document) => model.uri.toString() === documentUri(document, texlabRef.current),
+      ) ?? documentsRef.current.find((document) => document.path === current.current);
+    const localCompletion = (
+      model: monaco.editor.ITextModel,
+      position: monaco.Position,
+    ): monaco.languages.CompletionItem[] => {
+      const before = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
+      const match = /\\([A-Za-z@]+)\*?(?:\[[^\]]*\])?\{[^}]*$/.exec(before);
+      if (!match || !/^(?:ref|eqref|pageref|autoref|cite)/i.test(match[1])) return [];
+      const labels = documentsRef.current.flatMap((document) =>
+        analyzeLatexDocument(document.content).labels.map((label) => ({
+          ...label,
+          path: document.path,
+        })),
+      );
+      const citations = documentsRef.current.flatMap((document) =>
+        analyzeLatexDocument(document.content).citations.map((citation) => citation.value),
+      );
+      const values = /cite/i.test(match[1]) ? citations : labels.map((label) => label.value);
+      const word = model.getWordUntilPosition(position);
+      const range = new monaco.Range(
+        position.lineNumber,
+        word.startColumn,
+        position.lineNumber,
+        word.endColumn,
+      );
+      return [...new Set(values)].map((value) => ({
+        label: value,
+        kind: monaco.languages.CompletionItemKind.Reference,
+        insertText: value,
+        detail: /cite/i.test(match[1]) ? 'Citation key' : 'LaTeX label',
+        range,
+      }));
+    };
     const completion = monaco.languages.registerCompletionItemProvider('latex', {
-      triggerCharacters: ['{', ','],
-      provideCompletionItems(model, position) {
-        const before = model.getValueInRange({
-          startLineNumber: position.lineNumber,
-          startColumn: 1,
-          endLineNumber: position.lineNumber,
-          endColumn: position.column,
+      triggerCharacters: ['\\', '{', ',', '['],
+      async provideCompletionItems(model, position) {
+        const local = localCompletion(model, position);
+        const document = sourceDocument(model);
+        const adapter = texlabRef.current;
+        if (!document || !adapter?.isReady || !adapter.requestCompletion)
+          return { suggestions: local };
+        try {
+          const completions = await adapter.requestCompletion(
+            toTexlabDocument(model, document),
+            toTexlabPosition(position),
+          );
+          const seen = new Set(local.map((item) => item.label));
+          const suggestions = completions
+            .filter((item) => !seen.has(item.label))
+            .map((item) => ({
+              label: item.label,
+              kind: monaco.languages.CompletionItemKind.Text,
+              insertText: item.insertText ?? item.label,
+              detail: item.detail,
+              documentation: item.documentation,
+              filterText: item.filterText,
+              sortText: item.sortText,
+              range: toMonacoRange(
+                item.range ??
+                  (() => {
+                    const word = model.getWordUntilPosition(position);
+                    return {
+                      start: { line: position.lineNumber - 1, character: word.startColumn - 1 },
+                      end: { line: position.lineNumber - 1, character: word.endColumn - 1 },
+                    };
+                  })(),
+              ),
+            }));
+          return { suggestions: [...suggestions, ...local] };
+        } catch {
+          return { suggestions: local };
+        }
+      },
+    });
+    const hover = monaco.languages.registerHoverProvider('latex', {
+      async provideHover(model, position) {
+        const document = sourceDocument(model);
+        const adapter = texlabRef.current;
+        if (!document || !adapter?.isReady || !adapter.requestHover) return null;
+        try {
+          const hover = await adapter.requestHover(
+            toTexlabDocument(model, document),
+            toTexlabPosition(position),
+          );
+          return hover
+            ? {
+                contents: [{ value: hover.contents }],
+                range: hover.range ? toMonacoRange(hover.range) : undefined,
+              }
+            : null;
+        } catch {
+          return null;
+        }
+      },
+    });
+    const locations =
+      (request: keyof Pick<TexlabEditorAdapter, 'requestDefinition' | 'requestReferences'>) =>
+      async (model: monaco.editor.ITextModel, position: monaco.Position) => {
+        const document = sourceDocument(model);
+        const adapter = texlabRef.current;
+        const handler = adapter?.[request];
+        if (!document || !adapter?.isReady || !handler) return [];
+        try {
+          const result = await handler.call(
+            adapter,
+            toTexlabDocument(model, document),
+            toTexlabPosition(position),
+          );
+          return result.map((location) => ({
+            uri: monaco.Uri.parse(
+              location.uri ?? documentUri({ ...document, path: location.path }, texlabRef.current),
+            ),
+            range: toMonacoRange(location.range),
+          }));
+        } catch {
+          return [];
+        }
+      };
+    const definition = monaco.languages.registerDefinitionProvider('latex', {
+      provideDefinition: locations('requestDefinition'),
+    });
+    const references = monaco.languages.registerReferenceProvider('latex', {
+      provideReferences: locations('requestReferences'),
+    });
+    const symbols = monaco.languages.registerDocumentSymbolProvider('latex', {
+      async provideDocumentSymbols(model) {
+        const document = sourceDocument(model);
+        const adapter = texlabRef.current;
+        if (!document || !adapter?.isReady || !adapter.requestDocumentSymbols) return [];
+        const convert = (symbol: TexlabDocumentSymbol): monaco.languages.DocumentSymbol => ({
+          name: symbol.name,
+          detail: symbol.detail ?? '',
+          kind: symbol.kind ?? monaco.languages.SymbolKind.String,
+          tags: [],
+          range: toMonacoRange(symbol.range),
+          selectionRange: toMonacoRange(symbol.selectionRange ?? symbol.range),
+          children: symbol.children?.map(convert),
         });
-        const match = /\\([A-Za-z@]+)\*?(?:\[[^\]]*\])?\{[^}]*$/.exec(before);
-        if (!match || !/^(?:ref|eqref|pageref|autoref|cite)/i.test(match[1]))
-          return { suggestions: [] };
-        const labels = documentsRef.current.flatMap((document) =>
-          analyzeLatexDocument(document.content).labels.map((label) => ({
-            ...label,
-            path: document.path,
-          })),
-        );
-        const citations = documentsRef.current.flatMap((document) =>
-          analyzeLatexDocument(document.content).citations.map((citation) => citation.value),
-        );
-        const values = /cite/i.test(match[1]) ? citations : labels.map((label) => label.value);
-        const word = model.getWordUntilPosition(position);
-        const range = new monaco.Range(
-          position.lineNumber,
-          word.startColumn,
-          position.lineNumber,
-          word.endColumn,
-        );
-        return {
-          suggestions: [...new Set(values)].map((value) => ({
-            label: value,
-            kind: monaco.languages.CompletionItemKind.Reference,
-            insertText: value,
-            detail: /cite/i.test(match[1]) ? 'Citation key' : 'LaTeX label',
-            range,
-          })),
-        };
+        try {
+          return (await adapter.requestDocumentSymbols(toTexlabDocument(model, document))).map(
+            convert,
+          );
+        } catch {
+          return [];
+        }
+      },
+    });
+    const folding = monaco.languages.registerFoldingRangeProvider('latex', {
+      async provideFoldingRanges(model) {
+        const document = sourceDocument(model);
+        const adapter = texlabRef.current;
+        if (document && adapter?.isReady && adapter.requestFoldingRanges)
+          try {
+            return (await adapter.requestFoldingRanges(toTexlabDocument(model, document))).map(
+              (range) => ({
+                start: range.startLine + 1,
+                end: range.endLine + 1,
+                ...(range.kind
+                  ? {
+                      kind:
+                        range.kind === 'imports'
+                          ? monaco.languages.FoldingRangeKind.Imports
+                          : range.kind === 'comment'
+                            ? monaco.languages.FoldingRangeKind.Comment
+                            : monaco.languages.FoldingRangeKind.Region,
+                    }
+                  : {}),
+              }),
+            );
+          } catch {
+            // Fall through to TeXtra's deterministic folding parser.
+          }
+        return latexFoldingRanges(model.getLinesContent()).map((range) => ({
+          start: range.start,
+          end: range.end,
+          ...(range.comment ? { kind: monaco.languages.FoldingRangeKind.Comment } : {}),
+        }));
+      },
+    });
+    const inlayHints = monaco.languages.registerInlayHintsProvider('latex', {
+      async provideInlayHints(model, range) {
+        const document = sourceDocument(model);
+        const adapter = texlabRef.current;
+        if (!document || !adapter?.isReady || !adapter.requestInlayHints)
+          return { hints: [], dispose() {} };
+        try {
+          const hints = await adapter.requestInlayHints(toTexlabDocument(model, document), {
+            start: toTexlabPosition(range.getStartPosition()),
+            end: toTexlabPosition(range.getEndPosition()),
+          });
+          return {
+            hints: hints.map((hint) => ({
+              position: { lineNumber: hint.position.line + 1, column: hint.position.character + 1 },
+              label: hint.label,
+              tooltip: hint.tooltip,
+              kind:
+                hint.kind === 'parameter'
+                  ? monaco.languages.InlayHintKind.Parameter
+                  : monaco.languages.InlayHintKind.Type,
+              paddingLeft: hint.paddingLeft,
+              paddingRight: hint.paddingRight,
+            })),
+            dispose() {},
+          };
+        } catch {
+          return { hints: [], dispose() {} };
+        }
       },
     });
     const retainedModels = models.current;
@@ -281,8 +615,17 @@ export function SourceEditor({
       content.dispose();
       cursor.dispose();
       completion.dispose();
+      hover.dispose();
+      definition.dispose();
+      references.dispose();
+      symbols.dispose();
+      folding.dispose();
+      inlayHints.dispose();
       instance.dispose();
-      retainedModels.forEach((model) => model.dispose());
+      retainedModels.forEach((model, path) => {
+        void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
+        model.dispose();
+      });
       retainedModels.clear();
       current.current = null;
     };
@@ -298,11 +641,11 @@ export function SourceEditor({
         model = monaco.editor.createModel(
           document.content,
           /\.(tex|bib|sty|cls)$/.test(document.path) ? 'latex' : 'plaintext',
-          monaco.Uri.parse(
-            `inmemory://textra/${encodeURIComponent(document.projectId)}/${document.path}`,
-          ),
+          monaco.Uri.parse(documentUri(document, texlabRef.current)),
         );
         models.current.set(document.path, model);
+        if (texlabRef.current?.isReady)
+          void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
       } else if (model.getValue() !== document.content) model.setValue(document.content);
     }
     if (current.current !== activePath) {
@@ -315,11 +658,43 @@ export function SourceEditor({
     }
     for (const [path, model] of models.current)
       if (!documents.some((document) => document.path === path)) {
+        void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
         model.dispose();
         models.current.delete(path);
         views.current.delete(path);
       }
   }, [documents, activePath]);
+  useEffect(() => {
+    if (!texlab?.isReady) return;
+    for (const document of documents) {
+      const model = models.current.get(document.path);
+      if (model) void texlab.syncDocument?.(toTexlabDocument(model, document));
+    }
+  }, [documents, texlab]);
+  useEffect(() => {
+    const diagnostics = texlab?.diagnostics;
+    for (const [path, model] of models.current) {
+      const markers = diagnostics?.get(path) ?? [];
+      monaco.editor.setModelMarkers(
+        model,
+        'texlab',
+        markers.map((diagnostic) => ({
+          ...toMonacoRange(diagnostic.range),
+          severity:
+            diagnostic.severity === 'error'
+              ? monaco.MarkerSeverity.Error
+              : diagnostic.severity === 'warning'
+                ? monaco.MarkerSeverity.Warning
+                : diagnostic.severity === 'info'
+                  ? monaco.MarkerSeverity.Info
+                  : monaco.MarkerSeverity.Hint,
+          message: diagnostic.message,
+          code: diagnostic.code,
+          source: diagnostic.source ?? 'TexLab',
+        })),
+      );
+    }
+  }, [documents, texlab?.diagnostics]);
   useEffect(() => {
     monaco.editor.setTheme(theme === 'dark' ? 'textra-dark' : 'textra-light');
   }, [theme]);

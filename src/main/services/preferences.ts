@@ -20,6 +20,7 @@ const optionalKeys = new Set([
   'fontSize',
   'wrap',
   'sidebarWidth',
+  'texlabEnabled',
   'toolPaths',
 ]);
 
@@ -67,7 +68,8 @@ export function validatePreferences(value: unknown): Preferences {
       (typeof candidate.sidebarWidth !== 'number' ||
         !Number.isFinite(candidate.sidebarWidth) ||
         candidate.sidebarWidth < SIDEBAR_WIDTH_RANGE.min ||
-        candidate.sidebarWidth > SIDEBAR_WIDTH_RANGE.max))
+        candidate.sidebarWidth > SIDEBAR_WIDTH_RANGE.max)) ||
+    (Object.hasOwn(candidate, 'texlabEnabled') && typeof candidate.texlabEnabled !== 'boolean')
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
@@ -83,6 +85,7 @@ export function validatePreferences(value: unknown): Preferences {
     fontSize: (candidate.fontSize ?? DEFAULT_PREFERENCES.fontSize) as number,
     wrap: (candidate.wrap ?? DEFAULT_PREFERENCES.wrap) as boolean,
     sidebarWidth: (candidate.sidebarWidth ?? DEFAULT_PREFERENCES.sidebarWidth) as number,
+    texlabEnabled: (candidate.texlabEnabled ?? DEFAULT_PREFERENCES.texlabEnabled) as boolean,
     toolPaths: validateToolPaths(candidate.toolPaths),
   };
 }

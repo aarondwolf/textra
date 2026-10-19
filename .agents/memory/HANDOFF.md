@@ -60,15 +60,16 @@ Development resolves the binary from `resources/`; a packaged app expects the
 same tree under `process.resourcesPath`. No installer configuration exists yet.
 macOS/Linux assets and installer resource copying are Phase 4 work.
 
-## Active fix: automatic completion
+## Completion widget fix
 
-The owner reports that typing `\begin{item` shows no completion. The source is
-visible in `SourceEditor.tsx`: Monaco is configured with `quickSuggestions:
-false`. The provider only runs when `\\`, `{`, `,`, or `[` is typed, so it does
-not request fresh suggestions while `item` is typed. TexLab does provide LSP
-completion; enable automatic LaTeX quick suggestions, preferably excluding
-comments/strings, then test environment completion and Ctrl+Space in the native
-window. Update this handoff and CURRENT_STATE after the fix.
+The owner reports that typing `\begin{item` shows no completion. Automatic
+LaTeX quick suggestions are now enabled, but TeXtra uses Monaco's modular
+editor build and had not imported the Suggest Controller contribution. It is
+required to render and operate completion widgets. It is now imported in both
+`SourceEditor.tsx` and Vite's dependency optimizer. Typecheck, lint, and the
+production build pass; the development app reached `application-ready` after
+the cache was rebuilt. Native interaction testing of `\\begin{item` and
+Ctrl+Space remains the next check.
 
 ## Verification and current limits
 

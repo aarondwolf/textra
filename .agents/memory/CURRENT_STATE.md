@@ -1,5 +1,13 @@
 # Current state
 
+2026-10-19 Monaco completion widget fix (working tree): LaTeX automatic
+suggestions were enabled but the modular Monaco build had omitted its Suggest
+Controller contribution, so no suggestion widget could render. The contribution
+is now imported in `SourceEditor.tsx` and Vite's optimized Monaco dependencies.
+Typecheck, lint, and production build pass; the development app reached
+`application-ready`. Native interaction testing of `\\begin{item` and
+Ctrl+Space remains the next check.
+
 2026-10-19 TexLab integration (working tree): TexLab 5.26.0 is bundled under
 `resources/texlab/win32-x64/texlab.exe` for Windows x64. The pinned artifact hash, GPL-3.0
 license text, attribution, and source URL live beside it. The default-enabled preference

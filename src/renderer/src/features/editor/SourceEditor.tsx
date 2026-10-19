@@ -5,6 +5,7 @@ import { latexFoldingRanges } from './folding';
 import '../../../../../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/editor/contrib/find/browser/findController.js';
+import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
 // editor.api.js ships no optional features; each one must be imported to exist.
 import 'monaco-editor/editor/contrib/folding/browser/folding.js';
 import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js';

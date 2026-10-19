@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowSquareOut, Copy, Sparkle } from '@phosphor-icons/react';
+import { ArrowSquareOut, Check, Copy, Sparkle } from '@phosphor-icons/react';
 import './problems.css';
 
 export type ProblemSeverity = 'error' | 'warning' | 'info';
@@ -19,7 +19,7 @@ export interface ProblemsPanelProps {
   diagnostics: readonly ProblemDiagnostic[];
   onNavigate?: (diagnostic: ProblemDiagnostic) => void;
   onSearchStackExchange?: (diagnostic: ProblemDiagnostic) => void;
-  onCopyPrompt?: (diagnostic: ProblemDiagnostic) => void;
+  onCopyPrompt?: (diagnostic: ProblemDiagnostic) => Promise<void> | void;
   /** Reserved for the built-in chat integration. */
   onAskChat?: (diagnostic: ProblemDiagnostic) => void;
 }
@@ -51,7 +51,7 @@ function ActionButton({
 }: {
   title: string;
   children: React.ReactNode;
-  onClick: () => void;
+  onClick: () => Promise<void> | void;
   disabled?: boolean;
 }) {
   return (
@@ -63,7 +63,7 @@ function ActionButton({
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation();
-        onClick();
+        void onClick();
       }}
     >
       {children}
@@ -79,6 +79,20 @@ function ProblemActions({
 }: Pick<ProblemsPanelProps, 'onSearchStackExchange' | 'onCopyPrompt' | 'onAskChat'> & {
   diagnostic: ProblemDiagnostic;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyPrompt = async () => {
+    if (!onCopyPrompt) return;
+
+    try {
+      await onCopyPrompt(diagnostic);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // The workspace reports clipboard failures in its error banner.
+    }
+  };
+
   return (
     <div className="problem-actions" aria-label="Problem actions">
       <ActionButton
@@ -90,12 +104,12 @@ function ProblemActions({
         <span>Stack Exchange</span>
       </ActionButton>
       <ActionButton
-        title="Copy an AI troubleshooting prompt"
-        onClick={() => onCopyPrompt?.(diagnostic)}
+        title={copied ? 'Copied troubleshooting prompt' : 'Copy an AI troubleshooting prompt'}
+        onClick={handleCopyPrompt}
         disabled={!onCopyPrompt}
       >
-        <Copy size={13} aria-hidden="true" />
-        <span>Copy prompt</span>
+        {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+        <span>{copied ? 'Copied' : 'Copy prompt'}</span>
       </ActionButton>
       <ActionButton
         title={

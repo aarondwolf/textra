@@ -2028,9 +2028,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                             if (!result.ok) showError(result.error);
                           });
                       }}
-                      onCopyPrompt={(diagnostic) =>
-                        void copyProblemPrompt(diagnostic).catch(showError)
-                      }
+                      onCopyPrompt={async (diagnostic) => {
+                        try {
+                          await copyProblemPrompt(diagnostic);
+                        } catch (error) {
+                          showError(error);
+                          throw error;
+                        }
+                      }}
                     />
                   ) : (
                     <div className="panel-content">

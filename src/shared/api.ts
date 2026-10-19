@@ -14,7 +14,24 @@ export interface Preferences {
   outputVisible: boolean;
   editorWidth: number;
   defaultRecipe: BuildEngine;
+  fontSize: number;
+  wrap: boolean;
+  sidebarWidth: number;
+  /** Optional absolute executable overrides keyed by TeX tool name. Not secrets. */
+  toolPaths: Partial<Record<ConfigurableTool, string>>;
 }
+export const CONFIGURABLE_TOOLS = [
+  'pdflatex',
+  'xelatex',
+  'lualatex',
+  'latexmk',
+  'bibtex',
+  'biber',
+  'synctex',
+] as const;
+export type ConfigurableTool = (typeof CONFIGURABLE_TOOLS)[number];
+export const SIDEBAR_WIDTH_RANGE = { min: 160, max: 480 } as const;
+export const FONT_SIZE_RANGE = { min: 10, max: 28 } as const;
 export const DEFAULT_PREFERENCES: Preferences = {
   version: 1,
   theme: 'dark',
@@ -23,6 +40,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   outputVisible: true,
   editorWidth: 55,
   defaultRecipe: 'pdflatex',
+  fontSize: 14,
+  wrap: false,
+  sidebarWidth: 226,
+  toolPaths: {},
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 export interface FileEntry {
@@ -79,6 +100,8 @@ export interface ToolInfo {
   name: string;
   path: string | null;
   version: string | null;
+  /** True when the path comes from a user override rather than PATH. */
+  custom?: boolean;
 }
 export interface BuildRequest {
   projectId: string;
@@ -108,6 +131,9 @@ export interface BuildState {
   pdfVersion?: number;
   projectId: string | null;
   rootFile: string | null;
+  /** Recipe steps finished so far and the total, while a build runs. */
+  stepsDone?: number;
+  stepCount?: number;
 }
 export interface SyncForwardRequest extends FileRef {
   rootFile: string;
@@ -146,12 +172,15 @@ export interface TextraAPI {
     paths: string[];
   }): Promise<Result<FileRevision[]>>;
   revealEntry(request: FileRef): Promise<Result<void>>;
+  copyEntryPath(request: FileRef & { relative: boolean }): Promise<Result<void>>;
   openInCode(request: FileRef): Promise<Result<void>>;
   getRecentProjects(): Promise<Result<RecentProject[]>>;
   openRecentProject(id: string): Promise<Result<ProjectInfo>>;
   setProjectPinned(request: { id: string; pinned: boolean }): Promise<Result<RecentProject[]>>;
   setDirty(dirty: boolean): Promise<Result<void>>;
   detectTools(): Promise<Result<ToolInfo[]>>;
+  /** Opens a native file chooser; returns a validated absolute path or null if cancelled. */
+  chooseToolPath(name: ConfigurableTool): Promise<Result<string | null>>;
   compile(request: BuildRequest): Promise<Result<BuildState>>;
   cancelBuild(): Promise<Result<void>>;
   getBuildState(): Promise<Result<BuildState>>;

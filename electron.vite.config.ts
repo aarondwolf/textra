@@ -21,6 +21,10 @@ export default defineConfig({
       createHash('sha256').update(process.cwd()).digest('hex').slice(0, 16),
     ),
     plugins: [react(), tailwindcss()],
+    build: {
+      // Emit the ~1,200 file-type SVGs as files instead of inlining them into the bundle.
+      assetsInlineLimit: (file) => (file.includes('material-icon-theme') ? false : undefined),
+    },
     optimizeDeps: {
       noDiscovery: true,
       include: [
@@ -28,8 +32,15 @@ export default defineConfig({
         'react-dom/client',
         'zustand',
         '@radix-ui/react-dialog',
-        'lucide-react',
+        '@phosphor-icons/react',
+        // Every Monaco entry point must be pre-bundled together. Contributions imported
+        // outside this list load as separate raw modules whose registrations the editor
+        // (bundled from editor.api.js) never sees, so the features silently do nothing.
         'monaco-editor/editor/editor.api.js',
+        'monaco-editor/editor/contrib/find/browser/findController.js',
+        'monaco-editor/editor/contrib/folding/browser/folding.js',
+        'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js',
+        'monaco-editor/editor/contrib/comment/browser/comment.js',
         'pdfjs-dist',
       ],
     },

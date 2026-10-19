@@ -48,4 +48,47 @@ describe('preference boundary validation', () => {
     input.theme = 'light';
     expect(validated.theme).toBe('dark');
   });
+
+  it('migrates files saved before editor and tool settings existed', () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+    delete legacy.fontSize;
+    delete legacy.wrap;
+    delete legacy.sidebarWidth;
+    delete legacy.toolPaths;
+    expect(validatePreferences(legacy)).toEqual(DEFAULT_PREFERENCES);
+  });
+
+  it('persists font size and word wrap within supported bounds', () => {
+    const saved = validatePreferences({ ...DEFAULT_PREFERENCES, fontSize: 18, wrap: true });
+    expect(saved.fontSize).toBe(18);
+    expect(saved.wrap).toBe(true);
+    for (const fontSize of [9, 29, 14.5, '14', NaN])
+      expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, fontSize })).toThrow();
+    expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, wrap: 'yes' })).toThrow();
+  });
+
+  it('bounds the persisted sidebar width', () => {
+    expect(validatePreferences({ ...DEFAULT_PREFERENCES, sidebarWidth: 300 }).sidebarWidth).toBe(
+      300,
+    );
+    for (const sidebarWidth of [159, 481, NaN, Infinity, '226'])
+      expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, sidebarWidth })).toThrow();
+  });
+
+  it('accepts only absolute paths to the matching TeX executable', () => {
+    const good = process.platform === 'win32' ? 'C:\\tex\\bin\\pdflatex.exe' : '/opt/tex/pdflatex';
+    expect(
+      validatePreferences({ ...DEFAULT_PREFERENCES, toolPaths: { pdflatex: good } }).toolPaths,
+    ).toEqual({ pdflatex: good });
+    for (const toolPaths of [
+      { pdflatex: 'pdflatex' },
+      { pdflatex: '/opt/tex/xelatex' },
+      { pdflatex: '/opt/tex/pdflatex.sh' },
+      { pdflatex: '/opt/tex/powershell' },
+      { pdflatex: 42 },
+      { powershell: '/usr/bin/powershell' },
+      [],
+    ])
+      expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, toolPaths })).toThrow();
+  });
 });

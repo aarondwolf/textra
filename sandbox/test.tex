@@ -2,6 +2,8 @@
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{booktabs}
 
 \title{TeXtra Test Document}
 \author{Test}
@@ -11,7 +13,37 @@
 
 \maketitle
 
-This is a simple test document. Edit the text and compile it in TeXtra to check
-that the editor and PDF preview are working.
+This is a simple test document. Edit the text and compile it in TeXtra to check that the editor and PDF preview are working.
+
+\begin{itemize}
+  \item Test
+  \item Test 2
+\end{itemize}
+
+\section{Section}
+Lorem ipsum dolor sit amet.
+
+\subsection{Subsection}
+
+\begin{table}[htbp]
+  \centering
+  \caption{}
+  \label{tab:}
+  \begin{tabular}{lcc}
+    \toprule
+    Variable & (1) & (2) \\
+    \midrule
+    A & 0.00 & 0.00 \\
+    B & 0.00 & 0.00 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+\begin{equation}
+  Y = aX + b + \varepsilon \label{eq:slope}
+\end{equation}
+
+Reference equation \eqref{eq:slope}.
 
 \end{document}

@@ -25,8 +25,8 @@ import type {
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 const MAX_TREE_ENTRIES = 10000;
-const protectedNames = new Set(['.git', '.textra', 'node_modules', 'build']);
-const generatedSuffix = /\.(?:aux|log|fls|fdb_latexmk|synctex(?:\.gz)?|toc|out|bbl|blg)$/i;
+/** Listed in the tree but not walked, so they cannot exhaust the entry limit. */
+const unexpandedNames = new Set(['.git', 'node_modules']);
 
 export class ProjectError extends Error {
   constructor(
@@ -67,14 +67,10 @@ export function validateRelativePath(value: unknown): string {
         part === '..' ||
         /[. ]$/.test(part) ||
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) ||
-        protectedNames.has(part.toLowerCase()),
-    ) ||
-    generatedSuffix.test(value)
+        part.startsWith('.textra-save-'),
+    )
   ) {
-    throw new ProjectError(
-      'INVALID_PATH',
-      'This path is protected or is not a valid project path.',
-    );
+    throw new ProjectError('INVALID_PATH', 'This is not a valid project path.');
   }
   return value;
 }
@@ -289,7 +285,8 @@ export class ProjectService {
           name: entry.name,
           kind: entry.isDirectory() ? 'directory' : 'file',
         });
-        if (entry.isDirectory()) await walk(child, depth + 1);
+        if (entry.isDirectory() && !unexpandedNames.has(entry.name.toLowerCase()))
+          await walk(child, depth + 1);
       }
     };
     await walk('', 0);

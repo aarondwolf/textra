@@ -46,15 +46,23 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await openRecipes();
     await dialog.getByRole('button', { name: 'New recipe', exact: true }).click();
     await dialog.getByRole('textbox', { name: 'Recipe name', exact: true }).fill('Draft proof');
-    await dialog.getByRole('button', { name: 'Add step', exact: true }).click();
+    await dialog.getByRole('combobox', { name: 'Add step', exact: true }).selectOption('pdflatex');
+    await dialog.getByRole('button', { name: 'Edit tool pdflatex', exact: true }).first().click();
+    const synctex = dialog.getByRole('button', { name: /^SyncTeX/ });
+    await synctex.click();
+    await expect(synctex).toHaveAttribute('aria-pressed', 'false');
+    await synctex.click();
+    await expect(synctex).toHaveAttribute('aria-pressed', 'true');
+    await dialog.getByRole('button', { name: /All recipes/ }).click();
+    await expect(
+      dialog.getByRole('button', { name: 'Edit recipe Draft proof', exact: true }),
+    ).toBeVisible();
     await dialog
-      .getByRole('textbox', { name: 'Output directory', exact: true })
+      .getByRole('textbox', { name: 'Build folder', exact: true })
       .fill('build/custom output');
     await dialog
       .getByRole('combobox', { name: 'Project default recipe', exact: true })
       .selectOption('Draft proof');
-    await dialog.getByRole('checkbox', { name: 'Enable SyncTeX', exact: true }).uncheck();
-    await dialog.getByRole('checkbox', { name: 'Enable SyncTeX', exact: true }).check();
     await dialog.locator('.recipe-scroll').evaluate((element) => {
       element.scrollTop = 0;
     });
@@ -85,7 +93,7 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await expect(page.locator('.pdf-scroll canvas')).toBeVisible({ timeout: 15000 });
 
     await openRecipes();
-    await dialog.getByRole('button', { name: 'settings.json', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Edit settings.json directly', exact: true }).click();
     saved = JSON.parse(await readFile(filename, 'utf8')) as ProjectConfig;
     saved['latex-workshop.latex.outDir'] = 'build/from-json';
     await dialog
@@ -132,7 +140,7 @@ test('project recipes round-trip through builder, JSON and external settings edi
     const external = JSON.stringify(saved, null, 2);
     await writeFile(filename, external);
     await dialog
-      .getByRole('textbox', { name: 'Output directory', exact: true })
+      .getByRole('textbox', { name: 'Build folder', exact: true })
       .fill('build/stale-popup');
     await dialog.getByRole('button', { name: 'Save project settings', exact: true }).click();
     await expect(dialog.getByRole('alert')).toContainText('changed');

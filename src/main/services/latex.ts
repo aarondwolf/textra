@@ -14,6 +14,7 @@ import type {
   ToolInfo,
 } from '../../shared/api';
 import { parseDiagnostics } from './diagnostics';
+import { getToolPath } from './tool-paths';
 import type { RecipeSettings } from '../../shared/recipes';
 import { planRecipe, recipeArguments, recipeDirectory, type RecipePlan } from './recipe-plan';
 
@@ -30,6 +31,17 @@ const MAX_PDF = 64 * 1024 * 1024;
 
 export async function findExecutable(name: string): Promise<string | null> {
   if (!(names as readonly string[]).includes(name)) throw new BuildError('Unsupported tool.');
+  const custom = getToolPath(name);
+  if (custom) {
+    // A user override replaces PATH lookup. If it is stale, report the tool as missing
+    // instead of silently running a different installation.
+    try {
+      if ((await stat(custom)).isFile()) return await realpath(custom);
+    } catch {
+      /* Fall through to report the tool as not found. */
+    }
+    return null;
+  }
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     const clean = directory.replace(/^"|"$/g, '');
     if (!isAbsolute(clean)) continue;
@@ -77,7 +89,12 @@ export async function detectTools(): Promise<ToolInfo[]> {
   return Promise.all(
     names.map(async (name) => {
       const path = await findExecutable(name);
-      return { name, path, version: path ? await probe(path) : null };
+      return {
+        name,
+        path,
+        version: path ? await probe(path) : null,
+        custom: getToolPath(name) !== undefined,
+      };
     }),
   );
 }
@@ -462,6 +479,8 @@ export class BuildService {
     // Retain the PDF bytes without mapping them through newer SyncTeX data.
     if (this.successful?.absolute === plan.pdf) this.successful.syncValid = false;
     let code = -1;
+    this.state.stepCount = prepared.length;
+    this.state.stepsDone = 0;
     for (const step of prepared) {
       if (this.cancelled) break;
       await recipeDirectory(root, step.cwd);
@@ -477,6 +496,7 @@ export class BuildService {
         ...step.env,
       });
       if (code !== 0) break;
+      this.state.stepsDone = (this.state.stepsDone ?? 0) + 1;
     }
     this.state.diagnostics = parseDiagnostics(this.state.log, request.rootFile, root);
     if (this.cancelled) {

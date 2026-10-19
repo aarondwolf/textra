@@ -1,7 +1,7 @@
 .setup-dialog {
   position: fixed;
   z-index: 51;
-  inset: 8vh max(20px, calc((100vw - 780px) / 2));
+  inset: 8vh max(20px, calc((100vw - 820px) / 2));
   background: var(--surface, #202425);
   color: var(--text);
   border: 1px solid var(--border);
@@ -43,18 +43,22 @@
 }
 .tool-row {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 4px 12px;
   font-size: 11px;
-  padding: 8px 0;
+  padding: 6px 0;
   border-bottom: 1px solid var(--border);
 }
 .tool-row strong {
   font-weight: 500;
   color: var(--accent);
 }
+.tool-row code.missing {
+  color: var(--faint);
+  font-style: italic;
+}
 .tool-row code {
-  grid-column: 2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -74,7 +78,7 @@
   background: var(--hover);
   border: 1px solid var(--border);
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 .setup-dialog button:disabled {
@@ -97,4 +101,60 @@
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.tool-actions {
+  display: inline-flex;
+  gap: 2px;
+  grid-column: 3;
+}
+.setup-dialog .tool-actions button.icon-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.setup-dialog .tool-actions button.icon-button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.settings-body {
+  display: flex;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 150px;
+  flex-shrink: 0;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
+}
+.setup-dialog .settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+.setup-dialog .settings-nav button:hover {
+  color: var(--text);
+}
+.setup-dialog .settings-nav button[aria-current='page'] {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border);
+}
+.settings-body .setup-scroll {
+  flex: 1;
+  min-width: 0;
+}
+.settings-body .setup-scroll > h3:first-child {
+  margin-top: 4px;
 }

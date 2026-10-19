@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { X } from 'lucide-react';
-import { BUILD_RECIPES, type BuildEngine, type SetupLink } from '../../../../shared/api';
-import { useUI } from '../../state/ui';
+import { Hammer, Palette, Pencil, Save, Undo2, Wrench, X } from '../../icons';
+import {
+  BUILD_RECIPES,
+  CONFIGURABLE_TOOLS,
+  type BuildEngine,
+  type ConfigurableTool,
+  type SetupLink,
+} from '../../../../shared/api';
+import { preferencesSaved, useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
 import './setup.css';
+
+type SectionId = 'appearance' | 'tools' | 'compilation' | 'backup';
+const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
+  { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'tools', label: 'LaTeX tools', icon: Wrench },
+  { id: 'compilation', label: 'Compilation', icon: Hammer },
+  { id: 'backup', label: 'Import & export', icon: Save },
+];
 
 export default function SetupDialog({
   open,
@@ -20,6 +34,7 @@ export default function SetupDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [log, setLog] = useState('');
   const [platform, setPlatform] = useState('');
+  const [section, setSection] = useState<SectionId>('appearance');
   useEffect(() => {
     if (open)
       void window.textra.getAppInfo().then((result) => {
@@ -37,6 +52,28 @@ export default function SetupDialog({
       setBusy(false);
     }
   }
+  async function refreshTools() {
+    const result = await window.textra.detectTools();
+    if (!result.ok) throw new Error(result.error);
+    useWorkspace.setState({ tools: result.value, toolsReady: true });
+  }
+  async function chooseToolPath(name: ConfigurableTool) {
+    const chosen = await window.textra.chooseToolPath(name);
+    if (!chosen.ok) throw new Error(chosen.error);
+    if (!chosen.value) return;
+    updatePreferences({ toolPaths: { ...preferences.toolPaths, [name]: chosen.value } });
+    await preferencesSaved();
+    await refreshTools();
+    return `${name} will use the selected file.`;
+  }
+  async function resetToolPath(name: ConfigurableTool) {
+    const next = { ...preferences.toolPaths };
+    delete next[name];
+    updatePreferences({ toolPaths: next });
+    await preferencesSaved();
+    await refreshTools();
+    return `${name} will be found on PATH again.`;
+  }
   async function setupLink(target: SetupLink) {
     const result = await window.textra.openSetupLink(target);
     if (!result.ok) throw new Error(result.error);
@@ -52,7 +89,7 @@ export default function SetupDialog({
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content className="setup-dialog">
           <div className="setup-heading">
-            <Dialog.Title>Settings & TeX setup</Dialog.Title>
+            <Dialog.Title>Settings</Dialog.Title>
             <Dialog.Close className="icon-button" aria-label="Close settings" disabled={busy}>
               <X size={18} />
             </Dialog.Close>
@@ -60,174 +97,251 @@ export default function SetupDialog({
           <Dialog.Description>
             No account or API key is required. Editing works without a TeX installation.
           </Dialog.Description>
-          <div className="setup-scroll">
-            <h3>Appearance</h3>
-            <label className="field-label">
-              Theme
-              <select
-                aria-label="Theme"
-                value={preferences.theme}
-                onChange={(event) =>
-                  updatePreferences({ theme: event.target.value as 'dark' | 'light' })
-                }
-              >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
-            </label>
-            <h3>Local tools</h3>
-            <div className="tool-list">
-              {tools.map((tool) => (
-                <div className="tool-row" key={tool.name}>
-                  <strong>{tool.name}</strong>
-                  <span>{tool.path ? (tool.version ?? 'Detected') : 'Not found'}</span>
-                  {tool.path && <code title={tool.path}>{tool.path}</code>}
-                </div>
-              ))}
-            </div>
-            <div className="setup-actions">
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void perform(async () => {
-                    const result = await window.textra.detectTools();
-                    if (!result.ok) throw new Error(result.error);
-                    useWorkspace.setState({ tools: result.value, toolsReady: true });
-                    return 'Tool detection refreshed. Restart TeXtra after changing your system PATH.';
-                  })
-                }
-              >
-                Check tools again
-              </button>
-              <button
-                disabled={
-                  busy ||
-                  build.running ||
-                  !tools.some((tool) => tool.name === 'pdflatex' && tool.path)
-                }
-                onClick={() =>
-                  void perform(async () => {
-                    setTesting(true);
-                    try {
-                      const result = await window.textra.testDistribution();
-                      if (!result.ok) throw new Error(result.error);
-                      setLog(result.value.log);
-                      return result.value.success
-                        ? 'Test document compiled successfully.'
-                        : 'The test compile failed. See its output below.';
-                    } finally {
-                      setTesting(false);
-                    }
-                  })
-                }
-              >
-                Test TeX installation
-              </button>
-              {testing && (
-                <button onClick={() => void window.textra.cancelBuild()}>Cancel test</button>
-              )}
-            </div>
-            <p className="setup-hint">
-              The test compiles a small temporary document with pdfLaTeX. It does not change your
-              project or download missing packages.
-            </p>
-            <h3>Get a TeX distribution</h3>
-            <p>
-              Use an existing installation when available. These buttons open the official download
-              pages in your browser.
-            </p>
-            <div className="setup-actions">
-              <button disabled={busy} onClick={() => void perform(() => setupLink('miktex'))}>
-                MiKTeX download
-              </button>
-              <button disabled={busy} onClick={() => void perform(() => setupLink('texlive'))}>
-                TeX Live installer
-              </button>
-              {platform === 'darwin' && (
-                <button disabled={busy} onClick={() => void perform(() => setupLink('mactex'))}>
-                  MacTeX download
+          <div className="settings-body">
+            <nav className="settings-nav" aria-label="Settings sections">
+              {SECTIONS.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  aria-current={section === id ? 'page' : undefined}
+                  onClick={() => setSection(id)}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                  {label}
                 </button>
+              ))}
+            </nav>
+            <div className="setup-scroll">
+              {section === 'appearance' && (
+                <>
+                  <h3>Appearance</h3>
+                  <label className="field-label">
+                    Theme
+                    <select
+                      aria-label="Theme"
+                      value={preferences.theme}
+                      onChange={(event) =>
+                        updatePreferences({ theme: event.target.value as 'dark' | 'light' })
+                      }
+                    >
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                    </select>
+                  </label>
+                </>
+              )}
+              {section === 'tools' && (
+                <>
+                  <h3>LaTeX tools</h3>
+                  <p className="setup-hint">
+                    Programs TeXtra found on your computer. Use the pencil to pick a different
+                    executable.
+                  </p>
+                  <div className="tool-list">
+                    {tools.map((tool) => {
+                      const configurable = (CONFIGURABLE_TOOLS as readonly string[]).includes(
+                        tool.name,
+                      );
+                      return (
+                        <div className="tool-row" key={tool.name}>
+                          <strong>{tool.name}</strong>
+                          <code
+                            title={tool.path ?? undefined}
+                            className={tool.path ? '' : 'missing'}
+                          >
+                            {tool.path ?? 'Not found'}
+                          </code>
+                          {configurable && (
+                            <span className="tool-actions">
+                              <button
+                                className="icon-button small"
+                                disabled={busy}
+                                aria-label={`Choose ${tool.name} executable`}
+                                title={tool.custom ? 'Change executable' : 'Set executable path'}
+                                onClick={() =>
+                                  void perform(() => chooseToolPath(tool.name as ConfigurableTool))
+                                }
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              {tool.custom && (
+                                <button
+                                  className="icon-button small"
+                                  disabled={busy}
+                                  aria-label={`Use PATH for ${tool.name}`}
+                                  title="Go back to finding it on PATH"
+                                  onClick={() =>
+                                    void perform(() => resetToolPath(tool.name as ConfigurableTool))
+                                  }
+                                >
+                                  <Undo2 size={13} />
+                                </button>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="setup-actions">
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void perform(async () => {
+                          await refreshTools();
+                          return 'Tool detection refreshed. Restart TeXtra after changing your system PATH.';
+                        })
+                      }
+                    >
+                      Check tools again
+                    </button>
+                    <button
+                      disabled={
+                        busy ||
+                        build.running ||
+                        !tools.some((tool) => tool.name === 'pdflatex' && tool.path)
+                      }
+                      onClick={() =>
+                        void perform(async () => {
+                          setTesting(true);
+                          try {
+                            const result = await window.textra.testDistribution();
+                            if (!result.ok) throw new Error(result.error);
+                            setLog(result.value.log);
+                            return result.value.success
+                              ? 'Test document compiled successfully.'
+                              : 'The test compile failed. See its output below.';
+                          } finally {
+                            setTesting(false);
+                          }
+                        })
+                      }
+                    >
+                      Test TeX installation
+                    </button>
+                    {testing && (
+                      <button onClick={() => void window.textra.cancelBuild()}>Cancel test</button>
+                    )}
+                  </div>
+                  <p className="setup-hint">
+                    The test compiles a small temporary document with pdfLaTeX. It does not change
+                    your project or download missing packages.
+                  </p>
+                  <h3>Get a TeX distribution</h3>
+                  <p className="setup-hint">
+                    Use an existing installation when available. These buttons open the official
+                    download pages in your browser. Installation can need administrator permission
+                    and several gigabytes of disk space. On Linux, use your package manager.
+                  </p>
+                  <div className="setup-actions">
+                    <button disabled={busy} onClick={() => void perform(() => setupLink('miktex'))}>
+                      MiKTeX download
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => void perform(() => setupLink('texlive'))}
+                    >
+                      TeX Live installer
+                    </button>
+                    {platform === 'darwin' && (
+                      <button
+                        disabled={busy}
+                        onClick={() => void perform(() => setupLink('mactex'))}
+                      >
+                        MacTeX download
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+              {section === 'compilation' && (
+                <>
+                  <h3>Compilation</h3>
+                  <label className="field-label">
+                    Default recipe for new documents
+                    <select
+                      aria-label="Default recipe for new documents"
+                      value={preferences.defaultRecipe}
+                      onChange={(event) =>
+                        updatePreferences({ defaultRecipe: event.target.value as BuildEngine })
+                      }
+                    >
+                      {BUILD_RECIPES.map((recipe) => (
+                        <option key={recipe.value} value={recipe.value}>
+                          {recipe.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="setup-hint">
+                    Compile builds the active .tex document. Each document remembers its last used
+                    recipe in the project settings.
+                  </p>
+                  <div className="setup-actions">
+                    <button
+                      disabled={!useWorkspace.getState().project || busy || build.running}
+                      onClick={() => {
+                        onOpenChange(false);
+                        useUI.getState().setRecipeEditorOpen(true);
+                      }}
+                    >
+                      Edit project build recipes
+                    </button>
+                  </div>
+                  <p className="setup-hint">
+                    Recipes and the output location (build folder or PDF beside the source) are
+                    stored per project.
+                  </p>
+                </>
+              )}
+              {section === 'backup' && (
+                <>
+                  <h3>Portable app settings</h3>
+                  <p className="setup-hint">
+                    Export your theme, pane layout, and default compile recipe. Imports are
+                    validated before you apply them. Recent folders and credentials are excluded.
+                  </p>
+                  <div className="setup-actions">
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void perform(async () => {
+                          const result = await window.textra.exportSettings();
+                          if (!result.ok) throw new Error(result.error);
+                          return result.value ? 'Settings exported.' : 'Export cancelled.';
+                        })
+                      }
+                    >
+                      Export settings
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void perform(async () => {
+                          const result = await window.textra.importSettings();
+                          if (!result.ok) throw new Error(result.error);
+                          if (!result.value) return 'Import cancelled.';
+                          useUI.setState({ preferences: result.value });
+                          return 'Theme and layout imported. Project files and tool paths are unchanged.';
+                        })
+                      }
+                    >
+                      Import settings
+                    </button>
+                  </div>
+                </>
+              )}
+              {message && (
+                <p role="status" className="setup-message">
+                  {message}
+                </p>
+              )}
+              {log && (
+                <details>
+                  <summary>Test compile output</summary>
+                  <pre className="setup-log">{log}</pre>
+                </details>
               )}
             </div>
-            <p className="setup-hint">
-              Installation can require administrator permission and several gigabytes of disk space.
-              On Linux, use your distribution’s package manager. After installation, restart TeXtra
-              and test the detected tools.
-            </p>
-            <h3>Compilation</h3>
-            <button
-              disabled={!useWorkspace.getState().project || busy || build.running}
-              onClick={() => {
-                onOpenChange(false);
-                useUI.getState().setRecipeEditorOpen(true);
-              }}
-            >
-              Edit project build recipes
-            </button>
-            <label className="field-label">
-              Default recipe for new documents
-              <select
-                aria-label="Default recipe for new documents"
-                value={preferences.defaultRecipe}
-                onChange={(event) =>
-                  updatePreferences({ defaultRecipe: event.target.value as BuildEngine })
-                }
-              >
-                {BUILD_RECIPES.map((recipe) => (
-                  <option key={recipe.value} value={recipe.value}>
-                    {recipe.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="setup-hint">
-              Compile builds the active .tex document. Each document remembers its last used recipe
-              in the project settings.
-            </p>
-            <h3>Portable app settings</h3>
-            <p>
-              Export your theme, pane layout, and default compile recipe. Imports are validated
-              before you apply them. Recent folders and credentials are excluded.
-            </p>
-            <div className="setup-actions">
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void perform(async () => {
-                    const result = await window.textra.exportSettings();
-                    if (!result.ok) throw new Error(result.error);
-                    return result.value ? 'Settings exported.' : 'Export cancelled.';
-                  })
-                }
-              >
-                Export settings
-              </button>
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void perform(async () => {
-                    const result = await window.textra.importSettings();
-                    if (!result.ok) throw new Error(result.error);
-                    if (!result.value) return 'Import cancelled.';
-                    useUI.setState({ preferences: result.value });
-                    return 'Theme and layout imported. Project files and tool paths are unchanged.';
-                  })
-                }
-              >
-                Import settings
-              </button>
-            </div>
-            {message && (
-              <p role="status" className="setup-message">
-                {message}
-              </p>
-            )}
-            {log && (
-              <details>
-                <summary>Test compile output</summary>
-                <pre className="setup-log">{log}</pre>
-              </details>
-            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

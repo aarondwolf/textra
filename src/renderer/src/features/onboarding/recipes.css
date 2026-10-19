@@ -31,7 +31,7 @@
   gap: 6px;
   padding: 6px 9px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
 }
 .recipe-mode {
@@ -55,7 +55,7 @@
 .recipe-scroll .field-label {
   margin: 10px 0;
 }
-.recipe-dialog input:not([type='checkbox']),
+.recipe-dialog input:not([type='checkbox']):not([type='radio']),
 .recipe-dialog select,
 .recipe-dialog textarea {
   width: 100%;
@@ -109,13 +109,6 @@
   font-size: 11px;
   line-height: 1.6;
 }
-.recipe-checkbox {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-  margin: 16px 0;
-}
 .recipe-dialog .dialog-actions {
   border-top: 1px solid var(--border);
   padding-top: 14px;
@@ -123,4 +116,163 @@
 }
 .recipe-dialog .dialog-actions .primary-button {
   width: auto;
+}
+
+.recipe-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+.recipe-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.recipe-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.recipe-row .recipe-hint {
+  margin: 0;
+}
+.recipe-dialog .badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+.recipe-dialog .back-link {
+  border-color: transparent;
+  color: var(--muted);
+  padding-left: 0;
+  margin: 6px 0;
+}
+.recipe-dialog .back-link:hover {
+  color: var(--text);
+}
+.location-options {
+  display: grid;
+  gap: 6px;
+}
+.location-option,
+.recipe-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+.location-option input,
+.recipe-checkbox input {
+  width: auto;
+  margin-top: 2px;
+}
+.location-option small,
+.recipe-checkbox small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.tool-card {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tool-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.tool-card-head .recipe-hint {
+  margin: 0;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.recipe-dialog .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.recipe-dialog .chip code {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.recipe-dialog .chip[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+.recipe-dialog .chip.locked {
+  cursor: help;
+  border-style: dashed;
+}
+.chip-help {
+  min-height: 2.6em;
+}
+.chip-add {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tag-list {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  margin: 8px 0;
+}
+.tag-list dd {
+  margin: 0;
+  color: var(--muted);
+}
+.tag-list dt {
+  margin: 0;
+}
+
+.location-option input[type='radio'],
+.recipe-checkbox input[type='checkbox'] {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  padding: 0;
+}
+.location-option > span,
+.recipe-checkbox > span {
+  flex: 1;
+  min-width: 0;
+}
+.recipe-dialog details {
+  margin: 20px 0;
+  padding: 2px 0;
+}
+.recipe-dialog details > summary {
+  padding: 8px 0;
+  cursor: pointer;
+}
+.draft-helper {
+  margin: 14px 0;
+}
+.draft-helper .recipe-hint {
+  margin: 8px 0 0;
 }

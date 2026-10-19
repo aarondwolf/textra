@@ -33,6 +33,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
       'cancelBuild',
       'chooseProject',
+      'chooseToolPath',
       'compile',
       'createEntry',
       'deleteEntry',

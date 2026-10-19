@@ -146,6 +146,30 @@ describe('real project files and data preservation', () => {
     }
   });
 
+  it('lists every entry but does not walk .git or node_modules', async () => {
+    await mkdir(join(root, 'build'), { recursive: true });
+    await mkdir(join(root, '.git', 'objects'), { recursive: true });
+    await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
+    await writeFile(join(root, 'build', 'main.pdf'), 'pdf');
+    await writeFile(join(root, 'main.aux'), 'aux');
+    await writeFile(join(root, '.gitignore'), 'build/');
+    await writeFile(join(root, '.git', 'objects', 'blob'), 'x');
+    await writeFile(join(root, 'node_modules', 'pkg', 'index.js'), 'x');
+    const paths = (await service.refreshProject(project.id)).files.map((entry) => entry.path);
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'build',
+        'build/main.pdf',
+        'main.aux',
+        '.gitignore',
+        '.git',
+        'node_modules',
+      ]),
+    );
+    expect(paths).not.toContain('.git/objects');
+    expect(paths).not.toContain('node_modules/pkg');
+  });
+
   it('rejects directory symlinks even when they point inside the project', async () => {
     const outside = join(directory, 'outside');
     await mkdir(outside);

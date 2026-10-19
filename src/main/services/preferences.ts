@@ -1,9 +1,40 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { BUILD_RECIPES, DEFAULT_PREFERENCES, type Preferences } from '../../shared/api';
+import {
+  BUILD_RECIPES,
+  CONFIGURABLE_TOOLS,
+  DEFAULT_PREFERENCES,
+  FONT_SIZE_RANGE,
+  SIDEBAR_WIDTH_RANGE,
+  type ConfigurableTool,
+  type Preferences,
+} from '../../shared/api';
+import { validateToolPath } from './tool-paths';
 
 const preferenceKeys = Object.keys(DEFAULT_PREFERENCES);
+// Added after version 1 shipped; older files without them migrate to defaults.
+const optionalKeys = new Set([
+  'defaultRecipe',
+  'previewVisible',
+  'fontSize',
+  'wrap',
+  'sidebarWidth',
+  'toolPaths',
+]);
+
+function validateToolPaths(value: unknown): Preferences['toolPaths'] {
+  if (value === undefined) return {};
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Unsupported or invalid preferences.');
+  const result: Preferences['toolPaths'] = {};
+  for (const [name, path] of Object.entries(value)) {
+    if (!(CONFIGURABLE_TOOLS as readonly string[]).includes(name))
+      throw new Error('Unsupported or invalid preferences.');
+    result[name as ConfigurableTool] = validateToolPath(name as ConfigurableTool, path);
+  }
+  return result;
+}
 
 export function validatePreferences(value: unknown): Preferences {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -13,7 +44,7 @@ export function validatePreferences(value: unknown): Preferences {
   if (
     Object.keys(candidate).some((key) => !preferenceKeys.includes(key)) ||
     !preferenceKeys
-      .filter((key) => key !== 'defaultRecipe' && key !== 'previewVisible')
+      .filter((key) => !optionalKeys.has(key))
       .every((key) => Object.hasOwn(candidate, key)) ||
     (Object.hasOwn(candidate, 'defaultRecipe') &&
       !BUILD_RECIPES.some((recipe) => recipe.value === candidate.defaultRecipe)) ||
@@ -25,7 +56,18 @@ export function validatePreferences(value: unknown): Preferences {
     typeof candidate.editorWidth !== 'number' ||
     !Number.isFinite(candidate.editorWidth) ||
     candidate.editorWidth < 25 ||
-    candidate.editorWidth > 75
+    candidate.editorWidth > 75 ||
+    (Object.hasOwn(candidate, 'fontSize') &&
+      (typeof candidate.fontSize !== 'number' ||
+        !Number.isInteger(candidate.fontSize) ||
+        candidate.fontSize < FONT_SIZE_RANGE.min ||
+        candidate.fontSize > FONT_SIZE_RANGE.max)) ||
+    (Object.hasOwn(candidate, 'wrap') && typeof candidate.wrap !== 'boolean') ||
+    (Object.hasOwn(candidate, 'sidebarWidth') &&
+      (typeof candidate.sidebarWidth !== 'number' ||
+        !Number.isFinite(candidate.sidebarWidth) ||
+        candidate.sidebarWidth < SIDEBAR_WIDTH_RANGE.min ||
+        candidate.sidebarWidth > SIDEBAR_WIDTH_RANGE.max))
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
@@ -38,6 +80,10 @@ export function validatePreferences(value: unknown): Preferences {
     editorWidth: candidate.editorWidth,
     defaultRecipe: (candidate.defaultRecipe ??
       DEFAULT_PREFERENCES.defaultRecipe) as Preferences['defaultRecipe'],
+    fontSize: (candidate.fontSize ?? DEFAULT_PREFERENCES.fontSize) as number,
+    wrap: (candidate.wrap ?? DEFAULT_PREFERENCES.wrap) as boolean,
+    sidebarWidth: (candidate.sidebarWidth ?? DEFAULT_PREFERENCES.sidebarWidth) as number,
+    toolPaths: validateToolPaths(candidate.toolPaths),
   };
 }
 

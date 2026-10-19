@@ -5,19 +5,27 @@ import {
   ipcMain,
   session,
   shell,
+  clipboard,
   type IpcMainInvokeEvent,
 } from 'electron';
 import { dirname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, open, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PRODUCT_NAME, type Result, type TextraAPI } from '../shared/api';
+import {
+  CONFIGURABLE_TOOLS,
+  PRODUCT_NAME,
+  type ConfigurableTool,
+  type Result,
+  type TextraAPI,
+} from '../shared/api';
 import { isTrustedRendererUrl } from './security';
 import { log } from './services/logger';
 import { PreferencesStore } from './services/preferences';
 import { ProjectError, ProjectService, validateRelativePath } from './services/projects';
 import { findCodeExecutable, openInExternalEditor } from './services/external-editor';
 import { BuildService, detectTools } from './services/latex';
+import { setToolPaths, validateToolPath } from './services/tool-paths';
 import { ConfigService, exportSettings, importSettings } from './services/settings';
 import { validateRecipeSettings } from '../shared/recipes';
 
@@ -222,7 +230,31 @@ void app.whenReady().then(() => {
     platform: process.platform,
   }));
   handle('textra:preferences:get', 0, () => preferences.get());
-  handle('textra:preferences:set', 1, (value) => preferences.set(value));
+  void preferences
+    .get()
+    .then((saved) => setToolPaths(saved.toolPaths))
+    .catch(() => undefined);
+  handle('textra:preferences:set', 1, async (value) => {
+    const saved = await preferences.set(value);
+    setToolPaths(saved.toolPaths);
+    return saved;
+  });
+  handle('textra:tools:choose', 1, async (name) => {
+    if (typeof name !== 'string' || !(CONFIGURABLE_TOOLS as readonly string[]).includes(name))
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX tool.');
+    const tool = name as ConfigurableTool;
+    const result = await dialog.showOpenDialog(requireWindow(), {
+      title: `Locate ${tool}`,
+      properties: ['openFile'],
+      filters: process.platform === 'win32' ? [{ name: 'Executable', extensions: ['exe'] }] : [],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    try {
+      return validateToolPath(tool, result.filePaths[0]);
+    } catch {
+      throw new ProjectError('INVALID_ARGUMENT', `Choose the file named ${tool}.`);
+    }
+  });
   handle('textra:project:choose', 0, async () => {
     requireIdleProject();
     const result = await dialog.showOpenDialog(requireWindow(), {
@@ -326,6 +358,15 @@ void app.whenReady().then(() => {
   handleRequest<'setProjectConfig'>('textra:config:set', (request) =>
     config.setProjectConfig(request),
   );
+  handleRequest<'copyEntryPath'>('textra:file:copy-path', async (request) => {
+    if (!request || typeof request.relative !== 'boolean')
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose an absolute or relative project path.');
+    const absolute = await projects.resolvePath(
+      { projectId: request.projectId, path: request.path },
+      true,
+    );
+    clipboard.writeText(request.relative ? request.path || '.' : absolute);
+  });
   handle('textra:settings:export', 0, async () => {
     const content = exportSettings(await preferences.get());
     const result = await dialog.showSaveDialog(requireWindow(), {
@@ -369,7 +410,10 @@ void app.whenReady().then(() => {
       cancelId: 0,
       defaultId: 0,
     });
-    return answer.response === 1 ? preferences.set(next) : null;
+    if (answer.response !== 1) return null;
+    const saved = await preferences.set(next);
+    setToolPaths(saved.toolPaths);
+    return saved;
   });
   handle('textra:setup:link', 1, async (target) => {
     const links = {

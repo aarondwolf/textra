@@ -4,11 +4,51 @@ Opening a project creates `.textra/settings.json` with editable defaults. Existi
 `.textra/project.json` settings are migrated when no canonical settings file exists;
 the original file is preserved. Comments and trailing commas are accepted.
 
-Use **Compile ▾ → Manage recipes…**, or **Settings → Edit project build recipes**.
-The popup has a builder and a `settings.json` editor. Both save the same project
-file. You can also edit it externally; Compile reads it afresh each time. A popup
+Use **Compile ▾ → Manage recipes…**, or **Settings → Compilation → Edit project build recipes**.
+
+The dialog opens on a plain list of recipes, each with a pencil icon that opens the
+guided editor. The same screen has the **Output location** choice, the project default
+recipe, and a link to edit `settings.json` directly. All three views save the same
+project file. You can also edit it externally; Compile reads it afresh each time. A popup
 cannot overwrite settings changed externally since it opened: cancel and reopen it
 to reload. Saving through the popup formats the JSON and removes comments.
+
+### Output location
+
+Three choices, all stored as `outDir` and `auxDir`:
+
+- **Everything in the build folder** (default): `build/textra/%RELATIVE_DOC%` with
+  auxiliary files beside the PDF (`%OUTDIR%`).
+- **PDF next to the .tex file, other files in the build folder**: `outDir` is `%DIR%` and
+  `auxDir` is the build folder. This needs the MiKTeX engines (pdflatex, xelatex,
+  lualatex); latexmk and TeX Live builds report a clear error and should use the default.
+- **Custom paths**: type both directories, with clickable `%TAG%` buttons.
+
+"Separate folder for each document" appends `%RELATIVE_DOC%` so identically named files in
+different folders never collide. A collapsible "What do the %TAGS% mean?" list explains
+every placeholder.
+
+### Recipes and tools are edited separately
+
+The first screen lists **Recipes** and **Tools**, each with its own pencil. A recipe is an
+ordered list of steps; a tool is one program with its options. Each step has a pencil that
+jumps to its tool. Tool editing covers the name, program, option chips, duplicate and
+delete (a tool still used by a recipe cannot be deleted).
+
+To make early passes faster, open a recipe and press **Use draft mode for early passes**.
+Every compiler pass except the last switches to a `-draft` copy of its tool that adds
+`-draftmode`. Draft passes skip writing the PDF but still write `.aux`, `.toc` and similar
+files, so references and citations resolve; only the final pass writes the PDF.
+
+### Guided recipe editor
+
+Steps are listed in order with reorder and remove buttons, and an "Add step" menu that
+can also create a new tool from a supported program. Each tool's editor has an
+options card. Options appear as toggle chips (SyncTeX, keep going on errors, file and line
+errors, stop at first error, latexmk engine mode and so on); hovering or focusing a chip
+explains the argument it adds. The output-folder argument and the document input are shown
+as locked chips because TeXtra manages them. Extra arguments can be typed in, and a text
+view shows every argument. A tool shared by several recipes says so.
 
 ![Project recipe builder](recipe-builder.png)
 
@@ -44,9 +84,8 @@ the entire VS Code settings file.
 }
 ```
 
-The builder can rename or create recipes, reorder/add/remove steps, edit tools and
-arguments, choose output/auxiliary directories, toggle SyncTeX and set the project
-default. Editing a shared tool affects every recipe that references it. The `env`
+The editor can rename or create recipes, reorder/add/remove steps, edit tools and
+arguments, choose the output location and set the project default. Editing a shared tool affects every recipe that references it. The `env`
 object is editable in the JSON view.
 
 `first`, `lastUsed`, or a recipe name can be the default. Documents remember their

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { parse, type ParseError } from 'jsonc-parser';
-import { ArrowDown, ArrowUp, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Plus, Trash2, X } from '../../icons';
 import type { ProjectConfig } from '../../../../shared/api';
 import {
   createDefaultRecipeSettings,
@@ -10,6 +10,21 @@ import {
   type RecipeSettings,
   type RecipeTool,
 } from '../../../../shared/recipes';
+import {
+  ARG_HELP,
+  DEFAULT_BUILD_FOLDER,
+  PLACEHOLDER_HELP,
+  addArg,
+  classifyArg,
+  draftEarlyPasses,
+  isArgOn,
+  readOutputLocation,
+  toggleArg,
+  toolKind,
+  writeOutputLocation,
+  type OutputLocation,
+  type OutputMode,
+} from '../../../../shared/recipe-help';
 import { useWorkspace } from '../../state/workspace';
 import './recipes.css';
 
@@ -25,6 +40,158 @@ function readJSON(text: string): ProjectConfig {
     );
   return { ...initial(), ...value };
 }
+function locationOf(config: ProjectConfig): OutputLocation {
+  const settings = { ...createDefaultRecipeSettings(), ...config } as RecipeSettings;
+  return readOutputLocation(
+    settings['latex-workshop.latex.outDir'],
+    settings['latex-workshop.latex.auxDir'],
+  );
+}
+
+type View = 'list' | 'edit' | 'json' | 'tool';
+const PRESETS = createDefaultRecipeSettings()['latex-workshop.latex.tools'];
+
+function ToolCard({
+  tool,
+  users,
+  help,
+  setHelp,
+  onChange,
+}: {
+  tool: RecipeTool;
+  users: number;
+  help: string;
+  setHelp: (text: string) => void;
+  onChange: (patch: Partial<RecipeTool>) => void;
+}) {
+  const name = tool.name;
+  const kind = toolKind(tool.command);
+  const [custom, setCustom] = useState('');
+  const catalog = ARG_HELP[kind];
+  const extras = tool.args.filter((arg) => classifyArg(arg, kind) === 'custom');
+  const locked = tool.args.filter((arg) => ['managed', 'input'].includes(classifyArg(arg, kind)));
+  function addCustom() {
+    const value = custom.trim();
+    if (!value || tool.args.includes(value)) return;
+    onChange({ args: addArg(tool.args, value) });
+    setCustom('');
+  }
+  return (
+    <section className="tool-card" aria-label={`Options for ${name}`}>
+      <div className="tool-card-head">
+        <strong>{name}</strong>
+        <span className="recipe-hint">
+          {users > 1
+            ? `Shared by ${users} recipes. Changes apply to all of them.`
+            : 'Used by this recipe.'}
+        </span>
+      </div>
+      <label className="field-label">
+        Program
+        <select
+          aria-label={`Program for ${name}`}
+          value={tool.command.replace(/\.exe$/i, '').toLowerCase()}
+          onChange={(event) => {
+            const preset = PRESETS.find((entry) => entry.command === event.target.value)!;
+            onChange({
+              command: preset.command,
+              args: structuredClone(preset.args),
+              cwd: preset.cwd,
+            });
+          }}
+        >
+          {RECIPE_COMMANDS.map((command) => (
+            <option key={command}>{command}</option>
+          ))}
+        </select>
+      </label>
+      <div className="chip-row" role="group" aria-label={`Options for ${name}`}>
+        {catalog.map((entry) => (
+          <button
+            type="button"
+            key={entry.arg}
+            className="chip"
+            aria-pressed={isArgOn(tool.args, entry)}
+            title={entry.description}
+            onMouseEnter={() => setHelp(`${entry.arg}: ${entry.description}`)}
+            onFocus={() => setHelp(`${entry.arg}: ${entry.description}`)}
+            onClick={() => onChange({ args: toggleArg(tool.args, kind, entry) })}
+          >
+            {entry.label}
+            <code>{entry.arg}</code>
+          </button>
+        ))}
+        {extras.map((arg) => (
+          <button
+            type="button"
+            key={arg}
+            className="chip"
+            aria-pressed="true"
+            title="Custom argument. Click to remove it."
+            onClick={() => onChange({ args: tool.args.filter((entry) => entry !== arg) })}
+          >
+            <code>{arg}</code>
+            <X size={11} aria-hidden="true" />
+          </button>
+        ))}
+        {locked.map((arg) => {
+          const managed = classifyArg(arg, kind) === 'managed';
+          const text = managed
+            ? 'Managed for you. Tells the program to write into the Output location chosen on the first screen.'
+            : 'The document being compiled. It is always required.';
+          return (
+            <span
+              key={arg}
+              className="chip locked"
+              tabIndex={0}
+              title={text}
+              onMouseEnter={() => setHelp(`${arg}: ${text}`)}
+              onFocus={() => setHelp(`${arg}: ${text}`)}
+            >
+              {managed ? 'Output folder' : 'Document'}
+              <code>{arg}</code>
+            </span>
+          );
+        })}
+      </div>
+      <p className="recipe-hint chip-help" role="status">
+        {help || 'Click an option to add or remove it. Hover or focus one for an explanation.'}
+      </p>
+      <div className="chip-add">
+        <input
+          aria-label={`Custom argument for ${name}`}
+          placeholder="Add another argument, for example -draftmode"
+          value={custom}
+          onChange={(event) => setCustom(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              addCustom();
+            }
+          }}
+        />
+        <button type="button" onClick={addCustom} disabled={!custom.trim()}>
+          Add
+        </button>
+      </div>
+      <details>
+        <summary>Edit all arguments as text</summary>
+        <textarea
+          aria-label={`Arguments for ${name}`}
+          spellCheck={false}
+          rows={6}
+          value={tool.args.join('\n')}
+          onChange={(event) =>
+            onChange({
+              args: event.target.value.split('\n').filter((arg) => arg.length > 0),
+            })
+          }
+        />
+        <p className="recipe-hint">One argument per line. No quotes are needed around paths.</p>
+      </details>
+    </section>
+  );
+}
 
 export default function RecipeDialog({
   open,
@@ -37,18 +204,21 @@ export default function RecipeDialog({
   const [baseline, setBaseline] = useState<ProjectConfig | null>(null);
   const [draft, setDraft] = useState<ProjectConfig>(initial);
   const [recipeIndex, setRecipeIndex] = useState(0);
-  const [toolIndex, setToolIndex] = useState(0);
-  const [mode, setMode] = useState<'builder' | 'json'>('builder');
+  const [view, setView] = useState<View>('list');
+  const [toolName, setToolName] = useState('');
+  const [location, setLocation] = useState<OutputLocation>(() => locationOf(initial()));
   const [json, setJSON] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [help, setHelp] = useState('');
+  const customTarget = useRef<'outDir' | 'auxDir'>('outDir');
   useEffect(() => {
     if (!open || !project) return;
     let cancelled = false;
     setBusy(true);
     setError(null);
     setBaseline(null);
-    setMode('builder');
+    setView('list');
     void window.textra
       .getProjectConfig(project.id)
       .then((result) => {
@@ -57,8 +227,8 @@ export default function RecipeDialog({
         const config = { ...result.value, ...validateRecipeSettings(result.value) };
         setDraft(config);
         setBaseline(config);
+        setLocation(locationOf(config));
         setRecipeIndex(0);
-        setToolIndex(0);
       })
       .catch((failure: unknown) => {
         if (!cancelled)
@@ -75,28 +245,46 @@ export default function RecipeDialog({
   const recipes = settings['latex-workshop.latex.recipes'];
   const tools = settings['latex-workshop.latex.tools'];
   const recipe = recipes[recipeIndex] ?? recipes[0];
-  const tool = tools[toolIndex] ?? tools[0];
+  const defaultRecipe = settings['latex-workshop.latex.recipe.default'];
   function update(patch: Partial<ProjectConfig>) {
     setDraft((previous) => ({ ...previous, ...patch }));
     setError(null);
   }
-  function updateTool(patch: Partial<RecipeTool>) {
+  function updateRecipe(patch: Partial<typeof recipe>) {
     update({
-      'latex-workshop.latex.tools': tools.map((entry, index) =>
-        index === toolIndex ? { ...entry, ...patch } : entry,
+      'latex-workshop.latex.recipes': recipes.map((entry, index) =>
+        index === recipeIndex ? { ...entry, ...patch } : entry,
       ),
     });
   }
-  function switchMode(next: 'builder' | 'json') {
+  function updateTool(name: string, patch: Partial<RecipeTool>) {
+    update({
+      'latex-workshop.latex.tools': tools.map((entry) =>
+        entry.name === name ? { ...entry, ...patch } : entry,
+      ),
+    });
+  }
+  function applyLocation(next: OutputLocation) {
+    setLocation(next);
+    if (next.mode !== 'custom') {
+      const paths = writeOutputLocation(next);
+      update({
+        'latex-workshop.latex.outDir': paths.outDir,
+        'latex-workshop.latex.auxDir': paths.auxDir,
+      });
+    }
+  }
+  function switchView(next: View) {
     try {
       if (next === 'json') setJSON(JSON.stringify(draft, null, 2));
-      else {
+      else if (view === 'json') {
         const parsed = readJSON(json);
-        setDraft({ ...parsed, ...validateRecipeSettings(parsed) });
+        const config = { ...parsed, ...validateRecipeSettings(parsed) };
+        setDraft(config);
+        setLocation(locationOf(config));
         setRecipeIndex(0);
-        setToolIndex(0);
       }
-      setMode(next);
+      setView(next);
       setError(null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Invalid settings.');
@@ -107,7 +295,7 @@ export default function RecipeDialog({
     setBusy(true);
     setError(null);
     try {
-      const candidate = mode === 'json' ? readJSON(json) : draft;
+      const candidate = view === 'json' ? readJSON(json) : draft;
       const config = { ...candidate, ...validateRecipeSettings(candidate) };
       const result = await window.textra.setProjectConfig({
         projectId: project.id,
@@ -124,14 +312,101 @@ export default function RecipeDialog({
       setBusy(false);
     }
   }
-  const texTools = tools.filter(
-    (entry) =>
-      recipe.tools.includes(entry.name) &&
-      /^(?:pdf|xe|lua)latex(?:\.exe)?$|^latexmk(?:\.exe)?$/i.test(entry.command),
-  );
-  const synctex =
-    texTools.length > 0 &&
-    texTools.every((entry) => entry.args.some((arg) => /^--?synctex=-?1$/.test(arg)));
+  function addRecipe() {
+    let name = 'New recipe';
+    for (let suffix = 2; recipes.some((entry) => entry.name === name); suffix++)
+      name = `New recipe ${suffix}`;
+    update({ 'latex-workshop.latex.recipes': [...recipes, { name, tools: [tools[0].name] }] });
+    setRecipeIndex(recipes.length);
+    setView('edit');
+  }
+  function addStep(value: string) {
+    if (!value) return;
+    if (value.startsWith('new:')) {
+      const command = value.slice(4);
+      const preset = PRESETS.find((entry) => entry.command === command)!;
+      let name = command;
+      for (let suffix = 2; tools.some((entry) => entry.name === name); suffix++)
+        name = `${command}-${suffix}`;
+      update({
+        'latex-workshop.latex.tools': [...tools, { ...structuredClone(preset), name }],
+        'latex-workshop.latex.recipes': recipes.map((entry, index) =>
+          index === recipeIndex ? { ...entry, tools: [...entry.tools, name] } : entry,
+        ),
+      });
+    } else updateRecipe({ tools: [...recipe.tools, value] });
+  }
+  function renameRecipe(name: string) {
+    update({
+      'latex-workshop.latex.recipes': recipes.map((entry, index) =>
+        index === recipeIndex ? { ...entry, name } : entry,
+      ),
+      'latex-workshop.latex.recipe.default': defaultRecipe === recipe.name ? name : defaultRecipe,
+      recipes: Object.fromEntries(
+        Object.entries(draft.recipes ?? {}).map(([path, selected]) => [
+          path,
+          selected === recipe.name ? name : selected,
+        ]),
+      ),
+    });
+  }
+  function deleteRecipe() {
+    update({
+      'latex-workshop.latex.recipes': recipes.filter((_, index) => index !== recipeIndex),
+      recipes: Object.fromEntries(
+        Object.entries(draft.recipes ?? {}).filter(([, name]) => name !== recipe.name),
+      ),
+      'latex-workshop.latex.recipe.default':
+        defaultRecipe === recipe.name ? 'lastUsed' : defaultRecipe,
+    });
+    setRecipeIndex(0);
+    setView('list');
+  }
+  const tool = tools.find((entry) => entry.name === toolName);
+  function renameTool(name: string) {
+    update({
+      'latex-workshop.latex.tools': tools.map((entry) =>
+        entry.name === toolName ? { ...entry, name } : entry,
+      ),
+      'latex-workshop.latex.recipes': recipes.map((entry) => ({
+        ...entry,
+        tools: entry.tools.map((step) => (step === toolName ? name : step)),
+      })),
+    });
+    setToolName(name);
+  }
+  function duplicateTool() {
+    if (!tool) return;
+    let name = `${tool.name}-copy`;
+    for (let suffix = 2; tools.some((entry) => entry.name === name); suffix++)
+      name = `${tool.name}-copy-${suffix}`;
+    update({ 'latex-workshop.latex.tools': [...tools, { ...structuredClone(tool), name }] });
+    setToolName(name);
+  }
+  function newTool(command: string) {
+    const preset = PRESETS.find((entry) => entry.command === command)!;
+    let name = command;
+    for (let suffix = 2; tools.some((entry) => entry.name === name); suffix++)
+      name = `${command}-${suffix}`;
+    update({ 'latex-workshop.latex.tools': [...tools, { ...structuredClone(preset), name }] });
+    setToolName(name);
+    setView('tool');
+  }
+  function deleteTool() {
+    if (!tool) return;
+    update({ 'latex-workshop.latex.tools': tools.filter((entry) => entry.name !== tool.name) });
+    setView('list');
+  }
+  function draftFirstPasses() {
+    const result = draftEarlyPasses(recipe.tools, tools);
+    update({
+      'latex-workshop.latex.tools': result.tools,
+      'latex-workshop.latex.recipes': recipes.map((entry, index) =>
+        index === recipeIndex ? { ...entry, tools: result.steps } : entry,
+      ),
+    });
+  }
+
   return (
     <Dialog.Root
       open={open}
@@ -149,24 +424,9 @@ export default function RecipeDialog({
             </Dialog.Close>
           </div>
           <Dialog.Description>
-            Project settings · <code>.textra/settings.json</code>
+            A recipe is the list of programs that run when you press Compile. Saved in{' '}
+            <code>.textra/settings.json</code>.
           </Dialog.Description>
-          <div className="recipe-mode" role="group" aria-label="Recipe editor mode">
-            <button
-              aria-pressed={mode === 'builder'}
-              onClick={() => switchMode('builder')}
-              disabled={mode === 'builder' || busy}
-            >
-              Builder
-            </button>
-            <button
-              aria-pressed={mode === 'json'}
-              onClick={() => switchMode('json')}
-              disabled={mode === 'json' || busy}
-            >
-              settings.json
-            </button>
-          </div>
           {!project && <p>Open a project folder to edit its recipes.</p>}
           {error && (
             <p role="alert" className="dialog-error">
@@ -174,11 +434,14 @@ export default function RecipeDialog({
             </p>
           )}
           <fieldset className="recipe-scroll" disabled={busy || !baseline}>
-            {mode === 'json' ? (
+            {view === 'json' && (
               <>
+                <button type="button" className="back-link" onClick={() => switchView('list')}>
+                  <ArrowLeft size={14} /> Back to recipes
+                </button>
                 <p className="recipe-hint">
-                  Paste LaTeX Workshop recipe/tool definitions here. The same named recipes, ordered
-                  tools, arguments, and path placeholders are used.
+                  Paste LaTeX Workshop recipe and tool definitions here. The same recipe names,
+                  ordered tools, arguments and path tags are used.
                 </p>
                 <textarea
                   className="recipe-json"
@@ -188,88 +451,308 @@ export default function RecipeDialog({
                   onChange={(event) => setJSON(event.target.value)}
                 />
               </>
-            ) : (
+            )}
+            {view === 'list' && (
               <>
-                <div className="recipe-fields">
-                  <label className="field-label">
-                    Recipe
-                    <select
-                      aria-label="Recipe to edit"
-                      value={recipeIndex}
-                      onChange={(event) => setRecipeIndex(Number(event.target.value))}
-                    >
-                      {recipes.map((entry, index) => (
-                        <option key={index} value={index}>
-                          {entry.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    onClick={() => {
-                      let name = 'New recipe';
-                      for (let suffix = 2; recipes.some((entry) => entry.name === name); suffix++)
-                        name = `New recipe ${suffix}`;
-                      update({
-                        'latex-workshop.latex.recipes': [
-                          ...recipes,
-                          { name, tools: [tools[0].name] },
-                        ],
-                      });
-                      setRecipeIndex(recipes.length);
-                    }}
+                <h3>Recipes</h3>
+                <ul className="recipe-list">
+                  {recipes.map((entry, index) => (
+                    <li key={entry.name} className="recipe-row">
+                      <div>
+                        <strong>{entry.name}</strong>
+                        {defaultRecipe === entry.name && <span className="badge">Default</span>}
+                        <span className="recipe-hint">{entry.tools.join(' → ')}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-button small"
+                        aria-label={`Edit recipe ${entry.name}`}
+                        title={`Edit ${entry.name}`}
+                        onClick={() => {
+                          setRecipeIndex(index);
+                          setView('edit');
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" onClick={addRecipe}>
+                  <Plus size={14} />
+                  New recipe
+                </button>
+                <h3>Tools</h3>
+                <p className="recipe-hint">
+                  A tool is one program run with its options. Recipes are built from tools, so
+                  changing a tool changes every recipe that uses it.
+                </p>
+                <ul className="recipe-list">
+                  {tools.map((entry) => (
+                    <li key={entry.name} className="recipe-row">
+                      <div>
+                        <strong>{entry.name}</strong>
+                        <span className="recipe-hint">
+                          {entry.command}
+                          {entry.args.includes('-draftmode') ? ' (draft mode)' : ''}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-button small"
+                        aria-label={`Edit tool ${entry.name}`}
+                        title={`Edit ${entry.name}`}
+                        onClick={() => {
+                          setToolName(entry.name);
+                          setView('tool');
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <label className="field-label">
+                  New tool
+                  <select
+                    aria-label="New tool"
+                    value=""
+                    onChange={(event) => event.target.value && newTool(event.target.value)}
                   >
-                    <Plus size={14} />
-                    New recipe
+                    <option value="">Choose a program…</option>
+                    {RECIPE_COMMANDS.map((command) => (
+                      <option key={command} value={command}>
+                        {command}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-label">
+                  Default recipe for new documents
+                  <select
+                    aria-label="Project default recipe"
+                    value={defaultRecipe}
+                    onChange={(event) =>
+                      update({ 'latex-workshop.latex.recipe.default': event.target.value })
+                    }
+                  >
+                    <option value="lastUsed">Last used / app default</option>
+                    <option value="first">First recipe</option>
+                    {recipes.map((entry) => (
+                      <option key={entry.name} value={entry.name}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <h3>Output location</h3>
+                <div role="radiogroup" aria-label="Output location" className="location-options">
+                  {(
+                    [
+                      [
+                        'build',
+                        'Everything in the build folder',
+                        'The PDF and all auxiliary files go into the build folder. Your source folders stay clean. This is the default.',
+                      ],
+                      [
+                        'beside',
+                        'PDF next to the .tex file, other files in the build folder',
+                        'The PDF appears beside your source. Auxiliary files (.aux, .log and so on) stay in the build folder. Needs the MiKTeX engines (pdflatex, xelatex, lualatex).',
+                      ],
+                      [
+                        'custom',
+                        'Custom paths',
+                        'Type the output and auxiliary folders yourself using path tags.',
+                      ],
+                    ] as Array<[OutputMode, string, string]>
+                  ).map(([mode, label, text]) => (
+                    <label key={mode} className="location-option">
+                      <input
+                        type="radio"
+                        name="output-mode"
+                        checked={location.mode === mode}
+                        onChange={() =>
+                          applyLocation(
+                            mode === 'custom'
+                              ? { ...location, mode }
+                              : {
+                                  mode,
+                                  folder: location.folder || DEFAULT_BUILD_FOLDER,
+                                  perDocument: location.perDocument,
+                                },
+                          )
+                        }
+                      />
+                      <span>
+                        {label}
+                        <small>{text}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {location.mode !== 'custom' ? (
+                  <>
+                    <label className="field-label">
+                      Build folder
+                      <input
+                        aria-label="Build folder"
+                        value={location.folder}
+                        onChange={(event) =>
+                          applyLocation({ ...location, folder: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="recipe-checkbox">
+                      <input
+                        type="checkbox"
+                        aria-label="Separate folder for each document"
+                        checked={location.perDocument}
+                        onChange={(event) =>
+                          applyLocation({ ...location, perDocument: event.target.checked })
+                        }
+                      />
+                      <span>
+                        Separate folder for each document
+                        <small>
+                          Adds the document&apos;s own path (<code>%RELATIVE_DOC%</code>) to the
+                          build folder, so <code>intro/main.tex</code> and{' '}
+                          <code>appendix/main.tex</code> never overwrite each other. Turn this off
+                          if you only ever compile one document.
+                        </small>
+                      </span>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="field-label">
+                      Output directory
+                      <input
+                        aria-label="Output directory"
+                        value={settings['latex-workshop.latex.outDir']}
+                        onFocus={() => (customTarget.current = 'outDir')}
+                        onChange={(event) =>
+                          update({ 'latex-workshop.latex.outDir': event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field-label">
+                      Auxiliary directory
+                      <input
+                        aria-label="Auxiliary directory"
+                        value={settings['latex-workshop.latex.auxDir']}
+                        onFocus={() => (customTarget.current = 'auxDir')}
+                        onChange={(event) =>
+                          update({ 'latex-workshop.latex.auxDir': event.target.value })
+                        }
+                      />
+                    </label>
+                    <div className="chip-row" role="group" aria-label="Path tags">
+                      {PLACEHOLDER_HELP.filter((entry) =>
+                        ['%DIR%', '%OUTDIR%', '%RELATIVE_DOC%', '%WORKSPACE_FOLDER%'].includes(
+                          entry.tag,
+                        ),
+                      ).map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.tag}
+                          className="chip"
+                          title={entry.description}
+                          onMouseEnter={() => setHelp(`${entry.tag}: ${entry.description}`)}
+                          onFocus={() => setHelp(`${entry.tag}: ${entry.description}`)}
+                          onClick={() => {
+                            const key =
+                              customTarget.current === 'outDir'
+                                ? 'latex-workshop.latex.outDir'
+                                : 'latex-workshop.latex.auxDir';
+                            update({ [key]: settings[key] + entry.tag });
+                          }}
+                        >
+                          <code>{entry.tag}</code>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="recipe-hint" role="status">
+                      {help || 'Click a tag to add it to the field you last used.'}
+                    </p>
+                  </>
+                )}
+                <details>
+                  <summary>What do the %TAGS% mean?</summary>
+                  <dl className="tag-list">
+                    {PLACEHOLDER_HELP.map((entry) => (
+                      <div key={entry.tag}>
+                        <dt>
+                          <code>{entry.tag}</code>
+                        </dt>
+                        <dd>{entry.description}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
+                <button type="button" className="back-link" onClick={() => switchView('json')}>
+                  Edit settings.json directly
+                </button>
+              </>
+            )}
+            {view === 'tool' && tool && (
+              <>
+                <button type="button" className="back-link" onClick={() => setView('list')}>
+                  <ArrowLeft size={14} /> All recipes and tools
+                </button>
+                <label className="field-label">
+                  Tool name
+                  <input
+                    aria-label="Tool name"
+                    value={tool.name}
+                    onChange={(event) => renameTool(event.target.value)}
+                  />
+                </label>
+                <ToolCard
+                  tool={tool}
+                  users={recipes.filter((entry) => entry.tools.includes(tool.name)).length}
+                  help={help}
+                  setHelp={setHelp}
+                  onChange={(patch) => updateTool(tool.name, patch)}
+                />
+                <div className="recipe-section-heading">
+                  <button type="button" onClick={duplicateTool}>
+                    Duplicate tool
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      tools.length <= 1 || recipes.some((entry) => entry.tools.includes(tool.name))
+                    }
+                    title={
+                      recipes.some((entry) => entry.tools.includes(tool.name))
+                        ? 'Remove it from every recipe first.'
+                        : undefined
+                    }
+                    onClick={deleteTool}
+                  >
+                    <Trash2 size={13} />
+                    Delete tool
                   </button>
                 </div>
+              </>
+            )}
+            {view === 'edit' && (
+              <>
+                <button type="button" className="back-link" onClick={() => setView('list')}>
+                  <ArrowLeft size={14} /> All recipes
+                </button>
                 <label className="field-label">
                   Recipe name
                   <input
                     aria-label="Recipe name"
                     value={recipe.name}
-                    onChange={(event) => {
-                      const name = event.target.value;
-                      update({
-                        'latex-workshop.latex.recipes': recipes.map((entry, index) =>
-                          index === recipeIndex ? { ...entry, name } : entry,
-                        ),
-                        'latex-workshop.latex.recipe.default':
-                          settings['latex-workshop.latex.recipe.default'] === recipe.name
-                            ? name
-                            : settings['latex-workshop.latex.recipe.default'],
-                        recipes: Object.fromEntries(
-                          Object.entries(draft.recipes ?? {}).map(([path, selected]) => [
-                            path,
-                            selected === recipe.name ? name : selected,
-                          ]),
-                        ),
-                      });
-                    }}
+                    onChange={(event) => renameRecipe(event.target.value)}
                   />
                 </label>
-                <div className="recipe-section-heading">
-                  <h3>Ordered steps</h3>
-                  <button
-                    disabled={recipes.length <= 1}
-                    onClick={() => {
-                      update({
-                        'latex-workshop.latex.recipes': recipes.filter(
-                          (_, index) => index !== recipeIndex,
-                        ),
-                        recipes: Object.fromEntries(
-                          Object.entries(draft.recipes ?? {}).filter(
-                            ([, name]) => name !== recipe.name,
-                          ),
-                        ),
-                        'latex-workshop.latex.recipe.default': 'lastUsed',
-                      });
-                      setRecipeIndex(0);
-                    }}
-                  >
-                    Delete recipe
-                  </button>
-                </div>
+                <h3>Steps</h3>
+                <p className="recipe-hint">
+                  Steps run top to bottom. LaTeX usually needs two passes so references resolve.
+                </p>
                 {recipe.tools.map((step, index) => (
                   <div className="recipe-step" key={index}>
                     <span>{index + 1}</span>
@@ -277,16 +760,9 @@ export default function RecipeDialog({
                       aria-label={`Step ${index + 1} tool`}
                       value={step}
                       onChange={(event) =>
-                        update({
-                          'latex-workshop.latex.recipes': recipes.map((entry, at) =>
-                            at === recipeIndex
-                              ? {
-                                  ...entry,
-                                  tools: entry.tools.map((name, position) =>
-                                    position === index ? event.target.value : name,
-                                  ),
-                                }
-                              : entry,
+                        updateRecipe({
+                          tools: recipe.tools.map((name, position) =>
+                            position === index ? event.target.value : name,
                           ),
                         })
                       }
@@ -297,8 +773,20 @@ export default function RecipeDialog({
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      aria-label={`Edit tool ${step}`}
+                      title={`Edit tool ${step}`}
+                      onClick={() => {
+                        setToolName(step);
+                        setView('tool');
+                      }}
+                    >
+                      <Pencil size={14} />
+                    </button>
                     {([-1, 1] as const).map((direction) => (
                       <button
+                        type="button"
                         key={direction}
                         aria-label={`Move step ${index + 1} ${direction === -1 ? 'up' : 'down'}`}
                         disabled={index + direction < 0 || index + direction >= recipe.tools.length}
@@ -308,215 +796,66 @@ export default function RecipeDialog({
                             steps[index + direction],
                             steps[index],
                           ];
-                          update({
-                            'latex-workshop.latex.recipes': recipes.map((entry, at) =>
-                              at === recipeIndex ? { ...entry, tools: steps } : entry,
-                            ),
-                          });
+                          updateRecipe({ tools: steps });
                         }}
                       >
                         {direction === -1 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
                       </button>
                     ))}
                     <button
+                      type="button"
                       aria-label={`Remove step ${index + 1}`}
                       disabled={recipe.tools.length <= 1}
                       onClick={() =>
-                        update({
-                          'latex-workshop.latex.recipes': recipes.map((entry, at) =>
-                            at === recipeIndex
-                              ? {
-                                  ...entry,
-                                  tools: entry.tools.filter((_, position) => position !== index),
-                                }
-                              : entry,
-                          ),
-                        })
+                        updateRecipe({ tools: recipe.tools.filter((_, at) => at !== index) })
                       }
                     >
                       <Trash2 size={14} />
                     </button>
                   </div>
                 ))}
-                <button
-                  onClick={() =>
-                    update({
-                      'latex-workshop.latex.recipes': recipes.map((entry, at) =>
-                        at === recipeIndex
-                          ? { ...entry, tools: [...entry.tools, tools[0].name] }
-                          : entry,
-                      ),
-                    })
-                  }
-                >
-                  Add step
-                </button>
-                <h3>Paths and navigation</h3>
                 <label className="field-label">
-                  Output directory
-                  <input
-                    aria-label="Output directory"
-                    value={settings['latex-workshop.latex.outDir']}
-                    onChange={(event) =>
-                      update({ 'latex-workshop.latex.outDir': event.target.value })
-                    }
-                  />
-                </label>
-                <label className="field-label">
-                  Auxiliary directory
-                  <input
-                    aria-label="Auxiliary directory"
-                    value={settings['latex-workshop.latex.auxDir']}
-                    onChange={(event) =>
-                      update({ 'latex-workshop.latex.auxDir': event.target.value })
-                    }
-                  />
-                </label>
-                <p className="recipe-hint">
-                  Paths stay inside the project. Use %OUTDIR% for auxiliary files beside the PDF, or
-                  %DIR% for output beside the source. Separate auxiliary directories depend on the
-                  installed compiler.
-                </p>
-                <label className="recipe-checkbox">
-                  <input
-                    type="checkbox"
-                    aria-label="Enable SyncTeX"
-                    checked={synctex}
-                    disabled={!texTools.length}
-                    onChange={(event) =>
-                      update({
-                        'latex-workshop.latex.tools': tools.map((entry) =>
-                          texTools.includes(entry)
-                            ? {
-                                ...entry,
-                                args: [
-                                  `-synctex=${event.target.checked ? 1 : 0}`,
-                                  ...entry.args.filter((arg) => !/^--?synctex(?:=|$)/.test(arg)),
-                                ],
-                              }
-                            : entry,
-                        ),
-                      })
-                    }
-                  />
-                  Enable SyncTeX for this recipe's TeX tools
-                </label>
-                <label className="field-label">
-                  Default for new documents
+                  Add a step
                   <select
-                    aria-label="Project default recipe"
-                    value={settings['latex-workshop.latex.recipe.default']}
-                    onChange={(event) =>
-                      update({ 'latex-workshop.latex.recipe.default': event.target.value })
-                    }
+                    aria-label="Add step"
+                    value=""
+                    onChange={(event) => addStep(event.target.value)}
                   >
-                    <option value="lastUsed">Last used / app default</option>
-                    <option value="first">First recipe</option>
-                    {recipes.map((entry, index) => (
-                      <option key={index} value={entry.name}>
-                        {entry.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <h3>Tool definitions</h3>
-                <p className="recipe-hint">
-                  Tools are shared by recipes. Arguments below are one argument per line; quotes are
-                  not needed around paths. Environment overrides can be edited in settings.json.
-                </p>
-                <div className="recipe-fields">
-                  <label className="field-label">
-                    Tool
-                    <select
-                      aria-label="Tool to edit"
-                      value={toolIndex}
-                      onChange={(event) => setToolIndex(Number(event.target.value))}
-                    >
-                      {tools.map((entry, index) => (
-                        <option key={index} value={index}>
+                    <option value="">Choose a program…</option>
+                    <optgroup label="Existing tools">
+                      {tools.map((entry) => (
+                        <option key={entry.name} value={entry.name}>
                           {entry.name}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <button
-                    onClick={() => {
-                      let name = 'tool';
-                      for (let suffix = 2; tools.some((entry) => entry.name === name); suffix++)
-                        name = `tool-${suffix}`;
-                      update({
-                        'latex-workshop.latex.tools': [
-                          ...tools,
-                          {
-                            ...createDefaultRecipeSettings()['latex-workshop.latex.tools'][0],
-                            name,
-                          },
-                        ],
-                      });
-                      setToolIndex(tools.length);
-                    }}
-                  >
-                    New tool
-                  </button>
-                </div>
-                <label className="field-label">
-                  Tool name
-                  <input
-                    aria-label="Tool name"
-                    value={tool.name}
-                    onChange={(event) => {
-                      const name = event.target.value;
-                      update({
-                        'latex-workshop.latex.tools': tools.map((entry, at) =>
-                          at === toolIndex ? { ...entry, name } : entry,
-                        ),
-                        'latex-workshop.latex.recipes': recipes.map((entry) => ({
-                          ...entry,
-                          tools: entry.tools.map((step) => (step === tool.name ? name : step)),
-                        })),
-                      });
-                    }}
-                  />
-                </label>
-                <label className="field-label">
-                  Command
-                  <select
-                    aria-label="Tool command"
-                    value={tool.command.replace(/\.exe$/i, '').toLowerCase()}
-                    onChange={(event) => {
-                      const preset = createDefaultRecipeSettings()[
-                        'latex-workshop.latex.tools'
-                      ].find((entry) => entry.command === event.target.value)!;
-                      updateTool({ command: preset.command, args: preset.args, cwd: preset.cwd });
-                    }}
-                  >
-                    {RECIPE_COMMANDS.map((command) => (
-                      <option key={command}>{command}</option>
-                    ))}
+                    </optgroup>
+                    <optgroup label="New tool">
+                      {RECIPE_COMMANDS.map((command) => (
+                        <option key={command} value={`new:${command}`}>
+                          New {command} tool
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </label>
-                <label className="field-label">
-                  Working directory
-                  <input
-                    aria-label="Tool working directory"
-                    value={tool.cwd ?? '%DIR%'}
-                    onChange={(event) => updateTool({ cwd: event.target.value })}
-                  />
-                </label>
-                <label className="field-label">
-                  Arguments
-                  <textarea
-                    aria-label="Tool arguments"
-                    spellCheck={false}
-                    rows={7}
-                    value={tool.args.join('\n')}
-                    onChange={(event) =>
-                      updateTool({
-                        args: event.target.value.split('\n').filter((arg) => arg.length > 0),
-                      })
-                    }
-                  />
-                </label>
+                <div className="draft-helper">
+                  <button type="button" onClick={draftFirstPasses}>
+                    Use draft mode for early passes
+                  </button>
+                  <p className="recipe-hint">
+                    Every compiler pass except the last gets a <code>-draft</code> copy of its tool
+                    that adds <code>-draftmode</code>. Draft passes skip writing the PDF but still
+                    write the .aux files, so references and citations resolve and the final pass
+                    produces the only PDF. Edit the copies under Tools.
+                  </p>
+                </div>
+                <div className="recipe-section-heading">
+                  <span />
+                  <button type="button" disabled={recipes.length <= 1} onClick={deleteRecipe}>
+                    <Trash2 size={13} />
+                    Delete recipe
+                  </button>
+                </div>
               </>
             )}
           </fieldset>

@@ -46,11 +46,22 @@ test('real project editing preserves external changes, compiles, and renders a P
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedRoot] });
     }, projectRoot);
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
+    // Folders start collapsed, so nested files stay hidden until the folder is opened.
+    await expect(
+      page.getByRole('button', { name: 'Select folder chapters', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      page.getByRole('button', { name: 'Open chapters/introduction.tex', exact: true }),
+    ).toHaveCount(0);
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await expect(page.locator('.file-actions')).toHaveCount(0);
+    await expect(page.locator('.monaco-editor .codicon-folding-expanded').first()).toBeAttached();
     const fileActions = page.getByRole('menu', { name: 'Actions for main.tex', exact: true });
+    // Selecting a file must not open its menu; it opens on right click or the ... button.
+    await expect(fileActions).toHaveCount(0);
+    await page.getByRole('button', { name: 'More actions for main.tex', exact: true }).click();
     await expect(fileActions).toBeVisible();
-    for (const name of ['Rename', 'Delete', 'Reveal', 'VS Code']) {
+    for (const name of ['Rename', 'Delete', 'Open in File Explorer', 'Open in VS Code']) {
       await expect(fileActions.getByRole('menuitem', { name, exact: true })).toBeVisible();
     }
     await fileActions.getByRole('menuitem', { name: 'Rename', exact: true }).click();
@@ -205,10 +216,11 @@ test('real project editing preserves external changes, compiles, and renders a P
     await page.screenshot({ path: join(testRoot, 'native-project-workflow.png') });
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-    const settings = page.getByRole('dialog', { name: 'Settings & TeX setup', exact: true });
+    const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
     expect(
       JSON.parse(await readFile(join(projectRoot, '.textra', 'settings.json'), 'utf8')),
     ).toMatchObject({ schemaVersion: 1, recipes: { 'main.tex': 'bibtex-pipeline' } });
+    await settings.getByRole('button', { name: 'Compilation', exact: true }).click();
     await settings
       .getByRole('combobox', { name: 'Default recipe for new documents', exact: true })
       .selectOption('xelatex');
@@ -216,6 +228,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await application.evaluate(({ dialog }, path) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
     }, exportFile);
+    await settings.getByRole('button', { name: 'Import & export', exact: true }).click();
     await settings.getByRole('button', { name: 'Export settings', exact: true }).click();
     await expect(settings.getByRole('status')).toContainText('Settings exported');
     expect(JSON.parse(await readFile(exportFile, 'utf8'))).toMatchObject({
@@ -229,12 +242,14 @@ test('real project editing preserves external changes, compiles, and renders a P
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
       dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
     }, exportFile);
+    await settings.getByRole('button', { name: 'Import & export', exact: true }).click();
     await settings.getByRole('button', { name: 'Import settings', exact: true }).click();
     await expect(settings.getByRole('status')).toContainText('Theme and layout imported');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await application.evaluate(({ dialog }, path) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
     }, projectRoot);
+    await settings.getByRole('button', { name: 'LaTeX tools', exact: true }).click();
     await settings.getByRole('button', { name: 'Test TeX installation', exact: true }).click();
     await expect(settings.getByRole('status')).toContainText(
       'Test document compiled successfully',

@@ -7,6 +7,13 @@ describe('portable relative project path boundary', () => {
     'chapters/introduction.tex',
     'résumé/notes with spaces.tex',
     'references.bib',
+    '.gitignore',
+    '.git/config',
+    '.textra/settings.json',
+    'node_modules/package/index.js',
+    'build/main.pdf',
+    'main.aux',
+    'main.log',
   ])('accepts an ordinary portable path: %s', (path) =>
     expect(validateRelativePath(path)).toBe(path),
   );
@@ -26,11 +33,11 @@ describe('portable relative project path boundary', () => {
     '//server/share/main.tex',
     'main.tex:secret',
     'main\u0000.tex',
-    '.git/config',
-    '.textra/project.json',
-    'node_modules/package/index.js',
-    'main.aux',
-  ])('rejects malformed, protected, or escaping path: %j', (value) => {
+    '.textra-save-123.tmp',
+    'chapters/.textra-save-123.tmp',
+    'CON.tex',
+    'trailing-dot.',
+  ])('rejects malformed, reserved, or escaping path: %j', (value) => {
     expect(() => validateRelativePath(value)).toThrow();
   });
 });

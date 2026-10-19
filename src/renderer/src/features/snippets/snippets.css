@@ -1,0 +1,60 @@
+.snippet-palette {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 10px 0;
+}
+.snippet-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 12px;
+  overflow: auto;
+  list-style: none;
+}
+.snippet {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  height: 52px;
+  margin-bottom: 4px;
+  padding: 7px 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--raised);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+.snippet strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.snippet span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.snippet:hover {
+  background: var(--hover);
+  border-color: var(--faint);
+}
+.snippet:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.brace-icon {
+  font:
+    600 13px/1 'Cascadia Code',
+    Consolas,
+    monospace;
+}
+.activity-view[aria-pressed='true'] .brace-icon {
+  color: var(--accent);
+}

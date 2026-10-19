@@ -1,8 +1,10 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
   type PointerEvent,
@@ -10,32 +12,43 @@ import {
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   ArrowRight,
+  ArrowsInSimple,
+  ArrowsOutSimple,
   Check,
   ChevronRight,
+  Copy,
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
   PanelRightOpen,
+  PanelRightClose,
   Settings,
   Search,
+  Ellipsis,
+  Article,
   Files,
-  Blocks,
   FilePlus2,
   FileText,
   Folder,
+  History,
   FolderOpen,
   FolderPlus,
+  LocateFixed,
   Pin,
+  FilePdf,
   Play,
+  Scroll,
+  Warning,
   RefreshCw,
   Save,
   Square,
   X,
-} from 'lucide-react';
+} from './icons';
+import { FileIcon } from './features/files/fileIcons';
 import {
   BUILD_RECIPES,
   DEFAULT_PREFERENCES,
+  SIDEBAR_WIDTH_RANGE,
   type BuildEngine,
   type Result,
 } from '../../shared/api';
@@ -57,6 +70,9 @@ import {
 } from './state/workspace';
 import { SourceEditor } from './features/editor/SourceEditor';
 import PdfViewer from './features/pdf/PdfViewer';
+import EquationPalette from './features/equations/EquationPalette';
+import SnippetPalette from './features/snippets/SnippetPalette';
+import { DocumentView } from './features/document/DocumentView';
 
 interface Prompt {
   title: string;
@@ -138,6 +154,132 @@ function PromptDialog({ prompt, close }: { prompt: Prompt | null; close: () => v
   );
 }
 
+function SidebarHandle() {
+  const { preferences, updatePreferences } = useUI();
+  const dragging = useRef(false);
+  const clamp = (value: number) =>
+    Math.round(Math.min(SIDEBAR_WIDTH_RANGE.max, Math.max(SIDEBAR_WIDTH_RANGE.min, value)));
+  const resize = (event: PointerEvent<HTMLDivElement>) => {
+    const sidebar = event.currentTarget.previousElementSibling;
+    if (sidebar)
+      updatePreferences({
+        sidebarWidth: clamp(event.clientX - sidebar.getBoundingClientRect().left),
+      });
+  };
+  return (
+    <div
+      className="split-handle sidebar-handle"
+      role="separator"
+      aria-label="Sidebar width"
+      aria-orientation="vertical"
+      aria-valuemin={SIDEBAR_WIDTH_RANGE.min}
+      aria-valuemax={SIDEBAR_WIDTH_RANGE.max}
+      aria-valuenow={preferences.sidebarWidth}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const changes: Record<string, number> = {
+          ArrowLeft: preferences.sidebarWidth - 16,
+          ArrowRight: preferences.sidebarWidth + 16,
+          Home: SIDEBAR_WIDTH_RANGE.min,
+          End: SIDEBAR_WIDTH_RANGE.max,
+        };
+        if (event.key in changes) {
+          event.preventDefault();
+          updatePreferences({ sidebarWidth: clamp(changes[event.key]) });
+        }
+      }}
+      onDoubleClick={() => updatePreferences({ sidebarWidth: DEFAULT_PREFERENCES.sidebarWidth })}
+      onPointerDown={(event) => {
+        dragging.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        resize(event);
+      }}
+      onPointerMove={(event) => {
+        if (dragging.current) resize(event);
+      }}
+      onPointerUp={(event) => {
+        dragging.current = false;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onLostPointerCapture={() => {
+        dragging.current = false;
+      }}
+    />
+  );
+}
+
+/** VS Code-style inline name entry shown in the tree while creating a file or folder. */
+function NewEntryRow({
+  kind,
+  depth,
+  onSubmit,
+  onCancel,
+}: {
+  kind: 'file' | 'directory';
+  depth: number;
+  onSubmit: (name: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const working = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    input.current?.focus();
+    input.current?.scrollIntoView({ block: 'nearest' });
+  }, []);
+  async function submit() {
+    const name = value.trim();
+    if (!name) return onCancel();
+    if (/[\\/]/.test(name)) return setError('Enter a name, not a path.');
+    if (working.current) return;
+    working.current = true;
+    try {
+      await onSubmit(name);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'The item could not be created.');
+    } finally {
+      working.current = false;
+    }
+  }
+  return (
+    <div className="file-row new-entry" style={{ paddingLeft: `${depth * 14}px` }}>
+      <div className="file-entry new-entry-field" data-invalid={error ? 'true' : undefined}>
+        {kind === 'directory' ? <Folder size={14} /> : <FileText size={14} />}
+        <input
+          ref={input}
+          aria-label={kind === 'file' ? 'New file name' : 'New folder name'}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? 'new-entry-error' : undefined}
+          spellCheck={false}
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void submit();
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+          onBlur={() => {
+            if (!working.current) onCancel();
+          }}
+        />
+      </div>
+      {error && (
+        <p id="new-entry-error" role="alert" className="new-entry-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SplitHandle({ container }: { container: React.RefObject<HTMLDivElement | null> }) {
   const { preferences, updatePreferences } = useUI();
   const dragging = useRef(false);
@@ -209,11 +351,43 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     error,
     busy,
   } = state;
-  const { preferences, updatePreferences, panel, setPanel } = useUI();
+  const {
+    preferences,
+    updatePreferences,
+    panel,
+    setPanel,
+    expandedPane: requestedPane,
+    setExpandedPane,
+  } = useUI();
+  const expandedPane = preferences.previewVisible ? requestedPane : null;
+  const previewFull = expandedPane === 'preview';
+  const editorFull = expandedPane === 'editor';
+  // Opening a file or jumping to a source line (explorer, problems, PDF double-click) needs the editor.
+  useEffect(() => {
+    if (useUI.getState().expandedPane === 'preview') useUI.getState().setExpandedPane(null);
+  }, [activePath, navigation]);
+  // With no document open the editor's restore button is gone, so never stay expanded.
+  useEffect(() => {
+    if (!activePath && useUI.getState().expandedPane === 'editor')
+      useUI.getState().setExpandedPane(null);
+  }, [activePath]);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [sidebarView, setSidebarView] = useState<'explorer' | 'extensions'>('explorer');
+  const [creating, setCreating] = useState<{ kind: 'file' | 'directory'; parent: string } | null>(
+    null,
+  );
+  type SidebarView = 'explorer' | 'document' | 'equations' | 'snippets' | 'recents';
+  const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
+  /** Clicking the icon of the view that is already showing collapses the sidebar. */
+  function selectSidebarView(view: SidebarView) {
+    if (preferences.sidebarVisible && sidebarView === view) {
+      updatePreferences({ sidebarVisible: false });
+      return;
+    }
+    setSidebarView(view);
+    updatePreferences({ sidebarVisible: true });
+  }
   const [fileMenu, setFileMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const fileMenuTrigger = useRef<HTMLButtonElement | null>(null);
@@ -238,11 +412,73 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     setFileMenu({
       path,
       x: Math.max(4, Math.min(bounds.left + 18, window.innerWidth - 192)),
-      y: Math.max(4, Math.min(bounds.bottom + 2, window.innerHeight - 190)),
+      y: Math.max(4, Math.min(bounds.bottom + 2, window.innerHeight - 260)),
     });
   }
-  const [fontSize, setFontSize] = useState(14);
-  const [wrap, setWrap] = useState(false);
+  // Folders start collapsed; only the ones listed here are open.
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const expandPath = (previous: Set<string>, folder: string) => {
+    const next = new Set(previous);
+    const parts = folder.split('/').filter(Boolean);
+    parts.forEach((_, index) => next.add(parts.slice(0, index + 1).join('/')));
+    return next;
+  };
+  const [editorOptionsOpen, setEditorOptionsOpen] = useState(false);
+  const editorOptions = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setExpandedFolders(new Set());
+  }, [project?.id]);
+  useEffect(() => {
+    if (!activePath) return;
+    setExpandedFolders((previous) =>
+      expandPath(previous, activePath.split('/').slice(0, -1).join('/')),
+    );
+  }, [activePath]);
+  useEffect(() => {
+    if (!editorOptionsOpen) return;
+    editorOptions.current?.querySelector<HTMLButtonElement>('.editor-options-menu button')?.focus();
+    const dismiss = (event: globalThis.PointerEvent) => {
+      if (!editorOptions.current?.contains(event.target as Node)) setEditorOptionsOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [editorOptionsOpen]);
+  function revealActive() {
+    if (!activePath) return;
+    setFileMenu(null);
+    updatePreferences({ sidebarVisible: true });
+    setSidebarView('explorer');
+    setExpandedFolders((previous) =>
+      expandPath(previous, activePath.split('/').slice(0, -1).join('/')),
+    );
+    setSelected(activePath);
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector(`.file-entry[data-path="${CSS.escape(activePath)}"]`)
+        ?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+  function toggleFolder(path: string) {
+    setFileMenu(null);
+    setSelected(path);
+    setExpandedFolders((previous) => {
+      const next = new Set(previous);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+  const visibleFiles =
+    project?.files.filter(
+      (file) =>
+        !file.path
+          .split('/')
+          .slice(0, -1)
+          .some((_, index, parts) => !expandedFolders.has(parts.slice(0, index + 1).join('/'))),
+    ) ?? [];
+  const { fontSize, wrap } = preferences;
+  const setFontSize = (size: number) => updatePreferences({ fontSize: size });
+  const setWrap = (value: boolean) => updatePreferences({ wrap: value });
   const split = useRef<HTMLDivElement>(null);
   const logEnd = useRef<HTMLDivElement>(null);
   const polling = useRef(false);
@@ -267,6 +503,52 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const canCompile = !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
   const recipeControl = useRef<HTMLDivElement>(null);
+  const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
+  const [headerNode, setHeaderNode] = useState<HTMLDivElement | null>(null);
+  const [headerCompact, setHeaderCompact] = useState(false);
+  const [logCopied, setLogCopied] = useState(false);
+  const [tabsHost, setTabsHost] = useState<HTMLDivElement | null>(null);
+  const [tabMode, setTabMode] = useState<'full' | 'icons' | 'menu'>('full');
+  const [tabMenuOpen, setTabMenuOpen] = useState(false);
+  const [pdfMenuSlot, setPdfMenuSlot] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!tabsHost) return;
+    // Conservative thresholds: switch to icons, then to a menu, a little before things collide.
+    const measure = () => {
+      const width = tabsHost.clientWidth;
+      setTabMode(width >= 250 ? 'full' : width >= 112 ? 'icons' : 'menu');
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(tabsHost);
+    return () => observer.disconnect();
+  }, [tabsHost]);
+  useEffect(() => {
+    if (tabMode !== 'menu') setTabMenuOpen(false);
+  }, [tabMode]);
+  useEffect(() => {
+    if (!tabMenuOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!tabsHost?.contains(event.target as Node)) setTabMenuOpen(false);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setTabMenuOpen(false);
+    };
+    document.addEventListener('mousedown', dismiss);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', dismiss);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [tabMenuOpen, tabsHost]);
+  useEffect(() => {
+    if (!headerNode) return;
+    const measure = () => setHeaderCompact(headerNode.clientWidth < 560);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(headerNode);
+    return () => observer.disconnect();
+  }, [headerNode]);
   useEffect(() => {
     if (!recipeOpen) return;
     const dismiss = (event: MouseEvent) => {
@@ -277,6 +559,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }, [recipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
+  const errorCount = currentBuild?.diagnostics.filter((d) => d.severity === 'error').length ?? 0;
+  const warningCount =
+    currentBuild?.diagnostics.filter((d) => d.severity === 'warning').length ?? 0;
+  const issueCount = errorCount + warningCount;
+  const issueSeverity: 'error' | 'warning' | 'ok' | 'none' = errorCount
+    ? 'error'
+    : warningCount
+      ? 'warning'
+      : currentBuild && currentBuild.outcome !== 'idle' && currentBuild.outcome !== 'running'
+        ? currentBuild.outcome === 'success'
+          ? 'ok'
+          : 'error'
+        : 'none';
   useEffect(() => {
     void initializeWorkspace().catch(showError);
   }, []);
@@ -305,6 +600,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    // Pick up files created or removed outside TeXtra when the window regains focus.
+    const onFocus = () => {
+      if (operations.current === 0) void refresh().catch(() => undefined);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id]);
   useEffect(() => {
     logEnd.current?.scrollIntoView({ block: 'end' });
   }, [build.log]);
@@ -347,24 +651,35 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }
   function newEntry(kind: 'file' | 'directory') {
     if (!project) return;
-    setPrompt({
-      title: kind === 'file' ? 'New file' : 'New folder',
-      detail: 'Enter a path relative to the project folder. Existing files are never replaced.',
-      initial: '',
-      action: 'Create',
-      run: async (path) => {
-        const next = unwrap(
-          await window.textra.createEntry({
-            projectId: project.id,
-            path,
-            kind,
-            ...(kind === 'file' ? { content: '' } : {}),
-          }),
-        );
-        useWorkspace.setState({ project: next });
-        if (kind === 'file') await openDocument(path);
-      },
-    });
+    // Create beside the selection: inside a selected folder, or next to a selected file.
+    const selectedEntry = project.files.find((file) => file.path === selected);
+    const parent =
+      selectedEntry?.kind === 'directory'
+        ? selectedEntry.path
+        : selectedEntry
+          ? selectedEntry.path.split('/').slice(0, -1).join('/')
+          : '';
+    setFileMenu(null);
+    updatePreferences({ sidebarVisible: true });
+    setSidebarView('explorer');
+    setExpandedFolders((previous) => expandPath(previous, parent));
+    setCreating({ kind, parent });
+  }
+  async function createInline(name: string) {
+    if (!project || !creating) return;
+    const path = creating.parent ? `${creating.parent}/${name}` : name;
+    const next = unwrap(
+      await window.textra.createEntry({
+        projectId: project.id,
+        path,
+        kind: creating.kind,
+        ...(creating.kind === 'file' ? { content: '' } : {}),
+      }),
+    );
+    useWorkspace.setState({ project: next });
+    setCreating(null);
+    setSelected(path);
+    if (creating.kind === 'file') await openDocument(path);
   }
   function saveAs() {
     if (!project || !active) return;
@@ -550,12 +865,50 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             aria-label="File Explorer"
             title="File Explorer"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'explorer'}
-            onClick={() => {
-              setSidebarView('explorer');
-              updatePreferences({ sidebarVisible: true });
-            }}
+            onClick={() => selectSidebarView('explorer')}
           >
-            <Files size={19} />
+            <Files
+              size={20}
+              weight={
+                preferences.sidebarVisible && sidebarView === 'explorer' ? 'duotone' : 'light'
+              }
+            />
+          </button>
+          <button
+            className="icon-button activity-view"
+            aria-label="Document view"
+            title="Document: outline and files used"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'document'}
+            onClick={() => selectSidebarView('document')}
+          >
+            <Article
+              size={20}
+              weight={
+                preferences.sidebarVisible && sidebarView === 'document' ? 'duotone' : 'light'
+              }
+            />
+          </button>
+          <button
+            className="icon-button activity-view"
+            aria-label="Equations"
+            title="Equations: symbol palette"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'equations'}
+            onClick={() => selectSidebarView('equations')}
+          >
+            <span className="sigma-icon" aria-hidden="true">
+              Σ
+            </span>
+          </button>
+          <button
+            className="icon-button activity-view"
+            aria-label="Snippets"
+            title="Snippets: tables, figures and more"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'snippets'}
+            onClick={() => selectSidebarView('snippets')}
+          >
+            <span className="brace-icon" aria-hidden="true">
+              {'{}'}
+            </span>
           </button>
           <button
             className="icon-button"
@@ -566,19 +919,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             <Search size={18} />
           </button>
           <button
-            className="icon-button activity-view"
-            aria-label="Extensions"
-            title="Extensions"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'extensions'}
-            onClick={() => {
-              setSidebarView('extensions');
-              updatePreferences({ sidebarVisible: true });
-            }}
+            className="icon-button activity-view rail-bottom"
+            aria-label="Recent Projects"
+            title="Recent Projects"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'recents'}
+            onClick={() => selectSidebarView('recents')}
           >
-            <Blocks size={19} />
+            <History
+              size={20}
+              weight={preferences.sidebarVisible && sidebarView === 'recents' ? 'duotone' : 'light'}
+            />
           </button>
           <button
-            className="icon-button rail-settings"
+            className="icon-button"
             aria-label="Settings and TeX setup"
             title="Settings"
             onClick={onOpenSettings}
@@ -587,22 +940,92 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
         </nav>
         {preferences.sidebarVisible && (
-          <aside className="sidebar" aria-label="Project sidebar">
-            {sidebarView === 'extensions' ? (
+          <aside
+            className="sidebar"
+            aria-label="Project sidebar"
+            style={{ width: preferences.sidebarWidth }}
+          >
+            {sidebarView === 'document' ? (
+              <DocumentView />
+            ) : sidebarView === 'snippets' ? (
               <>
                 <div className="sidebar-title">
-                  <span className="eyebrow">EXTENSIONS</span>
+                  <span className="sidebar-heading">Snippets</span>
                 </div>
-                <div className="sidebar-empty">
-                  <Blocks size={27} strokeWidth={1.3} />
-                  <p>Room to grow.</p>
-                  <span>Future extensions will appear here.</span>
+                <SnippetPalette canInsert={!!active} />
+              </>
+            ) : sidebarView === 'recents' ? (
+              <>
+                <div className="sidebar-title">
+                  <span className="sidebar-heading">Recent Projects</span>
+                  <button
+                    className="icon-button small"
+                    aria-label="Open folder"
+                    title="Open folder"
+                    onClick={() => openFolder()}
+                    disabled={busy || build.running}
+                  >
+                    <FolderOpen size={15} />
+                  </button>
                 </div>
+                {recents.length > 0 ? (
+                  <div className="recent-project-list recent-project-list-full">
+                    {[...recents]
+                      .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+                      .map((recent) => (
+                        <div className="recent-row" key={recent.id}>
+                          <button
+                            className="recent-open"
+                            title={recent.rootPath}
+                            aria-label={`Open recent ${recent.name}`}
+                            disabled={busy || build.running}
+                            onClick={() => openFolder(recent.id)}
+                          >
+                            <FolderOpen size={13} />
+                            <span>{recent.name}</span>
+                          </button>
+                          <button
+                            className="icon-button small"
+                            aria-label={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
+                            title={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
+                            aria-pressed={recent.pinned}
+                            onClick={() =>
+                              void run(async () => {
+                                useWorkspace.setState({
+                                  recents: unwrap(
+                                    await window.textra.setProjectPinned({
+                                      id: recent.id,
+                                      pinned: !recent.pinned,
+                                    }),
+                                  ),
+                                });
+                              })
+                            }
+                          >
+                            <Pin size={12} />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="sidebar-empty">
+                    <History size={27} weight="thin" />
+                    <p>No recent projects.</p>
+                    <span>Folders you open will show up here.</span>
+                  </div>
+                )}
+              </>
+            ) : sidebarView === 'equations' ? (
+              <>
+                <div className="sidebar-title">
+                  <span className="sidebar-heading">Equations</span>
+                </div>
+                <EquationPalette canInsert={!!active} />
               </>
             ) : (
               <>
                 <div className="sidebar-title">
-                  <span className="eyebrow">EXPLORER</span>
+                  <span className="sidebar-heading">Files</span>
                   <button
                     className="icon-button small"
                     aria-label="Open folder"
@@ -617,6 +1040,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       <button
                         className="icon-button small"
                         aria-label="New file"
+                        title="New file"
                         disabled={busy}
                         onClick={() => newEntry('file')}
                       >
@@ -625,6 +1049,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       <button
                         className="icon-button small"
                         aria-label="New folder"
+                        title="New folder"
                         disabled={busy}
                         onClick={() => newEntry('directory')}
                       >
@@ -632,7 +1057,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       </button>
                       <button
                         className="icon-button small"
+                        aria-label="Reveal active file in explorer"
+                        title="Reveal active file in explorer"
+                        disabled={!activePath}
+                        onClick={revealActive}
+                      >
+                        <LocateFixed size={14} />
+                      </button>
+                      <button
+                        className="icon-button small"
                         aria-label="Refresh project"
+                        title="Refresh project"
                         disabled={busy}
                         onClick={() => void run(refresh)}
                       >
@@ -642,55 +1077,124 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   )}
                 </div>
                 <div className="project-heading" title={project?.rootPath}>
-                  <ChevronRight size={14} />
                   <span>{project?.name ?? 'No project open'}</span>
                 </div>
                 {project ? (
                   <>
                     <div className="file-tree" aria-label="Project files">
-                      {project.files.map((file) => (
-                        <button
-                          key={file.path}
-                          aria-label={
-                            file.kind === 'file'
-                              ? `Open ${file.path}`
-                              : `Select folder ${file.path}`
-                          }
-                          aria-current={selected === file.path ? 'true' : undefined}
-                          className="file-entry"
-                          disabled={busy}
-                          style={{
-                            paddingLeft: `${15 + (file.path.split('/').length - 1) * 12}px`,
-                          }}
-                          aria-haspopup="menu"
-                          aria-expanded={fileMenu?.path === file.path}
-                          onClick={(event) => {
-                            showFileMenu(file.path, event.currentTarget);
-                            if (file.kind === 'file') void openDocument(file.path);
-                          }}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            showFileMenu(file.path, event.currentTarget);
-                          }}
-                          onKeyDown={(event) => {
-                            if (
-                              (event.shiftKey && event.key === 'F10') ||
-                              event.key === 'ContextMenu'
-                            ) {
-                              event.preventDefault();
-                              showFileMenu(file.path, event.currentTarget);
-                            }
-                          }}
-                        >
-                          {file.kind === 'directory' ? (
-                            <Folder size={14} />
-                          ) : (
-                            <FileText size={14} />
-                          )}
-                          <span>{file.name}</span>
-                        </button>
+                      {creating?.parent === '' && (
+                        <NewEntryRow
+                          kind={creating.kind}
+                          depth={0}
+                          onSubmit={createInline}
+                          onCancel={() => setCreating(null)}
+                        />
+                      )}
+                      {visibleFiles.map((file) => (
+                        <Fragment key={file.path}>
+                          <div
+                            className="file-row"
+                            style={{
+                              paddingLeft: `${(file.path.split('/').length - 1) * 14}px`,
+                            }}
+                          >
+                            <button
+                              aria-label={
+                                file.kind === 'file'
+                                  ? `Open ${file.path}`
+                                  : `Select folder ${file.path}`
+                              }
+                              aria-current={selected === file.path ? 'true' : undefined}
+                              className="file-entry"
+                              data-path={file.path}
+                              disabled={busy}
+                              aria-expanded={
+                                file.kind === 'directory'
+                                  ? expandedFolders.has(file.path)
+                                  : undefined
+                              }
+                              onClick={() => {
+                                if (file.kind === 'directory') toggleFolder(file.path);
+                                else {
+                                  setFileMenu(null);
+                                  setSelected(file.path);
+                                  void openDocument(file.path);
+                                }
+                              }}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                showFileMenu(file.path, event.currentTarget);
+                              }}
+                              onKeyDown={(event) => {
+                                if (
+                                  file.kind === 'directory' &&
+                                  (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+                                ) {
+                                  event.preventDefault();
+                                  setExpandedFolders((previous) => {
+                                    const next = new Set(previous);
+                                    if (event.key === 'ArrowLeft') next.delete(file.path);
+                                    else next.add(file.path);
+                                    return next;
+                                  });
+                                }
+                                if (
+                                  (event.shiftKey && event.key === 'F10') ||
+                                  event.key === 'ContextMenu'
+                                ) {
+                                  event.preventDefault();
+                                  showFileMenu(file.path, event.currentTarget);
+                                }
+                              }}
+                            >
+                              {file.kind === 'directory' ? (
+                                <>
+                                  <ChevronRight
+                                    size={12}
+                                    aria-hidden="true"
+                                    className={
+                                      'folder-chevron' +
+                                      (expandedFolders.has(file.path) ? ' expanded' : '')
+                                    }
+                                  />
+                                  <FileIcon
+                                    name={file.name}
+                                    kind="directory"
+                                    expanded={expandedFolders.has(file.path)}
+                                  />
+                                </>
+                              ) : (
+                                <FileIcon name={file.name} kind="file" />
+                              )}
+                              <span>{file.name}</span>
+                            </button>
+                            {selected === file.path && (
+                              <button
+                                className="file-more"
+                                aria-label={`More actions for ${file.path}`}
+                                title="More actions"
+                                aria-haspopup="menu"
+                                aria-expanded={fileMenu?.path === file.path}
+                                disabled={busy}
+                                onClick={(event) => showFileMenu(file.path, event.currentTarget)}
+                              >
+                                <Ellipsis size={14} />
+                              </button>
+                            )}
+                          </div>
+                          {creating &&
+                            creating.parent === file.path &&
+                            file.kind === 'directory' && (
+                              <NewEntryRow
+                                kind={creating.kind}
+                                depth={file.path.split('/').length}
+                                onSubmit={createInline}
+                                onCancel={() => setCreating(null)}
+                              />
+                            )}
+                        </Fragment>
                       ))}
-                      {!project.files.length && (
+                      {!project.files.length && !creating && (
                         <p className="tree-note">This folder is empty. Create a file to begin.</p>
                       )}
                       {project.truncated && (
@@ -702,117 +1206,72 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   </>
                 ) : (
                   <div className="sidebar-empty">
-                    <FolderOpen size={27} strokeWidth={1.3} />
+                    <FolderOpen size={27} weight="thin" />
                     <p>A home for your ideas.</p>
                     <span>Open a folder to work with ordinary LaTeX files on your computer.</span>
                   </div>
-                )}
-                {recents.length > 0 && (
-                  <details className="recent-projects">
-                    <summary>
-                      <ChevronRight size={14} />
-                      <span className="eyebrow">RECENT PROJECTS</span>
-                    </summary>
-                    <div className="recent-project-list">
-                      {[...recents]
-                        .sort((a, b) => Number(b.pinned) - Number(a.pinned))
-                        .map((recent) => (
-                          <div className="recent-row" key={recent.id}>
-                            <button
-                              className="recent-open"
-                              title={recent.rootPath}
-                              aria-label={`Open recent ${recent.name}`}
-                              disabled={busy || build.running}
-                              onClick={() => openFolder(recent.id)}
-                            >
-                              <FolderOpen size={13} />
-                              <span>{recent.name}</span>
-                            </button>
-                            <button
-                              className="icon-button small"
-                              aria-label={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
-                              aria-pressed={recent.pinned}
-                              onClick={() =>
-                                void run(async () => {
-                                  useWorkspace.setState({
-                                    recents: unwrap(
-                                      await window.textra.setProjectPinned({
-                                        id: recent.id,
-                                        pinned: !recent.pinned,
-                                      }),
-                                    ),
-                                  });
-                                })
-                              }
-                            >
-                              <Pin size={12} />
-                            </button>
-                          </div>
-                        ))}
-                    </div>
-                  </details>
                 )}
               </>
             )}
           </aside>
         )}
+        {preferences.sidebarVisible && <SidebarHandle />}
         <main className="document-workspace" aria-label="Document workspace">
           <div className="split-workspace" ref={split}>
             <section
               className="editor-pane"
               aria-label="Editor"
+              hidden={previewFull}
               style={{
-                flexBasis: preferences.previewVisible ? `${preferences.editorWidth}%` : 0,
-                flexGrow: preferences.previewVisible ? 0 : 1,
+                flexBasis:
+                  preferences.previewVisible && !editorFull ? `${preferences.editorWidth}%` : 0,
+                flexGrow: preferences.previewVisible && !editorFull ? 0 : 1,
               }}
             >
-              <div className="document-tabs" role="tablist" aria-label="Open documents">
-                {documents.length ? (
-                  documents.map((document) => (
-                    <div
-                      className={`document-tab ${document.path === activePath ? 'selected' : ''}`}
-                      key={document.path}
-                    >
-                      <button
-                        role="tab"
-                        aria-label={`Edit ${document.path}`}
-                        aria-selected={document.path === activePath}
-                        title={document.path}
-                        onClick={() =>
-                          useWorkspace.setState({ activePath: document.path, navigation: null })
-                        }
+              <div className="editor-tab-strip">
+                <div className="document-tabs" role="tablist" aria-label="Open documents">
+                  {documents.length ? (
+                    documents.map((document) => (
+                      <div
+                        className={`document-tab ${document.path === activePath ? 'selected' : ''}`}
+                        key={document.path}
                       >
-                        <FileText size={13} />
-                        <span>{document.path.split('/').at(-1)}</span>
-                        {dirty(document) && (
-                          <span className="dirty-dot" aria-label="Unsaved changes" />
-                        )}
-                      </button>
-                      <button
-                        className="tab-close"
-                        aria-label={`Close ${document.path}`}
-                        onClick={() => {
-                          if (dirty(document)) protect(async () => closeDocument(document.path));
-                          else closeDocument(document.path);
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
+                        <button
+                          role="tab"
+                          aria-label={`Edit ${document.path}`}
+                          aria-selected={document.path === activePath}
+                          title={document.path}
+                          onClick={() =>
+                            useWorkspace.setState({ activePath: document.path, navigation: null })
+                          }
+                        >
+                          <FileText size={13} />
+                          <span>{document.path.split('/').at(-1)}</span>
+                          {dirty(document) && (
+                            <span className="dirty-dot" aria-label="Unsaved changes" />
+                          )}
+                        </button>
+                        <button
+                          className="tab-close"
+                          aria-label={`Close ${document.path}`}
+                          onClick={() => {
+                            if (dirty(document)) protect(async () => closeDocument(document.path));
+                            else closeDocument(document.path);
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="welcome-tab">
+                      <FileText size={15} />
+                      Welcome
                     </div>
-                  ))
-                ) : (
-                  <div className="welcome-tab">
-                    <FileText size={15} />
-                    Welcome
-                  </div>
-                )}
-              </div>
-              {active ? (
-                <>
-                  <div className="editor-toolbar">
-                    <span className="active-file-path" title={active.path}>
-                      {active.path}
-                    </span>
+                  )}
+                </div>
+                {active && (
+                  <div className="editor-tab-actions">
                     <button
                       className="icon-button small"
                       aria-label="Save file"
@@ -826,34 +1285,101 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     >
                       <Save size={15} />
                     </button>
-                    <button
-                      className="text-button"
-                      aria-label="Save file as"
-                      disabled={busy}
-                      onClick={saveAs}
+                    {/* Expand-editor button disabled: "Collapse right pane" covers it.
+                        Wiring (expandedPane "editor", palette command, effects) is kept
+                        so the decision can be revisited.
+                    {preferences.previewVisible && (
+                      <button
+                        className="icon-button small"
+                        aria-label={
+                          editorFull
+                            ? 'Restore editor and preview split'
+                            : 'Expand editor to full width'
+                        }
+                        title={
+                          editorFull
+                            ? 'Restore editor and preview split'
+                            : 'Expand editor to full width (Ctrl+Enter still compiles)'
+                        }
+                        aria-pressed={editorFull}
+                        onClick={() => setExpandedPane(editorFull ? null : 'editor')}
+                      >
+                        {editorFull ? <ArrowsInSimple size={16} /> : <ArrowsOutSimple size={16} />}
+                      </button>
+                    )}
+                    */}
+                    <div
+                      className="editor-options"
+                      ref={editorOptions}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          setEditorOptionsOpen(false);
+                          editorOptions.current
+                            ?.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')
+                            ?.focus();
+                        }
+                      }}
                     >
-                      Save as
-                    </button>
-                    <select
-                      aria-label="Editor font size"
-                      value={fontSize}
-                      onChange={(event) => setFontSize(Number(event.target.value))}
-                    >
-                      {[12, 14, 16, 18, 20, 24].map((size) => (
-                        <option key={size} value={size}>
-                          {size}px
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="text-button"
-                      aria-label="Toggle word wrap"
-                      aria-pressed={wrap}
-                      onClick={() => setWrap(!wrap)}
-                    >
-                      Wrap
-                    </button>
+                      <button
+                        className="icon-button small"
+                        aria-label="Editor options"
+                        title="Editor options"
+                        aria-expanded={editorOptionsOpen}
+                        aria-controls="editor-options-panel"
+                        onClick={() => setEditorOptionsOpen(!editorOptionsOpen)}
+                      >
+                        <Ellipsis size={17} />
+                      </button>
+                      {editorOptionsOpen && (
+                        <div
+                          className="editor-options-menu"
+                          id="editor-options-panel"
+                          role="group"
+                          aria-label="Editor options"
+                        >
+                          <button
+                            className="text-button"
+                            aria-label="Save file as"
+                            disabled={busy}
+                            onClick={() => {
+                              setEditorOptionsOpen(false);
+                              saveAs();
+                            }}
+                          >
+                            Save as…
+                          </button>
+                          <label>
+                            Font size
+                            <select
+                              aria-label="Editor font size"
+                              value={fontSize}
+                              onChange={(event) => setFontSize(Number(event.target.value))}
+                            >
+                              {[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
+                                .sort((a, b) => a - b)
+                                .map((size) => (
+                                  <option key={size} value={size}>
+                                    {size}px
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          <button
+                            className="text-button"
+                            aria-label="Toggle word wrap"
+                            aria-pressed={wrap}
+                            onClick={() => setWrap(!wrap)}
+                          >
+                            Word wrap <span>{wrap ? 'On' : 'Off'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                )}
+              </div>
+              {active ? (
+                <>
                   {active.conflict && (
                     <div className="conflict-banner" role="alert">
                       <span>This file changed on disk. Your open text is preserved.</span>
@@ -911,11 +1437,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 </div>
               )}
             </section>
-            {preferences.previewVisible && <SplitHandle container={split} />}
+            {preferences.previewVisible && !expandedPane && <SplitHandle container={split} />}
             <section
               className="preview-pane"
               aria-label="Preview pane"
-              hidden={!preferences.previewVisible}
+              hidden={!preferences.previewVisible || editorFull}
               onKeyDown={(event) => {
                 if (event.defaultPrevented || !(event.ctrlKey || event.metaKey)) return;
                 if (event.key.toLowerCase() === 'f' && panel === 'preview') {
@@ -927,7 +1453,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 }
               }}
             >
-              <div className="preview-header">
+              <div className="preview-header" ref={setHeaderNode}>
                 <div
                   className="compile-control"
                   ref={recipeControl}
@@ -951,13 +1477,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           : busy
                             ? 'Wait for the current file operation to finish.'
                             : missingTool
-                              ? engine + ' not found. Check Settings & TeX setup.'
+                              ? engine + ' not found. Check Settings, LaTeX tools.'
                               : 'Compile ' +
                                 (activePath ?? 'active document') +
                                 ' with ' +
                                 engine +
                                 ' (Ctrl+Enter)'
                     }
+                    style={
+                      build.running && build.stepCount
+                        ? ({
+                            '--progress': `${Math.min(
+                              95,
+                              (((build.stepsDone ?? 0) + 0.5) / build.stepCount) * 100,
+                            )}%`,
+                          } as CSSProperties)
+                        : undefined
+                    }
+                    data-progress={build.running && build.stepCount ? 'true' : undefined}
                     disabled={!build.running && (!canCompile || busy)}
                     onClick={() =>
                       build.running
@@ -1032,41 +1569,164 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     </div>
                   )}
                 </div>
-                <div className="preview-tabs" role="tablist" aria-label="Preview views">
-                  {(['preview', 'problems', 'output'] as const).map((name, index, names) => (
-                    <button
-                      key={name}
-                      role="tab"
-                      id={name + '-tab'}
-                      aria-selected={panel === name}
-                      aria-controls={name + '-panel'}
-                      tabIndex={panel === name ? 0 : -1}
-                      onClick={() => setPanel(name)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                          event.preventDefault();
-                          const next =
-                            names[
-                              (index + (event.key === 'ArrowRight' ? 1 : names.length - 1)) %
-                                names.length
-                            ];
-                          setPanel(next);
-                          document.getElementById(next + '-tab')?.focus();
-                        }
-                      }}
-                    >
-                      {name === 'preview' ? 'Preview' : name === 'problems' ? 'Problems' : 'Output'}
-                      {name === 'problems' && !!currentBuild?.diagnostics.length && (
-                        <span className="count">{currentBuild.diagnostics.length}</span>
+                <div className="preview-tabs-host" ref={setTabsHost}>
+                  {tabMode === 'menu' ? (
+                    <>
+                      <button
+                        className="icon-button small"
+                        aria-label="Preview menu"
+                        aria-haspopup="menu"
+                        aria-expanded={tabMenuOpen}
+                        title="Views and PDF controls"
+                        onClick={() => setTabMenuOpen((open) => !open)}
+                      >
+                        <Ellipsis size={17} />
+                      </button>
+                      {tabMenuOpen && (
+                        <div className="preview-tabs-menu" role="menu" aria-label="Preview views">
+                          {(['preview', 'problems', 'output'] as const).map((name) => (
+                            <button
+                              key={name}
+                              role="menuitemradio"
+                              aria-checked={panel === name}
+                              onClick={() => {
+                                setPanel(name);
+                                setTabMenuOpen(false);
+                              }}
+                            >
+                              {name === 'preview' ? (
+                                <FilePdf size={15} />
+                              ) : name === 'problems' ? (
+                                <Warning size={15} />
+                              ) : (
+                                <Scroll size={15} />
+                              )}
+                              {name === 'preview'
+                                ? 'Preview'
+                                : name === 'problems'
+                                  ? 'Problems'
+                                  : 'Output'}
+                              {name === 'problems' && !!currentBuild?.diagnostics.length && (
+                                <span className="count">{currentBuild.diagnostics.length}</span>
+                              )}
+                            </button>
+                          ))}
+                          {panel === 'preview' && (
+                            <div className="preview-menu-pdf" ref={setPdfMenuSlot} />
+                          )}
+                        </div>
                       )}
-                    </button>
-                  ))}
+                    </>
+                  ) : (
+                    <div
+                      className="preview-tabs"
+                      role="tablist"
+                      aria-label="Preview views"
+                      data-mode={tabMode}
+                    >
+                      {(['preview', 'problems', 'output'] as const).map((name, index, names) => (
+                        <button
+                          key={name}
+                          role="tab"
+                          id={name + '-tab'}
+                          aria-selected={panel === name}
+                          aria-controls={name + '-panel'}
+                          tabIndex={panel === name ? 0 : -1}
+                          onClick={() => setPanel(name)}
+                          title={
+                            name === 'preview'
+                              ? 'Preview'
+                              : name === 'problems'
+                                ? 'Problems'
+                                : 'Output'
+                          }
+                          aria-label={
+                            name === 'preview'
+                              ? 'Preview'
+                              : name === 'problems'
+                                ? 'Problems'
+                                : 'Output'
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                              event.preventDefault();
+                              const next =
+                                names[
+                                  (index + (event.key === 'ArrowRight' ? 1 : names.length - 1)) %
+                                    names.length
+                                ];
+                              setPanel(next);
+                              document.getElementById(next + '-tab')?.focus();
+                            }
+                          }}
+                        >
+                          {tabMode === 'icons' &&
+                            (name === 'preview' ? (
+                              <FilePdf size={16} />
+                            ) : name === 'problems' ? (
+                              <Warning size={16} />
+                            ) : (
+                              <Scroll size={16} />
+                            ))}
+                          {tabMode === 'full' &&
+                            (name === 'preview'
+                              ? 'Preview'
+                              : name === 'problems'
+                                ? 'Problems'
+                                : 'Output')}
+                          {name === 'problems' && !!currentBuild?.diagnostics.length && (
+                            <span className="count">{currentBuild.diagnostics.length}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                <div className="pdf-slot" ref={setPdfSlot} />
+                {panel === 'output' && (
+                  <button
+                    className="icon-button small header-secondary"
+                    aria-label="Copy build output"
+                    title={logCopied ? 'Copied' : 'Copy build output'}
+                    disabled={!currentBuild?.log}
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(currentBuild?.log ?? '')
+                        .then(() => {
+                          setLogCopied(true);
+                          window.setTimeout(() => setLogCopied(false), 1500);
+                        })
+                        .catch(() => undefined);
+                    }}
+                  >
+                    {logCopied ? <Check size={15} /> : <Copy size={15} />}
+                  </button>
+                )}
+                <button
+                  className="icon-button small header-secondary"
+                  aria-label={
+                    previewFull
+                      ? 'Restore editor and preview split'
+                      : 'Expand preview to full width'
+                  }
+                  title={
+                    previewFull
+                      ? 'Restore editor and preview split'
+                      : 'Expand preview to full width'
+                  }
+                  aria-pressed={previewFull}
+                  onClick={() => setExpandedPane(previewFull ? null : 'preview')}
+                >
+                  {previewFull ? <ArrowsInSimple size={16} /> : <ArrowsOutSimple size={16} />}
+                </button>
                 <button
                   className="icon-button small"
                   aria-label="Collapse preview"
                   title="Collapse preview"
-                  onClick={() => updatePreferences({ previewVisible: false })}
+                  onClick={() => {
+                    setExpandedPane(null);
+                    updatePreferences({ previewVisible: false });
+                  }}
                 >
                   <PanelRightClose size={17} />
                 </button>
@@ -1082,6 +1742,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   project={project}
                   build={build}
                   source={source}
+                  toolbarSlot={pdfSlot}
+                  compact={headerCompact}
+                  menuMode={tabMode === 'menu'}
+                  menuSlot={pdfMenuSlot}
+                  active={panel === 'preview'}
                   onNavigate={(location) => {
                     void openDocument(location.path, location);
                   }}
@@ -1150,6 +1815,84 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 >
                   <PanelRightOpen size={17} />
                 </button>
+                <button
+                  className="collapsed-compile"
+                  data-running={build.running ? 'true' : undefined}
+                  aria-label={build.running ? 'Cancel build' : 'Compile active document'}
+                  title={
+                    build.running
+                      ? 'Cancel build'
+                      : !canCompile
+                        ? 'Open a .tex document to compile it.'
+                        : 'Compile with ' + engine + ' (Ctrl+Enter)'
+                  }
+                  disabled={!build.running && (!canCompile || busy)}
+                  onClick={() =>
+                    build.running
+                      ? void run(async () => {
+                          unwrap(await window.textra.cancelBuild());
+                        })
+                      : void compile()
+                  }
+                >
+                  {build.running ? (
+                    <Square size={11} weight="fill" />
+                  ) : (
+                    <Play size={12} weight="fill" />
+                  )}
+                </button>
+                <button
+                  className="icon-button small"
+                  aria-label="Show PDF preview"
+                  title="Show PDF preview"
+                  onClick={() => {
+                    setPanel('preview');
+                    updatePreferences({ previewVisible: true });
+                  }}
+                >
+                  <FilePdf size={17} />
+                </button>
+                <button
+                  className="icon-button small collapsed-alert"
+                  data-severity={issueSeverity}
+                  aria-label={'Show problems' + (issueCount ? ` (${issueCount})` : '')}
+                  title={
+                    issueSeverity === 'error'
+                      ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
+                      : issueSeverity === 'warning'
+                        ? `${warningCount} warning${warningCount === 1 ? '' : 's'}`
+                        : issueSeverity === 'ok'
+                          ? 'No problems'
+                          : 'Show problems'
+                  }
+                  onClick={() => {
+                    setPanel('problems');
+                    updatePreferences({ previewVisible: true });
+                  }}
+                >
+                  <span className="alert-glyph">
+                    <Warning
+                      size={17}
+                      weight={
+                        issueSeverity === 'error' || issueSeverity === 'warning' ? 'fill' : 'light'
+                      }
+                    />
+                    {issueSeverity === 'ok' && (
+                      <Check size={9} weight="bold" className="alert-check" />
+                    )}
+                  </span>
+                </button>
+                <button
+                  className="icon-button small"
+                  aria-label="Show build output"
+                  title="Show build output"
+                  onClick={() => {
+                    setPanel('output');
+                    updatePreferences({ previewVisible: true });
+                  }}
+                >
+                  <Scroll size={17} />
+                </button>
               </div>
             )}
           </div>
@@ -1161,7 +1904,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           ref={fileMenuRef}
           role="menu"
           tabIndex={-1}
-          aria-label={'Actions for ' + fileMenu.path}
+          aria-label={'Actions for ' + (fileMenu.path || project.name)}
           style={{ left: fileMenu.x, top: fileMenu.y }}
           onKeyDown={(event) => {
             const buttons = Array.from(
@@ -1182,10 +1925,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             if (event.key === 'Tab') setFileMenu(null);
           }}
         >
-          <div className="file-menu-name">{fileMenu.path.split('/').at(-1)}</div>
+          <div className="file-menu-name">{fileMenu.path.split('/').at(-1) || project.name}</div>
           <button
             role="menuitem"
-            disabled={busy || build.running}
+            disabled={busy || build.running || fileMenu.path === ''}
             onClick={() => {
               setFileMenu(null);
               rename();
@@ -1195,7 +1938,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <button
             role="menuitem"
-            disabled={busy || build.running}
+            disabled={busy || build.running || fileMenu.path === ''}
             onClick={() => {
               setFileMenu(null);
               remove();
@@ -1214,7 +1957,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
               });
             }}
           >
-            Reveal
+            Open in File Explorer
           </button>
           <button
             role="menuitem"
@@ -1227,8 +1970,26 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
               });
             }}
           >
-            VS Code
+            Open in VS Code
           </button>
+          {([false, true] as const).map((relative) => (
+            <button
+              key={String(relative)}
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                const path = fileMenu.path;
+                setFileMenu(null);
+                void run(async () => {
+                  unwrap(
+                    await window.textra.copyEntryPath({ projectId: project.id, path, relative }),
+                  );
+                });
+              }}
+            >
+              {relative ? 'Copy Relative Path' : 'Copy Path'}
+            </button>
+          ))}
         </div>
       )}
       <PromptDialog prompt={prompt} close={() => setPrompt(null)} />

@@ -6,15 +6,74 @@
   flex-direction: column;
   background: var(--bg, #1b1e1f);
 }
-.pdf-toolbar,
 .pdf-search {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: 5px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border, #353a3b);
-  font-size: 12px;
+  font-size: 11px;
+}
+/* Page and zoom controls render inside the preview header through a portal. */
+.pdf-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.pdf-controls button,
+.pdf-controls select,
+.pdf-controls input {
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 3px 9px;
+  font: inherit;
+}
+.pdf-controls select,
+.pdf-controls input {
+  border-color: var(--border);
+}
+.pdf-controls select option {
+  color: var(--text);
+  background: var(--raised);
+}
+.pdf-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  cursor: pointer;
+}
+.pdf-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pdf-controls button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+.pdf-controls-compact {
+  position: relative;
+}
+.pdf-controls-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0004;
 }
 .pdf-viewer button,
 .pdf-viewer select,
@@ -22,13 +81,13 @@
   color: inherit;
   background: transparent;
   border: 1px solid var(--border, #555);
-  border-radius: 5px;
-  padding: 4px 7px;
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
   font: inherit;
 }
 .pdf-viewer select option {
-  color: #202525;
-  background: #f7f6f1;
+  color: var(--text);
+  background: var(--raised);
 }
 .pdf-viewer button {
   cursor: pointer;
@@ -41,7 +100,7 @@
   white-space: nowrap;
 }
 .pdf-page-control input {
-  width: 48px;
+  width: 40px;
 }
 .pdf-search input {
   min-width: 80px;
@@ -57,6 +116,8 @@
   min-height: 0;
   overflow: auto;
   padding: 20px;
+  /* Reserve the scrollbar so its appearance cannot change the fit width and cause resize loops. */
+  scrollbar-gutter: stable;
 }
 .pdf-scroll canvas {
   display: block;
@@ -101,4 +162,21 @@
 .pdf-scroll canvas:focus-visible {
   outline: 2px solid var(--accent, #63b6a8);
   outline-offset: -2px;
+}
+
+.pdf-page {
+  position: relative;
+  width: fit-content;
+  margin: 0 auto;
+}
+.pdf-highlights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pdf-highlight {
+  position: absolute;
+  background: #f2c94c66;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
 }

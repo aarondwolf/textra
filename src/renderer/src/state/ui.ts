@@ -12,15 +12,28 @@ interface UIState {
   setPaletteOpen: (open: boolean) => void;
   setRecipeEditorOpen: (open: boolean) => void;
   setPanel: (panel: 'preview' | 'problems' | 'output') => void;
+  /** Session-only: one pane fills the whole workspace and the other is hidden. */
+  expandedPane: 'editor' | 'preview' | null;
+  setExpandedPane: (pane: 'editor' | 'preview' | null) => void;
 }
 
 let pending: Preferences | null = null;
-let saving = false;
+let current: Promise<void> | null = null;
 
-async function savePreferences(): Promise<void> {
-  if (saving) return;
-  saving = true;
-  try {
+/** Resolves once every queued preference change has been written (or has failed). */
+export function preferencesSaved(): Promise<void> {
+  return current ?? Promise.resolve();
+}
+
+function savePreferences(): Promise<void> {
+  current ??= persistPending().finally(() => {
+    current = null;
+  });
+  return current;
+}
+
+async function persistPending(): Promise<void> {
+  {
     while (pending) {
       const value = pending;
       pending = null;
@@ -31,8 +44,6 @@ async function savePreferences(): Promise<void> {
         useUI.setState({ error: 'Your layout could not be saved. Changes apply to this session.' });
       }
     }
-  } finally {
-    saving = false;
   }
 }
 
@@ -43,6 +54,7 @@ export const useUI = create<UIState>((set, get) => ({
   paletteOpen: false,
   recipeEditorOpen: false,
   panel: 'preview',
+  expandedPane: null,
   updatePreferences: (patch) => {
     if (!get().hydrated) return;
     const preferences = { ...get().preferences, ...patch };
@@ -53,6 +65,7 @@ export const useUI = create<UIState>((set, get) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setRecipeEditorOpen: (recipeEditorOpen) => set({ recipeEditorOpen }),
   setPanel: (panel) => set({ panel }),
+  setExpandedPane: (expandedPane) => set({ expandedPane }),
 }));
 
 let hydration: Promise<void> | undefined;

@@ -1,6 +1,14 @@
 import { useEffect, useRef } from 'react';
+import { latexFoldingRanges } from './folding';
+// editor.api.js does not load the icon font that Monaco's widgets (find, suggest) use, and the
+// package exports map cannot address a .css file, so import it by path.
+import '../../../../../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/editor/contrib/find/browser/findController.js';
+// editor.api.js ships no optional features; each one must be imported to exist.
+import 'monaco-editor/editor/contrib/folding/browser/folding.js';
+import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js';
+import 'monaco-editor/editor/contrib/comment/browser/comment.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
 import { editDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
@@ -13,13 +21,112 @@ monaco.languages.setMonarchTokensProvider('latex', {
   tokenizer: {
     root: [
       [/%.*$/, 'comment'],
+      [/\$\$/, { token: 'delimiter.math', next: '@displayDollar' }],
+      [/\$/, { token: 'delimiter.math', next: '@inlineDollar' }],
+      [/\\\(/, { token: 'delimiter.math', next: '@inlineParen' }],
+      [/\\\[/, { token: 'delimiter.math', next: '@displayBracket' }],
       [/\\[a-zA-Z@]+|\\./, 'keyword'],
       [/[{}]/, 'delimiter.bracket'],
-      [/\$\$?|\\\[|\\\]/, 'string'],
       [/\b\d+\b/, 'number'],
+    ],
+    inlineDollar: [[/\$/, { token: 'delimiter.math', next: '@pop' }], { include: '@mathCommon' }],
+    displayDollar: [
+      [/\$\$/, { token: 'delimiter.math', next: '@pop' }],
+      { include: '@mathCommon' },
+    ],
+    inlineParen: [[/\\\)/, { token: 'delimiter.math', next: '@pop' }], { include: '@mathCommon' }],
+    displayBracket: [
+      [/\\\]/, { token: 'delimiter.math', next: '@pop' }],
+      { include: '@mathCommon' },
+    ],
+    mathCommon: [
+      [/%.*$/, 'comment'],
+      [/\\[a-zA-Z@]+|\\./, 'keyword'],
+      [/[{}[\]()]/, 'delimiter.bracket'],
+      [/\b\d+(?:\.\d+)?\b/, 'number'],
+      [/./, 'string.math'],
     ],
   },
 });
+
+const editorThemes: Record<string, monaco.editor.IStandaloneThemeData> = {
+  'textra-dark': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'E4E5E2' },
+      { token: 'keyword', foreground: '9BC9BB' },
+      { token: 'comment', foreground: '909B95', fontStyle: 'italic' },
+      { token: 'string.math', foreground: 'D5BD91' },
+      { token: 'delimiter.math', foreground: 'D5BD91' },
+      { token: 'number', foreground: 'D5BD91' },
+      { token: 'delimiter.bracket', foreground: 'B6BBB7' },
+    ],
+    colors: {
+      'editor.background': '#1C1E20',
+      'editor.foreground': '#E4E5E2',
+      'editorGutter.background': '#1C1E20',
+      'editorLineNumber.foreground': '#626B69',
+      'editorLineNumber.activeForeground': '#A2B1AB',
+      'editorGutter.foldingControlForeground': '#7C8884',
+      'editorCursor.foreground': '#9BC9BB',
+      'editor.lineHighlightBackground': '#252A29',
+      'editor.lineHighlightBorder': '#00000000',
+      'editor.selectionBackground': '#3A585080',
+      'editor.inactiveSelectionBackground': '#3A484880',
+      'editor.selectionHighlightBackground': '#7CA89722',
+      'editorBracketMatch.background': '#9BC9BB18',
+      'editorBracketMatch.border': '#9BC9BB66',
+      'editorWidget.background': '#222426',
+      'editorWidget.border': '#343A38',
+      'input.background': '#1C1E20',
+      'input.foreground': '#E4E5E2',
+      'input.border': '#414B47',
+      focusBorder: '#9BC9BB',
+      'editor.findMatchBackground': '#92763F80',
+      'editor.findMatchHighlightBackground': '#92763F44',
+    },
+  },
+  'textra-light': {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: '', foreground: '292F2C' },
+      { token: 'keyword', foreground: '326958' },
+      { token: 'comment', foreground: '69776F', fontStyle: 'italic' },
+      { token: 'string.math', foreground: '8B6229' },
+      { token: 'delimiter.math', foreground: '8B6229' },
+      { token: 'number', foreground: '8B6229' },
+      { token: 'delimiter.bracket', foreground: '646F68' },
+    ],
+    colors: {
+      'editor.background': '#FAF9F6',
+      'editor.foreground': '#292F2C',
+      'editorGutter.background': '#FAF9F6',
+      'editorLineNumber.foreground': '#989F98',
+      'editorLineNumber.activeForeground': '#526B5E',
+      'editorGutter.foldingControlForeground': '#7E8A82',
+      'editorCursor.foreground': '#326958',
+      'editor.lineHighlightBackground': '#F0F1EA',
+      'editor.lineHighlightBorder': '#00000000',
+      'editor.selectionBackground': '#B7D5C999',
+      'editor.inactiveSelectionBackground': '#D9E2DB99',
+      'editor.selectionHighlightBackground': '#32695816',
+      'editorBracketMatch.background': '#32695812',
+      'editorBracketMatch.border': '#32695866',
+      'editorWidget.background': '#F4F3EF',
+      'editorWidget.border': '#DADFD7',
+      'input.background': '#FAF9F6',
+      'input.foreground': '#292F2C',
+      'input.border': '#B9C5BB',
+      focusBorder: '#326958',
+      'editor.findMatchBackground': '#E8C98A99',
+      'editor.findMatchHighlightBackground': '#E8C98A55',
+    },
+  },
+};
+for (const [name, definition] of Object.entries(editorThemes))
+  monaco.editor.defineTheme(name, definition);
 monaco.languages.setLanguageConfiguration('latex', {
   comments: { lineComment: '%' },
   brackets: [
@@ -32,6 +139,16 @@ monaco.languages.setLanguageConfiguration('latex', {
     { open: '[', close: ']' },
     { open: '(', close: ')' },
   ],
+});
+
+monaco.languages.registerFoldingRangeProvider('latex', {
+  provideFoldingRanges(model) {
+    return latexFoldingRanges(model.getLinesContent()).map((range) => ({
+      start: range.start,
+      end: range.end,
+      ...(range.comment ? { kind: monaco.languages.FoldingRangeKind.Comment } : {}),
+    }));
+  },
 });
 
 export function SourceEditor({
@@ -70,7 +187,12 @@ export function SourceEditor({
       renderWhitespace: 'selection',
       tabSize: 2,
       quickSuggestions: false,
-      theme: 'vs-dark',
+      folding: true,
+      foldingStrategy: 'auto',
+      showFoldingControls: 'mouseover',
+      matchBrackets: 'always',
+      autoClosingBrackets: 'languageDefined',
+      theme: 'textra-dark',
     });
     editor.current = instance;
     const replaceSource = () => {
@@ -79,6 +201,25 @@ export function SourceEditor({
       void instance.getAction('editor.action.startFindReplaceAction')?.run();
     };
     window.addEventListener('textra:replace-source', replaceSource);
+    const insertSource = (event: Event) => {
+      const detail = (event as CustomEvent<{ text: string; caret: number }>).detail;
+      const model = instance.getModel();
+      const selection = instance.getSelection();
+      if (!model || !selection || !detail) return;
+      event.preventDefault();
+      const start = model.getOffsetAt(selection.getStartPosition());
+      // Model edits work even while the editor is read-only (executeEdits refuses then).
+      instance.pushUndoStop();
+      model.pushEditOperations(
+        [selection],
+        [{ range: selection, text: detail.text, forceMoveMarkers: true }],
+        () => null,
+      );
+      instance.pushUndoStop();
+      instance.setPosition(model.getPositionAt(start + detail.caret));
+      instance.focus();
+    };
+    window.addEventListener('textra:insert-source', insertSource);
     const content = instance.onDidChangeModelContent(() => {
       if (current.current) editDocument(current.current, instance.getValue());
     });
@@ -91,6 +232,7 @@ export function SourceEditor({
     const retainedModels = models.current;
     return () => {
       window.removeEventListener('textra:replace-source', replaceSource);
+      window.removeEventListener('textra:insert-source', insertSource);
       content.dispose();
       cursor.dispose();
       instance.dispose();
@@ -133,7 +275,7 @@ export function SourceEditor({
       }
   }, [documents, activePath]);
   useEffect(() => {
-    monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
+    monaco.editor.setTheme(theme === 'dark' ? 'textra-dark' : 'textra-light');
   }, [theme]);
   useEffect(() => {
     editor.current?.updateOptions({ fontSize, wordWrap: wrap ? 'on' : 'off', readOnly });

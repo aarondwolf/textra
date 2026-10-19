@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowRight, Columns2, PanelLeft, Search } from 'lucide-react';
+import { ArrowRight, Columns2, PanelLeft, Search } from './icons';
 import { DEFAULT_PREFERENCES } from '../../shared/api';
 import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
 import SetupDialog from './features/onboarding/SetupDialog';
 import RecipeDialog from './features/onboarding/RecipeDialog';
 function CommandPalette() {
-  const { preferences, updatePreferences, paletteOpen, setPaletteOpen } = useUI();
+  const {
+    preferences,
+    updatePreferences,
+    paletteOpen,
+    setPaletteOpen,
+    expandedPane,
+    setExpandedPane,
+  } = useUI();
   const [query, setQuery] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -25,15 +32,37 @@ function CommandPalette() {
       run: () => updatePreferences({ previewVisible: !preferences.previewVisible }),
     },
     {
+      label: 'Toggle full-width preview',
+      shortcut: '',
+      icon: Columns2,
+      run: () => {
+        if (!preferences.previewVisible) updatePreferences({ previewVisible: true });
+        setExpandedPane(
+          preferences.previewVisible && expandedPane === 'preview' ? null : 'preview',
+        );
+      },
+    },
+    {
+      label: 'Toggle full-width editor',
+      shortcut: '',
+      icon: Columns2,
+      run: () => {
+        if (!preferences.previewVisible) updatePreferences({ previewVisible: true });
+        setExpandedPane(preferences.previewVisible && expandedPane === 'editor' ? null : 'editor');
+      },
+    },
+    {
       label: 'Reset layout',
       shortcut: '',
       icon: Columns2,
-      run: () =>
+      run: () => {
+        setExpandedPane(null);
         updatePreferences({
           sidebarVisible: DEFAULT_PREFERENCES.sidebarVisible,
           previewVisible: DEFAULT_PREFERENCES.previewVisible,
           editorWidth: DEFAULT_PREFERENCES.editorWidth,
-        }),
+        });
+      },
     },
   ].filter((command) => command.label.toLowerCase().includes(query.toLowerCase().trim()));
 

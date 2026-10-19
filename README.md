@@ -12,10 +12,11 @@ optional and planned for a later phase.
 - [x] Core IDE: real folders, Monaco tabs, safe saves, local builds, PDF.js, SyncTeX
 - [x] Recent/pinned projects, file CRUD, portable settings, project build preferences
 - [x] Editable ordered build recipes, project settings JSON and recipe builder
-- [ ] Full Phase 1: installer management, further workflow polish
+- [x] Phase 1 workflow: collapsible explorer, reveal-active, persisted editor settings, custom TeX paths, PDF match highlights
+- [ ] Phase 1 verification: XeLaTeX/LuaLaTeX, macOS/Linux, crop/rotation SyncTeX
 - [ ] Phase 2: writing tools, diagnostics, optional AI
 - [ ] Phase 3: research and presentation workflows
-- [ ] Phase 4: installers and distribution
+- [ ] Phase 4: installers, TeX installation help and distribution
 
 ## Development
 
@@ -40,7 +41,10 @@ the preview and its Output tab, and drag the split or use arrow keys on it. Coll
 either side pane with its small collapse icon. Settings lives at the bottom of the
 left rail, including the theme selector. Themes and layouts are saved
 to `preferences.json` in Electron userData (`%APPDATA%/TeXtra` on Windows).
-The rail also has File Explorer and an Extensions placeholder for future additions.
+The rail has two sidebar views. Files is the plain project tree. Document shows the open
+`.tex` file's section outline (included chapters spliced in place) and a tree of the files
+it uses (`\input`, `\include`, `\subfile`, bibliographies, graphics, local style files),
+not the directory contents. Missing references are flagged. Click a heading or file to jump.
 Recent Projects is a collapsible section at the bottom of the explorer, closed by default.
 
 1. Choose **Open folder**, then select a `.tex` file in the explorer. Multiple tabs
@@ -67,11 +71,12 @@ External changes produce a conflict notice. Your open buffer is retained; reload
 only after explicitly discarding it, or save a separate copy. Save As never replaces
 an existing file. Closing/switching checks unsaved edits. Delete uses the OS trash.
 
-The gear button opens **Settings & TeX setup**: detected tools, re-detection, a real
-temporary test compile, official installer pages, project preferences, and settings
-import/export. No installers or missing packages run automatically. Windows uses
+The gear button opens **Settings**, with a side list of sections: Appearance,
+LaTeX tools (detected executables with an edit icon for each path, re-detection, a real
+temporary test compile, official installer pages), Compilation, and Import & export. No installers or missing packages run automatically. Windows uses
 MiKTeX/TeX Live; macOS can use MacTeX; Linux users should use their distribution's
-TeX packages. Restart after PATH changes. Installer/manager actions remain planned.
+TeX packages. Restart after PATH changes. If a tool is not on PATH, use the pencil beside it
+in Settings to choose the executable. Guided installation moves to Phase 4.
 
 Layout/theme, the default recipe, and recents live in Electron userData. Document
 recipe choices and tool definitions live in `.textra/settings.json`, created when

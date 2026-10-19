@@ -47,3 +47,22 @@
 - 2026-10-18: Put Vite dependency cache in OS temp, keyed by checkout path, outside
   Dropbox/OneDrive. Explicit eager dependency list avoids incremental rediscovery.
   The synced node_modules cache repeatedly failed directory renames with EBUSY.
+- 2026-10-18: Owner moved TeX installation help (winget/brew/package-manager flows,
+  distribution manager launch) to Phase 4 and dropped `% !TEX root` support. Compile
+  builds the active tab only. Custom tool paths must be absolute and name the exact
+  tool, so a preference cannot point a TeX tool at an arbitrary program.
+- 2026-10-18: Owner chose an unfiltered explorer. Path traversal, symlink, reserved-name
+  and temp-file rules remain; protected-folder and aux-file blocks were removed from
+  validateRelativePath. Deleting .git or .textra is therefore possible (OS trash only).
+- 2026-10-18: Recipe editor is guided (list, toggle chips, output location choices) with
+  JSON still available. The output-directory argument is shown as a locked chip because
+  the planner always applies the configured output directory, so a toggle would not work.
+  "PDF beside .tex, aux in build" is outDir=%DIR% plus auxDir=build folder and inherits the
+  MiKTeX-direct-engine limitation.
+- 2026-10-18: Sidebar differentiation. Icons are Phosphor (light weight, duotone for the
+  active rail view) behind src/renderer/src/icons.tsx so the pack is swappable in one file.
+  The Extensions placeholder was removed. A Document view was added beside Files: outline
+  plus a used-files tree for the active .tex tab, resolved from the project root first and
+  then the including file's directory (src/shared/tex-structure.ts, document-model.ts).
+  Files stays unfiltered per the earlier explorer decision. Owner pinned (not approved yet)
+  replacing the rail with a labelled segmented control; see ROADMAP.md.

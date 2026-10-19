@@ -1,12 +1,36 @@
 import { spawn } from 'node:child_process';
-import { basename } from 'node:path';
+import { access, realpath, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { basename, delimiter, isAbsolute, join } from 'node:path';
 import type { Diagnostic, FormatResult, LanguageToolStatus, LintRequest } from '../../shared/api';
 import { ProjectError, type ProjectService } from './projects';
-import { findExecutable } from './latex';
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const PROCESS_TIMEOUT_MS = 15_000;
 const SEPARATOR = '\u001f';
+const LANGUAGE_TOOLS = ['texlab', 'chktex', 'latexindent', 'latexindent.pl'] as const;
+
+/** Resolve only the optional language tools, never a renderer-provided executable name. */
+async function findLanguageTool(name: (typeof LANGUAGE_TOOLS)[number]): Promise<string | null> {
+  if (!(LANGUAGE_TOOLS as readonly string[]).includes(name)) return null;
+  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
+    const clean = directory.replace(/^"|"$/g, '');
+    if (!isAbsolute(clean)) continue;
+    const candidates =
+      process.platform === 'win32' && !name.endsWith('.pl')
+        ? [join(clean, `${name}.exe`), join(clean, name)]
+        : [join(clean, name)];
+    for (const candidate of candidates) {
+      try {
+        await access(candidate, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
+        if ((await stat(candidate)).isFile()) return await realpath(candidate);
+      } catch {
+        // Continue through the explicit, fixed executable list.
+      }
+    }
+  }
+  return null;
+}
 
 export function parseChktexOutput(output: string, fallbackFile: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
@@ -80,10 +104,10 @@ export class LanguageService {
 
   async status(): Promise<LanguageToolStatus> {
     const [texlab, chktex, latexindent, latexindentPerl] = await Promise.all([
-      findExecutable('texlab'),
-      findExecutable('chktex'),
-      findExecutable('latexindent'),
-      findExecutable('latexindent.pl'),
+      findLanguageTool('texlab'),
+      findLanguageTool('chktex'),
+      findLanguageTool('latexindent'),
+      findLanguageTool('latexindent.pl'),
     ]);
     return {
       texlab: !!texlab,
@@ -96,7 +120,7 @@ export class LanguageService {
     const target = await this.projects.resolvePath(request);
     if (!/\.tex$/i.test(request.path))
       throw new ProjectError('INVALID_ARGUMENT', 'ChkTeX only lints .tex files.');
-    const executable = await findExecutable('chktex');
+    const executable = await findLanguageTool('chktex');
     if (!executable) return [];
     const root = this.projects.getRoot(request.projectId);
     const result = await runProcess(
@@ -124,7 +148,7 @@ export class LanguageService {
     )
       throw new ProjectError('INVALID_ARGUMENT', 'The document is too large to format safely.');
     const executable =
-      (await findExecutable('latexindent')) ?? (await findExecutable('latexindent.pl'));
+      (await findLanguageTool('latexindent')) ?? (await findLanguageTool('latexindent.pl'));
     if (!executable)
       throw new ProjectError(
         'TOOL_MISSING',

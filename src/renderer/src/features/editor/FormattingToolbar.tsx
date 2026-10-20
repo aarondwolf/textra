@@ -89,6 +89,7 @@ export default function FormattingToolbar({ disabled }: { disabled: boolean }) {
       <span className="editor-format-separator" aria-hidden="true" />
       <div
         className="editor-format-heading"
+        onMouseLeave={() => setHeadingMenuOpen(false)}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setHeadingMenuOpen(false);
         }}

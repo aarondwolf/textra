@@ -184,6 +184,12 @@
   border-color: var(--border);
   color: var(--text);
 }
+.document-tab.preview-tab > button[role='tab'] > span:first-of-type::after {
+  content: 'preview';
+  margin-left: 5px;
+  color: var(--faint);
+  font-size: 8px;
+}
 .document-tab:hover {
   color: var(--text);
 }

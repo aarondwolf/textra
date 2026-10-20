@@ -438,6 +438,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
   const [focusMode, setFocusMode] = useState(false);
   const [fileFilter, setFileFilter] = useState('');
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [buildHistory, setBuildHistory] = useState<
     { outcome: string; recipe: string; time: string }[]
   >([]);
@@ -617,6 +618,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       return next;
     });
   }
+  function openExplorerFile(path: string) {
+    if (preferences.previewTabs && previewPath && previewPath !== path) {
+      const previous = documents.find((document) => document.path === previewPath);
+      if (previous && !dirty(previous)) closeDocument(previous.path);
+    }
+    setPreviewPath(preferences.previewTabs ? path : null);
+    void openDocument(path);
+  }
+  useEffect(() => {
+    if (!previewPath) return;
+    const preview = documents.find((document) => document.path === previewPath);
+    if (!preview || dirty(preview)) setPreviewPath(null);
+  }, [documents, previewPath]);
   const visibleFiles =
     project?.files.filter(
       (file) =>
@@ -1734,7 +1748,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                                 else {
                                   setFileMenu(null);
                                   setSelected(file.path);
-                                  void openDocument(file.path);
+                                  openExplorerFile(file.path);
                                 }
                               }}
                               onContextMenu={(event) => {
@@ -1849,7 +1863,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   {documents.length ? (
                     documents.map((document) => (
                       <div
-                        className={`document-tab ${document.path === activePath ? 'selected' : ''}`}
+                        className={`document-tab ${document.path === activePath ? 'selected' : ''}${document.path === previewPath ? ' preview-tab' : ''}`}
                         key={document.path}
                         data-close-buttons={preferences.tabCloseButtons}
                       >
@@ -1858,9 +1872,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           aria-label={`Edit ${document.path}`}
                           aria-selected={document.path === activePath}
                           title={document.path}
-                          onClick={() =>
-                            useWorkspace.setState({ activePath: document.path, navigation: null })
-                          }
+                          onClick={() => {
+                            setPreviewPath((current) =>
+                              current === document.path ? null : current,
+                            );
+                            useWorkspace.setState({ activePath: document.path, navigation: null });
+                          }}
                         >
                           <FileText size={13} />
                           <span>{document.path.split('/').at(-1)}</span>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowSquareOut, Check, Copy, Sparkle } from '@phosphor-icons/react';
+import { commonProblemHelp } from '../../../../shared/common-problems';
 import './problems.css';
 
 export type ProblemSeverity = 'error' | 'warning' | 'info';
@@ -26,6 +27,9 @@ export interface ProblemsPanelProps {
   onCopyPrompt?: (diagnostic: ProblemDiagnostic) => Promise<void> | void;
   /** Reserved for the built-in chat integration. */
   onAskChat?: (diagnostic: ProblemDiagnostic) => void;
+  /** Defaults on; may be disabled from Preferences for a terse diagnostic list. */
+  showCommonHelp?: boolean;
+  onOpenCommonHelp?: (url: string) => void;
 }
 
 type SourceFilter = 'build' | 'chktex' | 'reference' | 'texlab';
@@ -168,23 +172,48 @@ function ProblemActions({
   );
 }
 
-function ProblemDetail({ diagnostic }: { diagnostic: ProblemDiagnostic }) {
+function ProblemDetail({
+  diagnostic,
+  showCommonHelp,
+  onOpenCommonHelp,
+}: {
+  diagnostic: ProblemDiagnostic;
+  showCommonHelp: boolean;
+  onOpenCommonHelp?: (url: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const detail = diagnosticDetails(diagnostic);
   const logExcerpt = diagnostic.logExcerpt?.trim();
-  if (!detail && !logExcerpt) return null;
+  const help = showCommonHelp ? commonProblemHelp(diagnostic.message, diagnostic.detail) : null;
+  if (!detail && !logExcerpt && !help) return null;
+  const hasDetails = Boolean(detail || logExcerpt);
 
   return (
     <div className="problem-detail">
-      <button
-        className="problem-detail-toggle"
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        {expanded ? 'Hide details' : 'Show details'}
-      </button>
-      {expanded && (
+      {help && (
+        <aside className="common-problem-help">
+          <strong>{help.title}</strong>
+          <p>{help.explanation}</p>
+          <button
+            type="button"
+            className="common-problem-help-link"
+            onClick={() => onOpenCommonHelp?.(help.url)}
+          >
+            Learn more at TeX FAQ
+          </button>
+        </aside>
+      )}
+      {hasDetails && (
+        <button
+          className="problem-detail-toggle"
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? 'Hide details' : 'Show details'}
+        </button>
+      )}
+      {hasDetails && expanded && (
         <div className="problem-detail-content">
           {detail && <pre>{detail}</pre>}
           {logExcerpt && (
@@ -209,6 +238,8 @@ export function ProblemsPanel({
   onSearchStackExchange,
   onCopyPrompt,
   onAskChat,
+  showCommonHelp = true,
+  onOpenCommonHelp,
 }: ProblemsPanelProps) {
   const [severityFilter, setSeverityFilter] = useState<ReadonlySet<ProblemSeverity>>(
     () => new Set(['error', 'warning', 'info']),
@@ -327,31 +358,33 @@ export function ProblemsPanel({
           </button>
         </div>
       </div>
-      <div className="problems-severity-filters" aria-label="Filter problems by severity">
-        {(Object.keys(severityLabel) as ProblemSeverity[]).map((severity) => (
-          <button
-            className={`problems-severity-filter problems-severity-filter-${severity}`}
-            type="button"
-            key={severity}
-            aria-pressed={severityFilter.has(severity)}
-            onClick={() => toggleSeverity(severity)}
-          >
-            {severityLabel[severity]} ({counts[severity]})
-          </button>
-        ))}
-      </div>
-      <div className="problems-source-filters" aria-label="Filter problems by source">
-        {sourceFilters.map((source) => (
-          <button
-            className="problems-source-filter"
-            type="button"
-            key={source}
-            aria-pressed={sourceFilter.has(source)}
-            onClick={() => toggleSource(source)}
-          >
-            {sourceLabels[source]} ({sourceCounts[source]})
-          </button>
-        ))}
+      <div className="problems-filters" aria-label="Problem category filters">
+        <div className="problems-severity-filters" aria-label="Filter problems by severity">
+          {(Object.keys(severityLabel) as ProblemSeverity[]).map((severity) => (
+            <button
+              className={`problems-severity-filter problems-severity-filter-${severity}`}
+              type="button"
+              key={severity}
+              aria-pressed={severityFilter.has(severity)}
+              onClick={() => toggleSeverity(severity)}
+            >
+              {severityLabel[severity]} ({counts[severity]})
+            </button>
+          ))}
+        </div>
+        <div className="problems-source-filters" aria-label="Filter problems by source">
+          {sourceFilters.map((source) => (
+            <button
+              className="problems-source-filter"
+              type="button"
+              key={source}
+              aria-pressed={sourceFilter.has(source)}
+              onClick={() => toggleSource(source)}
+            >
+              {sourceLabels[source]} ({sourceCounts[source]})
+            </button>
+          ))}
+        </div>
       </div>
       {groups.length ? (
         <div className="problems-groups">
@@ -401,7 +434,11 @@ export function ProblemsPanel({
                         onCopyPrompt={onCopyPrompt}
                         onAskChat={onAskChat}
                       />
-                      <ProblemDetail diagnostic={diagnostic} />
+                      <ProblemDetail
+                        diagnostic={diagnostic}
+                        showCommonHelp={showCommonHelp}
+                        onOpenCommonHelp={onOpenCommonHelp}
+                      />
                     </li>
                   );
                 })}

@@ -14,14 +14,19 @@ import {
 import { preferencesSaved, useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
 import { TexLabSettings } from './TexLabSettings';
+import { AISettingsForm } from '../chat/AISettingsForm';
 import './setup.css';
 
-type SectionId = 'appearance' | 'editor' | 'tools' | 'compilation' | 'backup';
+type SectionId =
+  'appearance' | 'editor' | 'preferences' | 'shortcuts' | 'tools' | 'compilation' | 'backup' | 'ai';
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'editor', label: 'Editor', icon: Article },
+  { id: 'preferences', label: 'Preferences', icon: Article },
+  { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Article },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
+  { id: 'ai', label: 'AI Chat', icon: Article },
   { id: 'backup', label: 'Import & export', icon: Save },
 ];
 
@@ -155,6 +160,7 @@ export default function SetupDialog({
               ))}
             </nav>
             <div className="setup-scroll">
+              {section === 'ai' && <AISettingsForm />}
               {section === 'appearance' && (
                 <>
                   <h3>Appearance</h3>
@@ -296,6 +302,141 @@ export default function SetupDialog({
                     These session and tab options are saved now; their workspace behavior is being
                     connected with the broader tab and recovery work.
                   </p>
+                </>
+              )}
+              {section === 'preferences' && (
+                <>
+                  <h3>External file changes</h3>
+                  <p className="setup-hint">
+                    Protect the buffer you have open when another app, including a background
+                    writing assistant, changes the same file. TeXtra never overwrites the original
+                    file after it detects a change.
+                  </p>
+                  <label className="texlab-toggle">
+                    <span>Detect external changes</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.externalChangeDetection}
+                      onChange={(event) =>
+                        updatePreferences({ externalChangeDetection: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <label className="chktex-field">
+                    Quiet period before comparison (seconds)
+                    <select
+                      disabled={!preferences.externalChangeDetection}
+                      value={preferences.externalChangeQuietPeriodMs}
+                      onChange={(event) =>
+                        updatePreferences({
+                          externalChangeQuietPeriodMs: Number(event.target.value),
+                        })
+                      }
+                    >
+                      <option value={2000}>2 seconds</option>
+                      <option value={3000}>3 seconds</option>
+                      <option value={4000}>4 seconds</option>
+                      <option value={5000}>5 seconds</option>
+                    </select>
+                  </label>
+                  <p className="setup-hint">
+                    The external version must stop changing for this long before TeXtra enables its
+                    read-only comparison. While it is active, wait before comparing.
+                  </p>
+                  <label className="texlab-toggle">
+                    <span>Use polling only</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.externalChangePollingOnly}
+                      disabled={!preferences.externalChangeDetection}
+                      onChange={(event) =>
+                        updatePreferences({ externalChangePollingOnly: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <p className="setup-hint">
+                    Turn this on if filesystem watching is unreliable in a network, Dropbox, or
+                    other synchronized folder. Polling still detects changes, but may respond less
+                    quickly.
+                  </p>
+                  <h3>Conflict copies</h3>
+                  <label className="texlab-toggle">
+                    <span>Open the read-only diff after creating a conflict copy</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.openDiffAfterConflictCopy}
+                      disabled={!preferences.externalChangeDetection}
+                      onChange={(event) =>
+                        updatePreferences({ openDiffAfterConflictCopy: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <p className="setup-hint">
+                    The diff only helps inspect the two versions; manual merging will come later.
+                  </p>
+                  <h3>Problem explanations</h3>
+                  <label className="texlab-toggle">
+                    <span>Explain common TeX errors in plain language</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.commonProblemHelp}
+                      onChange={(event) =>
+                        updatePreferences({ commonProblemHelp: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <p className="setup-hint">
+                    When TeXtra recognizes a common build error, Problems can show a short
+                    explanation and a link to further help. This is on by default.
+                  </p>
+                </>
+              )}
+              {section === 'shortcuts' && (
+                <>
+                  <h3>Keyboard shortcuts</h3>
+                  <p className="setup-hint">
+                    These standard shortcuts work on Windows and Linux with Ctrl, and on macOS with
+                    Command. Shortcut customization is not available yet, so TeXtra does not
+                    silently replace familiar editor or system shortcuts.
+                  </p>
+                  <dl className="shortcut-list">
+                    <div>
+                      <dt>Save</dt>
+                      <dd>Ctrl/Cmd + S</dd>
+                    </div>
+                    <div>
+                      <dt>Save a copy</dt>
+                      <dd>Ctrl/Cmd + Shift + S</dd>
+                    </div>
+                    <div>
+                      <dt>Compile active document</dt>
+                      <dd>Ctrl/Cmd + Enter</dd>
+                    </div>
+                    <div>
+                      <dt>Command palette</dt>
+                      <dd>Ctrl/Cmd + K</dd>
+                    </div>
+                    <div>
+                      <dt>Toggle sidebar</dt>
+                      <dd>Ctrl/Cmd + B</dd>
+                    </div>
+                    <div>
+                      <dt>Preview / Output</dt>
+                      <dd>Ctrl/Cmd + J</dd>
+                    </div>
+                    <div>
+                      <dt>Find / replace</dt>
+                      <dd>Ctrl/Cmd + F / Ctrl/Cmd + H</dd>
+                    </div>
+                    <div>
+                      <dt>Close a menu or search</dt>
+                      <dd>Escape</dd>
+                    </div>
+                  </dl>
                 </>
               )}
               {section === 'tools' && (

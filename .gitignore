@@ -11,6 +11,9 @@ test-results/
 Thumbs.db
 **/build/
 .textra-cache/
+.textra-local/
 .test-data/
 *.tsbuildinfo
 resources/texlab/**/*.zip
+.vitest/
+sandbox/test.pdf

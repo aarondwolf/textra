@@ -93,6 +93,8 @@ interface Props {
   /** When set, the controls live inside the preview "..." menu instead of the header. */
   menuSlot?: HTMLElement | null;
   menuMode?: boolean;
+  /** A project PDF explicitly chosen from Files, rather than the latest build output. */
+  externalPdfPath?: string | null;
 }
 
 export default function PdfViewer({
@@ -105,6 +107,7 @@ export default function PdfViewer({
   active,
   menuSlot = null,
   menuMode = false,
+  externalPdfPath = null,
 }: Props) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -137,7 +140,7 @@ export default function PdfViewer({
     searchId.current++;
   }, []);
   const activeProject = project?.id;
-  const pdfPath = build.projectId === activeProject ? build.pdfPath : null;
+  const pdfPath = externalPdfPath ?? (build.projectId === activeProject ? build.pdfPath : null);
 
   useEffect(() => {
     if (searchOpen && pdf) {
@@ -255,7 +258,9 @@ export default function PdfViewer({
     setLoading(true);
     void (async () => {
       try {
-        const result = await window.textra.readPdf({ projectId: activeProject, path: pdfPath });
+        const result = externalPdfPath
+          ? await window.textra.readProjectPdf({ projectId: activeProject, path: pdfPath })
+          : await window.textra.readPdf({ projectId: activeProject, path: pdfPath });
         if (!result.ok) throw new Error(result.error);
         if (disposed) return;
         task = getDocument({

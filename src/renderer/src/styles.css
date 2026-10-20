@@ -381,6 +381,16 @@
   margin: 0 3px;
   background: var(--border);
 }
+.editor-format-spacer {
+  flex: 1;
+}
+.editor-format-hide {
+  opacity: 0.6;
+}
+.editor-format-toolbar > .editor-format-hide:hover,
+.editor-format-toolbar > .editor-format-hide:focus-visible {
+  opacity: 1;
+}
 .active-file-path {
   color: var(--faint);
   font-size: 10px;
@@ -875,6 +885,9 @@ kbd {
   background: var(--sidebar);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .sidebar-title {
   display: flex;
@@ -1836,6 +1849,7 @@ h1 > span {
   flex-direction: column;
 }
 .editor-pane[hidden],
+.ai-chat-sidebar[hidden],
 .preview-pane[hidden],
 .pdf-tab-content[hidden] {
   display: none;
@@ -2187,6 +2201,18 @@ h1 > span {
   color: var(--accent);
 }
 
+/* Monaco owns its completion DOM, so align its LSP menu with TeXtra's rounded menus here. */
+.monaco-editor .suggest-widget {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-surface) !important;
+  box-shadow: 0 8px 24px #0003 !important;
+  overflow: hidden;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row.focused {
+  border-radius: var(--radius-pill);
+}
+
 .pdf-slot {
   display: flex;
   align-items: center;
@@ -2216,6 +2242,8 @@ h1 > span {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23979c9e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
+  background-clip: padding-box;
+  box-sizing: border-box;
   box-shadow: 0 3px 10px rgb(0 0 0 / 0.16);
   cursor: pointer;
 }

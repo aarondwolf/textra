@@ -30,38 +30,89 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(await page.evaluate(() => 'require' in window)).toBe(false);
     expect(await page.evaluate(() => 'process' in window)).toBe(false);
     expect(await page.evaluate(() => 'ipcRenderer' in window)).toBe(false);
+    const invalidChatRequest = await page.evaluate(() =>
+      window.textra.sendAIMessage({
+        messages: [{ role: 'user', text: 'Do not send this invalid request.' }],
+        requestId: '../invalid-request-id',
+      }),
+    );
+    expect(invalidChatRequest).toMatchObject({ ok: false, code: 'INVALID_ARGUMENT' });
+    const cancelledDeletion = await application.evaluate(async ({ dialog, BrowserWindow }) => {
+      const original = dialog.showMessageBox;
+      let confirmedPrompt = false;
+      dialog.showMessageBox = async () => {
+        confirmedPrompt = true;
+        return { response: 0, checkboxChecked: false };
+      };
+      try {
+        const result: unknown =
+          await BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(
+            'window.textra.deleteAIKey()',
+          );
+        return { result, confirmedPrompt };
+      } finally {
+        dialog.showMessageBox = original;
+      }
+    });
+    expect(cancelledDeletion).toEqual({ result: { ok: true, value: null }, confirmedPrompt: true });
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
+      'cancelAIMessage',
       'cancelBuild',
+      'checkTexlab',
       'chooseProject',
       'chooseToolPath',
+      'cleanProjectBuildArtifacts',
       'compile',
+      'copyEntryPath',
+      'copyText',
+      'createConflictCopy',
       'createEntry',
+      'deleteAIKey',
       'deleteEntry',
       'detectTools',
       'exportSettings',
+      'formatLatex',
+      'getAISettings',
       'getAppInfo',
       'getBuildState',
       'getFileRevisions',
+      'getLanguageToolStatus',
       'getPreferences',
       'getProjectConfig',
       'getRecentProjects',
+      'getTexlabDiagnostics',
+      'getTexlabStatus',
       'importSettings',
+      'lintLatex',
+      'onAIResponseChunk',
+      'onExternalFileChange',
+      'openAIStudio',
       'openInCode',
       'openRecentProject',
       'openSetupLink',
+      'openStackExchangeSearch',
+      'openTexFaqHelp',
       'readFile',
       'readPdf',
+      'readProjectPdf',
       'refreshProject',
       'renameEntry',
       'revealEntry',
+      'saveAIKey',
       'saveFile',
+      'sendAIMessage',
+      'setAIAutoSend',
       'setDirty',
       'setPreferences',
       'setProjectConfig',
       'setProjectPinned',
       'syncForward',
       'syncInverse',
+      'syncTexlabDocument',
       'testDistribution',
+      'texlabRequest',
+      'unwatchExternalFile',
+      'watchExternalFile',
     ]);
 
     await expect(page.locator('.topbar, .statusbar, .bottom-panel')).toHaveCount(0);

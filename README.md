@@ -2,7 +2,7 @@
 
 A modern, local-first LaTeX desktop IDE. Your documents stay ordinary files on
 your computer. Editing and local compilation never require an account; AI is
-optional and planned for a later phase.
+optional. Gemini debugging chat is available with your own Google AI Studio key.
 
 ![Native TeXtra editing and PDF preview](docs/screenshot.png)
 
@@ -68,9 +68,14 @@ Recent Projects is a collapsible section at the bottom of the explorer, closed b
    zoom/fit width, or use **Go to source line**.
    Double-click the PDF to jump back to source with the installed SyncTeX tool.
 
-External changes produce a conflict notice. Your open buffer is retained; reload
-only after explicitly discarding it, or save a separate copy. Save As never replaces
-an existing file. Closing/switching checks unsaved edits. Delete uses the OS trash.
+External changes are watched as well as revision-polled. On detection, TeXtra locks ordinary
+Save, autosave and Ctrl/Cmd+S for that tab, preserves its complete in-memory buffer, and opens a
+conflict decision. Save a collision-safe sibling such as
+`chapter.CONFLICTED_2026-10-20_143522.tex`, or close TeXtra’s buffer to give the external editor
+precedence. After a configurable 2–5 second quiet period, a read-only Monaco diff can compare the
+preserved buffer with the external file; it does not merge. Preferences can use polling only for
+Dropbox/network folders. Save As never replaces an existing file. Closing/switching checks unsaved
+edits. Delete uses the OS trash.
 
 **TexLab language intelligence** is bundled for Windows x64 and enabled by default. It powers
 LaTeX completion, hover, definitions, references, document symbols, folding, inlay hints, and
@@ -90,8 +95,30 @@ recipe choices and tool definitions live in `.textra/settings.json`, created whe
 opening a project. Legacy `project.json` is migrated without deletion. Open folders with
 the folder icon in the explorer. Import/export accepts only versioned theme/layout/recipe
 settings; unknown schemas and corrupt files are preserved. Recent folders, keys and
-tool paths are excluded. AI setup, key storage and cost controls remain planned;
-no credentials are currently stored or migrated. Offline operation is the default.
+tool paths are excluded. Offline operation is the default.
+
+The **AI Chat** rail tab opens a conversational debugger using only Gemini 3.5 Flash Lite.
+First use offers a Google AI Studio link and a password field; **Save & Test Key** verifies
+the key before saving; key formats are validated by Google without a required prefix.
+**New chat** clears prior conversation context and retries while preserving unsent draft text.
+**Settings → AI Chat** stores one key at a time. Use **Replace key** to test a replacement
+before overwriting the saved key, or **Delete key** to remove it after confirmation.
+Deleting also turns off automatic Problems prompts. Settings can enable automatic
+Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five
+source lines above and below for review. Sending shares that conversation/snippet with
+Google. The assistant has no file or command tools; suggestions are applied manually.
+History lasts for this window session and clears on project changes. Cancel stops waiting
+locally; Google may still process a request already sent.
+Responses stream as full-width Markdown with a copy action below; only your messages use
+bubbles. The compact composer has two text rows, a locked model label, and a circular
+send arrow (a stop control during streaming). The introductory
+guidance disappears once a conversation starts. The chat tab sits with the main rail views.
+
+MVP AI settings live in git-ignored `.textra-local/ai.json` inside this application checkout,
+with the key encrypted by Electron `safeStorage` for your OS account. No plaintext fallback
+is allowed. Do not distribute this local directory or put it under source control. Before
+public release, migrate it to global app data; see [security](docs/SECURITY.md).
+Google's free tier availability and limits depend on account/region; TeXtra adds no fee.
 
 Recipes default to `build/textra/<relative document>/` and retain the last successful
 PDF through failures. Custom output folders are never automatically pruned. The

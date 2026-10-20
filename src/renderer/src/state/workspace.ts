@@ -13,6 +13,8 @@ import type {
 export interface OpenDocument extends FileSnapshot {
   savedContent: string;
   conflict: boolean;
+  /** The last observed external lifecycle state. A conflict always locks ordinary writes. */
+  externalState: 'changing' | 'stable' | 'deleted' | 'renamed' | null;
 }
 export const idleBuild: BuildState = {
   running: false,
@@ -133,7 +135,12 @@ export async function openDocument(path: string, location?: SourceLocation): Pro
           ? state.documents
           : [
               ...state.documents,
-              { ...result.value, savedContent: result.value.content, conflict: false },
+              {
+                ...result.value,
+                savedContent: result.value.content,
+                conflict: false,
+                externalState: null,
+              },
             ],
         activePath: path,
         navigation: location ?? null,
@@ -176,7 +183,7 @@ export async function saveDocument(path: string): Promise<boolean> {
       if (result.code === 'CONFLICT' || /changed|conflict|revision/i.test(result.error))
         useWorkspace.setState((state) => ({
           documents: state.documents.map((item) =>
-            item.path === path ? { ...item, conflict: true } : item,
+            item.path === path ? { ...item, conflict: true, externalState: 'stable' } : item,
           ),
         }));
       throw new Error(result.error);
@@ -189,6 +196,7 @@ export async function saveDocument(path: string): Promise<boolean> {
               revision: result.value.revision,
               savedContent: result.value.content,
               conflict: false,
+              externalState: null,
             }
           : item,
       ),
@@ -233,7 +241,12 @@ export async function reloadDocument(path: string): Promise<void> {
       document.path === path &&
       document.content === original?.content &&
       document.revision === original.revision
-        ? { ...result.value, savedContent: result.value.content, conflict: false }
+        ? {
+            ...result.value,
+            savedContent: result.value.content,
+            conflict: false,
+            externalState: null,
+          }
         : document,
     ),
     error: null,
@@ -254,8 +267,20 @@ export async function checkExternalChanges(): Promise<void> {
       return revision &&
         checked?.revision === document.revision &&
         revision.revision !== document.revision
-        ? { ...document, conflict: true }
+        ? { ...document, conflict: true, externalState: 'stable' }
         : document;
     }),
+  }));
+}
+
+/**
+ * The watcher and compatibility polling share this one-way transition. Once
+ * observed, only an explicit conflict decision may clear the write lock.
+ */
+export function markExternalChange(path: string, state: OpenDocument['externalState']): void {
+  useWorkspace.setState((current) => ({
+    documents: current.documents.map((document) =>
+      document.path === path ? { ...document, conflict: true, externalState: state } : document,
+    ),
   }));
 }

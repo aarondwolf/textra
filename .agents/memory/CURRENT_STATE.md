@@ -1,5 +1,84 @@
 # Current state
 
+2026-10-20 Chat alignment polish: header uses shared --bar-height like editor/preview,
+no wrapping, with compact 24px pill buttons. Rail uses a single chat-and-sparkles SVG
+through the existing Phosphor IconBase/context. Send glyph shrank from 16px to 14px
+and its circle from 28px to 26px. Typecheck/lint/format/build and native chat checks pass;
+header height equality/pill radii asserted and final screenshot visually reviewed.
+Launch npm run dev. Existing mixed changes remain preserved and uncommitted.
+
+2026-10-20 Chat composer/response UX: assistant replies now use full-width Markdown
+without provider headings or bubble borders. A small copy icon below copies raw Markdown
+through the existing clipboard bridge, with success/error feedback. User messages retain
+bubbles. The composer contains two text rows and an inset footer with an ellipsized,
+disabled Gemini 3.5 Flash Lite selector plus circular send arrow; empty is transparent,
+non-empty uses accent. During streaming the circle becomes Stop. Existing streaming,
+cancellation, consent and single-key management remain. Typecheck, targeted lint/format,
+production build and native chat test pass, including exact Markdown copy and circle states.
+Native conversation screenshot visually reviewed. Launch npm run dev. Existing mixed
+changes remain uncommitted.
+
+2026-10-20 Single-key management: AI settings now show saved-key state with explicit
+Replace key/Delete key actions. Replacement reveals a cleared password form, supports
+cancel, and tests the candidate before atomically replacing the one encrypted key.
+Delete uses a typed no-argument bridge with native confirmation (Cancel default),
+clears encryptedKey and auto-send, and does not require OS decryption. Failed changes
+preserve existing settings; active Gemini operations reject deletion. Forty-seven
+focused service tests, typecheck, targeted lint/format, build, and native chat/shell checks
+pass. Native coverage verifies replacement/deletion UI and real confirmation cancellation.
+Existing mixed working-tree edits preserved. Launch npm run dev.
+
+2026-10-20 Chat streaming/UI follow-up: Gemini uses generateContentStream for chat,
+nonstreaming for key verification. Bounded cumulative chunks travel over typed,
+request-ID-correlated IPC; stale chunks are ignored. Model bubbles render safe Markdown
+and incomplete replies stay separate from request history. Ask and Cancel use the pill style;
+intro/privacy hides once a question is sent. Chat follows output only near the bottom,
+uses scoped subtle scrollbars, and has a single rail icon after the main views/search.
+Typecheck/lint/targeted format/build pass; existing PdfViewer lint warning remains.
+Full suite: 282/284 passed initially; two EPERM atomic-rename failures in Gemini and
+project fixtures passed on retry (54/54 across the affected suites). Native chat and shell
+pass, including streamed Markdown, Ask styling, placement, and stale-chunk protection.
+Screenshot review caught the app-wide list reset; chat now restores bullet/number markers.
+No live Google requests in automated checks. Launch npm run dev.
+
+2026-10-20 Gemini credential follow-up: removed AIza prefix/shape validation.
+Any non-empty trimmed key up to 8,192 characters reaches the Gemini verification
+call before encrypted saving; failed verification preserves the saved key. Password
+input now says Paste your API key. Forty focused Gemini service tests, typecheck,
+targeted lint/format and production build pass. Native chat regression passes and
+checks that New chat sends only the new question and retains unsent composer text.
+Launch npm run dev (restart main if using an existing dev session).
+
+2026-10-20 Gemini debugging slice: owner requested optional conversational AI now.
+Only gemini-3.5-flash-lite via @google/genai 2.30.0, main-process requests, typed
+preload APIs. AI Chat rail onboarding and Settings share key testing/settings UI.
+Repository-local .textra-local/ai.json (ignored) uses safeStorage encryption;
+unavailable/basic_text encryption refuses saves. TODO migrate to global app data
+before public release. Problems prepares bounded +/-5-line editable drafts;
+auto-send opt-in defaults off. No AI file/command tools. History stays in memory
+and resets on project changes. Preserved all pre-existing working-tree changes.
+Validation: 276 unit/integration tests pass with desktop permissions; typecheck,
+lint (existing PdfViewer hook warning), build pass; native chat test passes.
+Global format check flags pre-existing sandbox/issues.md; diff check flags existing
+sandbox/test.tex whitespace. Native chat now passes including bounded editable Problems
+drafts/default no-send and opt-in auto-send; screenshots visually inspected. Native shell
+and recipes also pass serially. Project-workflow still expects the old inline conflict
+banner at line108, while the existing working tree shows the new dialog (KNOWN_ISSUES).
+Immediate cancellation and external AI-settings conflict regressions pass. Live Google key
+and OS account migration are not tested. Launch npm run dev; configure AI Chat with an
+AI Studio key. Earlier phase gates remain incomplete; leave existing mixed edits intact.
+
+2026-10-20 External file overwrite handling (working tree): Main now combines canonical-path
+native watching with 750ms revision polling, debounces atomic save sequences, and emits changing,
+stable, deleted and renamed states after a configurable 2–5s quiet period. Any event locks the
+open renderer buffer against normal save/autosave/Ctrl+S. The blocking dialog offers a collision-safe
+`CONFLICTED_timestamp` sibling snapshot or closing TeXtra's buffer; a read-only Monaco comparison
+is available once stable. Preferences add detection, quiet-period, polling-only and optional
+post-snapshot diff controls. Focused tests pass; typecheck, lint, format check and build pass.
+`npm run test:e2e` remains blocked in this managed desktop session: all three Playwright Electron
+launches exit before a window binds (exit code 2147483651), so conflict-dialog interaction still
+needs a normal desktop verification run.
+
 2026-10-19 Phase 2 closeout (working tree): Phase 2's requested offline feature
 set is implemented. The final gate is native verification, not further product
 scope. Formatting, typecheck, lint, and the production build pass. The managed

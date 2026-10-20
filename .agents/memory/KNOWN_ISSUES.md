@@ -1,5 +1,12 @@
 # Known issues
 
+- 2026-10-20 native project-workflow test still expects the previous inline external-change
+  banner (line108), while the existing working tree shows the new External change detected
+  dialog. Reconcile that test with the owner's in-progress conflict workflow; Gemini work
+  preserves it. Native shell and recipes pass serially with desktop permissions. Do not run
+  Playwright invocations concurrently: they clean shared test-results, corrupting profiles
+  and traces. Stop native app/test runs before rebuilding generated output.
+
 - Environment: managed sandbox blocks npm DNS and atomic rename in sandbox temp.
   Approved npm install works; tests now use workspace test-results and pass inside
   sandbox. Native Electron checks need desktop execution. Preserve atomic writes.

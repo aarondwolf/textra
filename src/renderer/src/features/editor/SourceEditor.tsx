@@ -437,7 +437,32 @@ interface EditorFormatRequest {
 }
 
 function EditorFormattingToolbar({ disabled }: { disabled: boolean }) {
-  return <FormattingToolbar disabled={disabled} />;
+  const updatePreferences = useUI((state) => state.updatePreferences);
+  return (
+    <FormattingToolbar
+      disabled={disabled}
+      onHide={() => updatePreferences({ formatToolbarVisible: false })}
+    />
+  );
+}
+
+const MINIMAP_MINIMUM_LINES = 200;
+
+function isTexPath(path: string): boolean {
+  return /\.tex$/i.test(path);
+}
+
+function minimapEnabled(model: monaco.editor.ITextModel | null, preference: boolean): boolean {
+  return preference && (model?.getLineCount() ?? 0) >= MINIMAP_MINIMUM_LINES;
+}
+
+/** Avoid asking language tools about prose that is explicitly commented out. */
+function isLatexCommentAtPosition(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+): boolean {
+  const beforeCursor = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+  return stripLatexComment(beforeCursor) !== beforeCursor;
 }
 
 function texlabUri(document: Pick<OpenDocument, 'projectId' | 'path'>) {
@@ -536,7 +561,7 @@ export function SourceEditor({
       ariaLabel: 'LaTeX source editor',
       editContext: false,
       automaticLayout: true,
-      minimap: { enabled: minimapPreference.current },
+      minimap: { enabled: false },
       fontFamily: "'Cascadia Code', Consolas, monospace",
       fontSize: 14,
       lineHeight: 23,
@@ -674,8 +699,11 @@ export function SourceEditor({
       }
       const document = documentsRef.current.find(({ path: documentPath }) => documentPath === path);
       const model = instance.getModel();
-      if (document && model && texlabRef.current?.isReady)
+      if (document && model && isTexPath(document.path) && texlabRef.current?.isReady)
         void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
+      instance.updateOptions({
+        minimap: { enabled: minimapEnabled(model, minimapPreference.current) },
+      });
     });
     const cursor = instance.onDidChangeCursorPosition((event) => {
       if (current.current)
@@ -683,10 +711,13 @@ export function SourceEditor({
           source: { path: current.current, line: event.position.lineNumber },
         });
     });
-    const sourceDocument = (model: monaco.editor.ITextModel) =>
-      documentsRef.current.find(
-        (document) => model.uri.toString() === documentUri(document, texlabRef.current),
-      ) ?? documentsRef.current.find((document) => document.path === current.current);
+    const sourceDocument = (model: monaco.editor.ITextModel) => {
+      const document =
+        documentsRef.current.find(
+          (document) => model.uri.toString() === documentUri(document, texlabRef.current),
+        ) ?? documentsRef.current.find((document) => document.path === current.current);
+      return document && isTexPath(document.path) ? document : undefined;
+    };
     const localCompletion = (
       model: monaco.editor.ITextModel,
       position: monaco.Position,
@@ -798,7 +829,7 @@ export function SourceEditor({
         return;
       const model = instance.getModel();
       const position = instance.getPosition();
-      if (!model || !position) return;
+      if (!model || model.getLanguageId() !== 'latex' || !position) return;
       const before = model.getValueInRange({
         startLineNumber: position.lineNumber,
         startColumn: 1,
@@ -845,6 +876,7 @@ export function SourceEditor({
     const completion = monaco.languages.registerCompletionItemProvider('latex', {
       triggerCharacters: ['\\', '{', ',', '['],
       async provideCompletionItems(model, position) {
+        if (isLatexCommentAtPosition(model, position)) return { suggestions: [] };
         // Environment suggestions are deliberately local and synchronous. They remain stable while
         // Monaco cancels superseded asynchronous LSP requests as the user types.
         const environments = environmentCompletion(model, position);
@@ -890,6 +922,7 @@ export function SourceEditor({
     });
     const hover = monaco.languages.registerHoverProvider('latex', {
       async provideHover(model, position) {
+        if (isLatexCommentAtPosition(model, position)) return null;
         const document = sourceDocument(model);
         const adapter = texlabRef.current;
         if (!document || !adapter?.isReady || !adapter.requestHover) return null;
@@ -912,6 +945,7 @@ export function SourceEditor({
     const locations =
       (request: keyof Pick<TexlabEditorAdapter, 'requestDefinition' | 'requestReferences'>) =>
       async (model: monaco.editor.ITextModel, position: monaco.Position) => {
+        if (isLatexCommentAtPosition(model, position)) return [];
         const document = sourceDocument(model);
         const adapter = texlabRef.current;
         const handler = adapter?.[request];
@@ -1041,7 +1075,8 @@ export function SourceEditor({
       inlayHints.dispose();
       instance.dispose();
       retainedModels.forEach((model, path) => {
-        void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
+        if (isTexPath(path))
+          void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
         model.dispose();
       });
       retainedModels.clear();
@@ -1058,11 +1093,11 @@ export function SourceEditor({
       if (!model) {
         model = monaco.editor.createModel(
           document.content,
-          /\.(tex|bib|sty|cls)$/.test(document.path) ? 'latex' : 'plaintext',
+          isTexPath(document.path) ? 'latex' : 'plaintext',
           monaco.Uri.parse(documentUri(document, texlabRef.current)),
         );
         models.current.set(document.path, model);
-        if (texlabRef.current?.isReady)
+        if (isTexPath(document.path) && texlabRef.current?.isReady)
           void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
       } else if (model.getValue() !== document.content) model.setValue(document.content);
     }
@@ -1072,11 +1107,21 @@ export function SourceEditor({
       current.current = activePath;
       instance.setModel(models.current.get(activePath)!);
       instance.restoreViewState(views.current.get(activePath) ?? null);
+      const enhancedTexFeatures = isTexPath(active.path);
+      instance.updateOptions({
+        minimap: { enabled: minimapEnabled(instance.getModel(), minimapPreference.current) },
+        quickSuggestions: enhancedTexFeatures
+          ? { other: true, comments: false, strings: false }
+          : false,
+        suggestOnTriggerCharacters: enhancedTexFeatures,
+        wordBasedSuggestions: enhancedTexFeatures ? 'matchingDocuments' : 'off',
+      });
       instance.focus();
     }
     for (const [path, model] of models.current)
       if (!documents.some((document) => document.path === path)) {
-        void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
+        if (isTexPath(path))
+          void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
         model.dispose();
         models.current.delete(path);
         views.current.delete(path);
@@ -1086,13 +1131,14 @@ export function SourceEditor({
     if (!texlab?.isReady) return;
     for (const document of documents) {
       const model = models.current.get(document.path);
-      if (model) void texlab.syncDocument?.(toTexlabDocument(model, document));
+      if (model && isTexPath(document.path))
+        void texlab.syncDocument?.(toTexlabDocument(model, document));
     }
   }, [documents, texlab]);
   useEffect(() => {
     const diagnostics = texlab?.diagnostics;
     for (const [path, model] of models.current) {
-      const markers = diagnostics?.get(path) ?? [];
+      const markers = isTexPath(path) ? (diagnostics?.get(path) ?? []) : [];
       monaco.editor.setModelMarkers(
         model,
         'texlab',
@@ -1121,7 +1167,7 @@ export function SourceEditor({
       fontSize,
       wordWrap: wrap ? 'on' : 'off',
       readOnly,
-      minimap: { enabled: editorMinimap },
+      minimap: { enabled: minimapEnabled(editor.current?.getModel() ?? null, editorMinimap) },
     });
   }, [fontSize, wrap, readOnly, editorMinimap]);
   useEffect(() => {
@@ -1134,7 +1180,7 @@ export function SourceEditor({
   return (
     <div className="source-editor-shell">
       {formatToolbarVisible && (
-        <EditorFormattingToolbar disabled={readOnly || !/\.(tex|sty|cls)$/i.test(activePath)} />
+        <EditorFormattingToolbar disabled={readOnly || !isTexPath(activePath)} />
       )}
       <div ref={container} className="source-editor" data-testid="source-editor" />
     </div>

@@ -25,8 +25,19 @@ Settings: versioned JSON under Electron userData, project overrides under
 uses LaTeX Workshop recipe/tool keys; shared shape validation is followed by main's
 strict command/argument/path checks. Popup writes use an expected settings snapshot
 and atomic publication. Every compile reads current settings. A PDF version counter
-refreshes stable output paths in the viewer. No credentials in portable settings. AI and key storage
-are future integrations and must not be prerequisites for editing.
+refreshes stable output paths in the viewer. No credentials in portable settings. Optional
+Gemini chat is not a prerequisite for editing. Main's GeminiService owns SDK requests and
+safeStorage-encrypted repository-local AI settings; preload exposes only settings flags,
+key-test/save, bounded text conversation, cancellation, and a fixed AI Studio link.
+Chat has no project service or tools. The renderer explicitly builds Problems snippets
+from the chosen diagnostic and current buffer (or a normal validated file read), then
+shows a draft by default. Chat and Settings share one configuration form. Session-only
+history survives sidebar switches and resets when the selected project changes.
+Gemini chat uses the SDK's streaming API. A narrow response event carries a request ID and
+bounded cumulative text; the renderer accepts only its current request's updates. Successful
+responses enter the conversation once. Interrupted partial text stays visible for review but
+is excluded from subsequent requests. Markdown uses the existing React-node preview renderer
+without HTML injection. The chat follows arriving text only while the reader is near the bottom.
 
 Development uses `electron-vite dev --watch`: React HMR, main restart and preload
 reload. See the [official watch documentation](https://electron-vite.org/guide/hmr-and-hot-reloading)
@@ -40,4 +51,12 @@ latex (discovery, fixed presets, process lifecycle, PDF cache, SyncTeX), diagnos
 settings (project overrides/portable bundle), preferences, external-editor, logger.
 Renderer's workspace store protects dirty buffers and delayed reads. Main owns
 native dialogs and validates all privileged requests. Setup links use fixed official
-URLs after user clicks. No source content is transmitted.
+URLs after user clicks. Source content is transmitted only through explicit optional chat
+submission or the user-enabled Problems auto-send setting.
+
+The external-editor service watches only renderer-open canonical project files. Native directory
+watch events are debounced and revision polling remains a 750 ms fallback. It reports changing,
+stable, renamed and deleted states through the typed preload bridge; it never writes an original
+file. Conflict snapshots use exclusive sibling creation and canonical-parent validation. The
+workspace turns every non-watching event into a one-way write lock until the person explicitly
+preserves a snapshot or closes the buffer.

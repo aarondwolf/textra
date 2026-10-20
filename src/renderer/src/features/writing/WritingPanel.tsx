@@ -37,6 +37,9 @@ export interface WritingPanelProps {
   focusMode: boolean;
   onJumpToLine: (line: number) => void;
   onToggleFocusMode: () => void;
+  /** Opens a safe latexindent preview; the workspace owns formatting and applying changes. */
+  onFormatDocument?: () => void;
+  formatAvailable?: boolean;
 }
 
 function formatNumber(value: number): string {
@@ -63,6 +66,8 @@ export function WritingPanel({
   focusMode,
   onJumpToLine,
   onToggleFocusMode,
+  onFormatDocument,
+  formatAvailable = false,
 }: WritingPanelProps) {
   const activeId = activeOutlineId(summary.outline, activeLine);
 
@@ -120,6 +125,33 @@ export function WritingPanel({
       </section>
 
       <section
+        className="writing-section writing-format-section"
+        aria-labelledby="writing-format-heading"
+      >
+        <h3 id="writing-format-heading" className="writing-section-title">
+          Document formatting
+        </h3>
+        <p className="writing-help">
+          Format Document uses latexindent to propose cleaner indentation and line breaks. TeXtra
+          always shows the proposed rewrite before it replaces your open text.
+        </p>
+        <button
+          type="button"
+          className="writing-format-button"
+          disabled={!onFormatDocument || !formatAvailable}
+          title={
+            formatAvailable ? 'Preview formatting with latexindent' : 'latexindent is not available'
+          }
+          onClick={onFormatDocument}
+        >
+          Format document…
+        </button>
+        {!formatAvailable && (
+          <p className="writing-help">Install latexindent in Settings to use this.</p>
+        )}
+      </section>
+
+      <section
         className="writing-section writing-outline-section"
         aria-labelledby="writing-outline-heading"
       >
@@ -163,6 +195,11 @@ export function WritingPanel({
           Notes
           <span className="writing-count">{summary.todos.length}</span>
         </h3>
+        <p className="writing-help">
+          Add a note anywhere in your source with <code>% TODO: describe the work</code> or{' '}
+          <code>% FIXME: explain the problem</code>. Notes stay comments and do not appear in the
+          compiled document.
+        </p>
         {summary.todos.length === 0 ? (
           <p className="writing-empty">No TODO or FIXME notes.</p>
         ) : (

@@ -9,12 +9,45 @@ traversal, absolute paths, protected/generated paths, and escaping symlinks.
 Files use revision checks and atomic replacement. Dirty buffers must survive
 failed saves and project switches. Destructive operations require confirmation.
 
+External-change detection does not grant the renderer filesystem access. Main validates every
+watch, read and conflict-copy reference against the selected canonical project root. A detected
+external change locks original-path writes in the renderer and conflict copies are create-only,
+collision-safe siblings; no version is deleted or silently overwritten.
+
 TeX is executable input. Compilers run only after user action, with shell escape
 disabled, a timeout and cancellation. This is not an OS-level TeX sandbox: open
 and compile trusted projects only. External installation is not automatic.
 
-No AI/network source transmission is implemented initially. Future providers need
-explicit context disclosure, secure key storage, cancellation, and spending controls.
+Optional Gemini chat transmits only user-submitted conversations and Problems snippets
+to Google's fixed Gemini API endpoint through main-process `@google/genai`. Only
+`gemini-3.5-flash-lite` is used; there is no fallback provider, agent loop, tools, source
+discovery, or execution. Problems drafts include up to five lines either side of the selected
+line (600 characters per source line); sending is manual unless the person enables the
+explicit auto-send setting. Conversations are memory-only and reset on project changes.
+Requests have a 30-second timeout, one attempt, no automatic 429 retry, at most 40 turns,
+64,000 input characters and 4,096 output tokens. Cancellation stops local waiting; it cannot
+guarantee Google stops work on a request it has received. Provider errors never reach logs
+or the renderer verbatim. AI Studio opens through a fixed-URL main handler.
+Streaming updates use a fixed IPC event with validated request IDs and at most 32,000 text
+characters. Preload validates event shape and the chat ignores stale requests. Cancelled or
+failed partial replies do not become completed conversation turns. Markdown is rendered as
+React nodes without interpreting raw HTML; renderer navigation/window restrictions remain.
+
+MVP keys use Electron `safeStorage` encryption in git-ignored repository-local
+`.textra-local/ai.json`, with atomic writes, version validation and symlink rejection.
+Encryption must be available; Linux's `basic_text` backend is rejected. Test calls must
+succeed before replacement; failed tests preserve the previous configuration. Settings
+IPC returns only configured/auto-send flags, never the key/ciphertext. AI settings
+hold no key collection: replacement atomically overwrites the single credential after testing.
+Deletion requires native confirmation, clears the encrypted credential and auto-send flag,
+and works without decrypting it. It removes only TeXtra's local copy; Google key revocation
+remains a separate action in AI Studio. Concurrent active Gemini operations block deletion.
+Portable settings exports exclude this file. Repository-local storage may be synced/backed up with the
+checkout; encrypted keys remain bound to the OS account's storage backend.
+
+TODO before public release: move AI settings into Electron userData and an OS-level,
+app-scoped store (for example electron-store plus safeStorage), add migration UX
+and review spending controls and release packaging. The current location is an MVP only.
 Logs must redact secret-like values. Never include environment dumps or keys.
 
 Project recipe JSON does not grant arbitrary process execution. Commands and flags

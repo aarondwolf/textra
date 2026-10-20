@@ -1,5 +1,6 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -10,13 +11,16 @@ import {
   type PointerEvent,
 } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { ChatPanel } from './features/chat/ChatPanel';
 import {
+  AIChat,
   ArrowRight,
   ArrowsInSimple,
   ArrowsOutSimple,
   Check,
   ChevronRight,
   Copy,
+  Columns2,
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
@@ -25,7 +29,6 @@ import {
   Settings,
   Search,
   Ellipsis,
-  Article,
   Files,
   FilePlus2,
   FileText,
@@ -52,6 +55,7 @@ import {
   DEFAULT_PREFERENCES,
   SIDEBAR_WIDTH_RANGE,
   type BuildEngine,
+  type ExternalFileChangeEvent,
   type Result,
   type TexlabStatus,
 } from '../../shared/api';
@@ -64,20 +68,21 @@ import {
   discardAll,
   editDocument,
   initializeWorkspace,
+  markExternalChange,
   openDocument,
-  reloadDocument,
   saveAll,
   saveDocument,
   setProject,
   showError,
   useWorkspace,
 } from './state/workspace';
+import { ConflictDialog, ConflictDiffView, type ExternalChangeStatus } from './features/conflicts';
 import { SourceEditor, type TexlabDiagnostic } from './features/editor/SourceEditor';
 import { createTexlabAdapter, texlabMarkers } from './features/editor/texlabAdapter';
 import PdfViewer from './features/pdf/PdfViewer';
+import { MarkdownPreview } from './features/markdown';
 import EquationPalette from './features/equations/EquationPalette';
 import SnippetPalette from './features/snippets/SnippetPalette';
-import { DocumentView } from './features/document/DocumentView';
 import { notify } from './features/notifications/ToastViewport';
 import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import { WritingPanel } from './features/writing/WritingPanel';
@@ -434,11 +439,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     null,
   );
   type SidebarView =
-    'explorer' | 'document' | 'writing' | 'equations' | 'snippets' | 'compile' | 'recents';
+    'explorer' | 'writing' | 'equations' | 'snippets' | 'compile' | 'recents' | 'chat';
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
+  const [chatOpened, setChatOpened] = useState(false);
+  const [chatDraft, setChatDraft] = useState<{
+    id: number;
+    text: string;
+    projectId: string | null;
+  } | null>(null);
+  const chatDraftId = useRef(0);
+  useEffect(() => {
+    setChatDraft(null);
+  }, [project?.id]);
   const [focusMode, setFocusMode] = useState(false);
   const [fileFilter, setFileFilter] = useState('');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [pdfPreviewPath, setPdfPreviewPath] = useState<string | null>(null);
+  const [requestedPdfPreviewPath, setRequestedPdfPreviewPath] = useState<string | null>(null);
   const [buildHistory, setBuildHistory] = useState<
     { outcome: string; recipe: string; time: string }[]
   >([]);
@@ -454,6 +471,21 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   >(new Map());
   const [formatPreview, setFormatPreview] = useState<{ path: string; content: string } | null>(
     null,
+  );
+  const [conflictPath, setConflictPath] = useState<string | null>(null);
+  const [externalChange, setExternalChange] = useState<ExternalFileChangeEvent | null>(null);
+  const [conflictSnapshotPath, setConflictSnapshotPath] = useState<string | undefined>();
+  const [comparison, setComparison] = useState<{
+    path: string;
+    localContent: string;
+    externalContent: string | null;
+  } | null>(null);
+  const [compareWhenStable, setCompareWhenStable] = useState(false);
+  const watchedDocumentRefs = useMemo(
+    () => documents.map(({ projectId, path }) => ({ projectId, path })),
+    // Editing changes document objects but must not tear down and recreate their filesystem watches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [documents.map((document) => `${document.projectId}\u0000${document.path}`).join('\n')],
   );
   useEffect(() => {
     let active = true;
@@ -501,6 +533,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   ]);
   /** Clicking the icon of the view that is already showing collapses the sidebar. */
   function selectSidebarView(view: SidebarView) {
+    if (view === 'chat') setChatOpened(true);
     if (preferences.sidebarVisible && sidebarView === view) {
       updatePreferences({ sidebarVisible: false });
       return;
@@ -826,6 +859,49 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     void initializeWorkspace().catch(showError);
   }, []);
   useEffect(() => {
+    if (!preferences.externalChangeDetection || !watchedDocumentRefs.length) return;
+    for (const document of watchedDocumentRefs)
+      void window.textra
+        .watchExternalFile({
+          ...document,
+          pollingOnly: preferences.externalChangePollingOnly,
+          quietPeriodMs: preferences.externalChangeQuietPeriodMs,
+        })
+        .then((result) => {
+          if (!result.ok) showError(result.error);
+        })
+        .catch(showError);
+    return () => {
+      for (const document of watchedDocumentRefs) void window.textra.unwatchExternalFile(document);
+    };
+  }, [
+    preferences.externalChangeDetection,
+    preferences.externalChangePollingOnly,
+    preferences.externalChangeQuietPeriodMs,
+    watchedDocumentRefs,
+  ]);
+  useEffect(() => {
+    if (!preferences.externalChangeDetection) return;
+    return window.textra.onExternalFileChange((event) => {
+      const current = useWorkspace.getState();
+      if (
+        current.project?.id !== event.projectId ||
+        !current.documents.some((d) => d.path === event.path)
+      )
+        return;
+      if (event.state === 'watching') return;
+      markExternalChange(event.path, event.state);
+      setExternalChange(event);
+      setConflictPath((existing) => {
+        if (existing) return existing;
+        setConflictSnapshotPath(undefined);
+        setComparison(null);
+        setCompareWhenStable(false);
+        return event.path;
+      });
+    });
+  }, [preferences.externalChangeDetection]);
+  useEffect(() => {
     void window.textra
       .setDirty(hasDirty)
       .then((result) => {
@@ -838,7 +914,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       if (polling.current) return;
       polling.current = true;
       void Promise.all([
-        checkExternalChanges(),
+        ...(useUI.getState().preferences.externalChangeDetection ? [checkExternalChanges()] : []),
         window.textra.getBuildState().then((result) => {
           if (result.ok) useWorkspace.setState({ build: result.value });
         }),
@@ -965,6 +1041,119 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       },
     });
   }
+  function duplicateEntry() {
+    if (!project || !selected) return;
+    const sourcePath = selected;
+    const source = project.files.find((file) => file.path === sourcePath);
+    if (!source || source.kind !== 'file') return;
+    const suggested = sourcePath.replace(/(\.[^/.]+)?$/, '-copy$1');
+    setPrompt({
+      title: 'Duplicate file',
+      detail: `Create a separate copy of ${sourcePath}. The original will not change.`,
+      initial: suggested,
+      action: 'Create copy',
+      run: async (path) => {
+        const snapshot = unwrap(
+          await window.textra.readFile({ projectId: project.id, path: sourcePath }),
+        );
+        const next = unwrap(
+          await window.textra.createEntry({
+            projectId: project.id,
+            path,
+            kind: 'file',
+            content: snapshot.content,
+          }),
+        );
+        useWorkspace.setState({ project: next });
+        await openDocument(path);
+      },
+    });
+  }
+  const conflictedDocument = conflictPath
+    ? (documents.find((document) => document.path === conflictPath) ?? null)
+    : null;
+  const externalStatus: ExternalChangeStatus = {
+    state:
+      externalChange?.state === 'deleted'
+        ? 'missing'
+        : externalChange?.state === 'renamed'
+          ? 'renamed'
+          : externalChange?.state === 'stable'
+            ? 'stable'
+            : 'changing',
+    quietPeriodMs: preferences.externalChangeQuietPeriodMs,
+    detail:
+      externalChange?.state === 'deleted'
+        ? 'The file was deleted outside TeXtra. Your open text is still safe in memory.'
+        : externalChange?.state === 'renamed'
+          ? 'The file was renamed or replaced outside TeXtra. Your open text is still safe in memory.'
+          : undefined,
+  };
+  const refreshConflictComparison = useCallback(
+    async (path = conflictPath): Promise<void> => {
+      if (!project || !path) return;
+      const result = await window.textra.readFile({ projectId: project.id, path });
+      const current = useWorkspace.getState().documents.find((document) => document.path === path);
+      if (!current) return;
+      if (!result.ok) {
+        setComparison({ path, localContent: current.content, externalContent: null });
+        useWorkspace.setState({ activePath: path });
+        return;
+      }
+      setComparison({ path, localContent: current.content, externalContent: result.value.content });
+      useWorkspace.setState({ activePath: path });
+    },
+    [conflictPath, project],
+  );
+  async function preserveConflictCopy(compare: boolean): Promise<void> {
+    if (!conflictedDocument) return;
+    const result = await window.textra.createConflictCopy({
+      projectId: conflictedDocument.projectId,
+      path: conflictedDocument.path,
+      content: conflictedDocument.content,
+    });
+    if (!result.ok) throw new Error(result.error);
+    setConflictSnapshotPath(result.value.path);
+    const projectInfo = await window.textra.refreshProject(conflictedDocument.projectId);
+    if (projectInfo.ok) useWorkspace.setState({ project: projectInfo.value });
+    await openDocument(result.value.path);
+    notify(`Saved ${result.value.path}`, 'success');
+    const shouldCompare = compare || preferences.openDiffAfterConflictCopy;
+    if (shouldCompare) {
+      setCompareWhenStable(true);
+      if (externalStatus.state === 'stable') {
+        await refreshConflictComparison(conflictedDocument.path);
+        setConflictPath(null);
+        setCompareWhenStable(false);
+      }
+    } else {
+      // A dated sibling copy is a complete recovery action, including after a
+      // rename or deletion. Dismiss the modal so it cannot trap the user.
+      setConflictPath(null);
+      setExternalChange(null);
+      setConflictSnapshotPath(undefined);
+      setCompareWhenStable(false);
+    }
+  }
+  async function discardConflictBuffer(): Promise<void> {
+    if (!conflictedDocument) return;
+    await window.textra.unwatchExternalFile({
+      projectId: conflictedDocument.projectId,
+      path: conflictedDocument.path,
+    });
+    closeDocument(conflictedDocument.path);
+    setConflictPath(null);
+    setExternalChange(null);
+    setComparison(null);
+    setConflictSnapshotPath(undefined);
+    setCompareWhenStable(false);
+  }
+  useEffect(() => {
+    if (!compareWhenStable || externalStatus.state !== 'stable' || !conflictPath) return;
+    void refreshConflictComparison(conflictPath)
+      .then(() => setConflictPath(null))
+      .catch(showError);
+  }, [compareWhenStable, conflictPath, externalStatus.state, refreshConflictComparison]);
   function rename() {
     if (!project || !selected) return;
     const path = selected;
@@ -1003,27 +1192,22 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     if (!project || !selected) return;
     const path = selected;
     protect(async () => {
-      setPrompt({
-        title: 'Delete entry',
-        detail: `Delete ${path}? This removes it from disk. The system will ask you to confirm.`,
-        action: 'Continue to confirmation',
-        run: async () => {
-          const next = unwrap(await window.textra.deleteEntry({ projectId: project.id, path }));
-          if (next) {
-            const previousRoot = useWorkspace.getState().rootFile;
-            useWorkspace.setState({
-              project: next,
-              rootFile: next.files.some((file) => file.path === previousRoot)
-                ? previousRoot
-                : (next.mainFile ?? ''),
-            });
-            for (const document of useWorkspace.getState().documents)
-              if (document.path === path || document.path.startsWith(`${path}/`))
-                closeDocument(document.path);
-            setSelected(null);
-          }
-        },
-      });
+      // The operating system's Trash confirmation is the one destructive-action
+      // confirmation. Do not make people approve the same deletion twice.
+      const next = unwrap(await window.textra.deleteEntry({ projectId: project.id, path }));
+      if (next) {
+        const previousRoot = useWorkspace.getState().rootFile;
+        useWorkspace.setState({
+          project: next,
+          rootFile: next.files.some((file) => file.path === previousRoot)
+            ? previousRoot
+            : (next.mainFile ?? ''),
+        });
+        for (const document of useWorkspace.getState().documents)
+          if (document.path === path || document.path.startsWith(`${path}/`))
+            closeDocument(document.path);
+        setSelected(null);
+      }
     });
   }
   async function lintDocument(path: string) {
@@ -1092,20 +1276,41 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     if (!result.ok) throw new Error(result.error);
     setFormatPreview({ path: active.path, content: result.value.content });
   }
-  async function copyProblemPrompt(diagnostic: ProblemDiagnostic) {
+  async function prepareProblemPrompt(diagnostic: ProblemDiagnostic, bounded = false) {
+    const projectId = project?.id;
     let source = diagnostic.file ? analysisSources[diagnostic.file] : undefined;
     if (!source && project && diagnostic.file) {
       const result = await window.textra.readFile({ projectId: project.id, path: diagnostic.file });
       if (result.ok) source = result.value.content;
     }
-    const context = source ? extractPromptContext(source, diagnostic.line ?? 1) : null;
+    if (useWorkspace.getState().project?.id !== projectId)
+      throw new Error('The project changed. Select the problem again.');
+    let context = source && !bounded ? extractPromptContext(source, diagnostic.line ?? 1) : null;
+    if (bounded && source !== undefined) {
+      const lines = source.split(/\r\n|\n|\r/);
+      const line = Math.max(1, Math.min(diagnostic.line ?? 1, lines.length));
+      const startLine = Math.max(1, line - 5);
+      const endLine = Math.min(lines.length, line + 5);
+      context = {
+        startLine,
+        endLine,
+        environment: null,
+        text: lines
+          .slice(startLine - 1, endLine)
+          .map(
+            (text, index) =>
+              `${startLine + index === line ? '>' : ' '} ${startLine + index}: ${text.slice(0, 600)}`,
+          )
+          .join('\n'),
+      };
+    }
     const location = diagnostic.file ? ` in \`${diagnostic.file}:${diagnostic.line ?? '?'}\`` : '';
     const prompt = [
       '# LaTeX troubleshooting request',
       '',
       `I am working on a LaTeX document and received this ${diagnostic.severity}${location}:`,
       '',
-      `> ${diagnostic.code ? `${diagnostic.code}: ` : ''}${diagnostic.message}`,
+      `> ${diagnostic.code ? `${diagnostic.code}: ` : ''}${bounded ? diagnostic.message.slice(0, 2000) : diagnostic.message}`,
       ...(context
         ? [
             '',
@@ -1120,12 +1325,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       '',
       'Please explain the likely cause and suggest the smallest safe correction.',
     ].join('\n');
-    const result = await window.textra.copyText(prompt);
+    return prompt;
+  }
+  async function copyProblemPrompt(diagnostic: ProblemDiagnostic) {
+    const result = await window.textra.copyText(await prepareProblemPrompt(diagnostic));
     if (!result.ok) throw new Error(result.error);
+  }
+  async function askProblemInChat(diagnostic: ProblemDiagnostic) {
+    const text = await prepareProblemPrompt(diagnostic, true);
+    setChatDraft({ id: ++chatDraftId.current, text, projectId: project?.id ?? null });
+    setChatOpened(true);
+    setSidebarView('chat');
+    updatePreferences({ sidebarVisible: true });
   }
   async function compile() {
     if (!project || !active || !canCompile || build.running || busy || prompt || pending) return;
     const rootFile = active.path;
+    // A new build should return Preview to the document it just produced.
+    setPdfPreviewPath(null);
     setRecipeOpen(false);
     await run(async () => {
       if (!(await saveAll()))
@@ -1185,7 +1402,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
         if (useWorkspace.getState().busy || prompt || pending) return;
         if (activePath) {
           if (event.shiftKey) saveAs();
-          else
+          else if (
+            useWorkspace.getState().documents.find((document) => document.path === activePath)
+              ?.conflict
+          ) {
+            setConflictPath(activePath);
+          } else
             void run(async () => {
               await saveAndLint(activePath);
             });
@@ -1251,18 +1473,39 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
               }
             />
           </button>
+          {comparison && (
+            <button
+              className="icon-button activity-view"
+              aria-label="Conflict comparison"
+              title="Conflict comparison (read-only)"
+              aria-pressed={comparison.path === activePath}
+              onClick={() => useWorkspace.setState({ activePath: comparison.path })}
+            >
+              <Columns2 size={19} weight={comparison.path === activePath ? 'duotone' : 'light'} />
+            </button>
+          )}
           <button
             className="icon-button activity-view"
-            aria-label="Document view"
-            title="Document: outline and files used"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'document'}
-            onClick={() => selectSidebarView('document')}
+            aria-label="Writing tools"
+            title="Writing: outline, counts and notes"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'writing'}
+            onClick={() => selectSidebarView('writing')}
           >
-            <Article
-              size={20}
-              weight={
-                preferences.sidebarVisible && sidebarView === 'document' ? 'duotone' : 'light'
-              }
+            <Pencil
+              size={19}
+              weight={preferences.sidebarVisible && sidebarView === 'writing' ? 'duotone' : 'light'}
+            />
+          </button>
+          <button
+            className="icon-button activity-view"
+            aria-label="Compile settings"
+            title="Compile settings and generated files"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'compile'}
+            onClick={() => selectSidebarView('compile')}
+          >
+            <Hammer
+              size={19}
+              weight={preferences.sidebarVisible && sidebarView === 'compile' ? 'duotone' : 'light'}
             />
           </button>
           <button
@@ -1278,18 +1521,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <button
             className="icon-button activity-view"
-            aria-label="Writing tools"
-            title="Writing: outline, counts and notes"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'writing'}
-            onClick={() => selectSidebarView('writing')}
-          >
-            <Pencil
-              size={19}
-              weight={preferences.sidebarVisible && sidebarView === 'writing' ? 'duotone' : 'light'}
-            />
-          </button>
-          <button
-            className="icon-button activity-view"
             aria-label="Snippets"
             title="Snippets: tables, figures and more"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'snippets'}
@@ -1300,24 +1531,25 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             </span>
           </button>
           <button
-            className="icon-button activity-view"
-            aria-label="Compile settings"
-            title="Compile settings and generated files"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'compile'}
-            onClick={() => selectSidebarView('compile')}
-          >
-            <Hammer
-              size={19}
-              weight={preferences.sidebarVisible && sidebarView === 'compile' ? 'duotone' : 'light'}
-            />
-          </button>
-          <button
             className="icon-button"
             aria-label="Command palette"
             title="Search commands (Ctrl+K)"
             onClick={() => useUI.getState().setPaletteOpen(true)}
           >
             <Search size={18} />
+          </button>
+          <button
+            className="icon-button activity-view"
+            aria-label="AI Chat"
+            title="AI Chat — Gemini debugging"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'chat'}
+            onClick={() => selectSidebarView('chat')}
+          >
+            <AIChat
+              size={21}
+              aria-hidden="true"
+              weight={preferences.sidebarVisible && sidebarView === 'chat' ? 'duotone' : 'light'}
+            />
           </button>
           <button
             className="icon-button activity-view rail-bottom"
@@ -1340,15 +1572,28 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             <Settings size={19} />
           </button>
         </nav>
-        {preferences.sidebarVisible && (
+        {chatOpened && (
+          <aside
+            className="sidebar ai-chat-sidebar"
+            aria-label="AI Chat sidebar"
+            hidden={!preferences.sidebarVisible || sidebarView !== 'chat'}
+            style={{ width: preferences.sidebarWidth }}
+          >
+            <ChatPanel
+              resetKey={project?.id ?? null}
+              draft={chatDraft?.projectId === (project?.id ?? null) ? chatDraft : null}
+              onDraftConsumed={() => setChatDraft(null)}
+              active={preferences.sidebarVisible && sidebarView === 'chat'}
+            />
+          </aside>
+        )}
+        {preferences.sidebarVisible && sidebarView !== 'chat' && (
           <aside
             className="sidebar"
             aria-label="Project sidebar"
             style={{ width: preferences.sidebarWidth }}
           >
-            {sidebarView === 'document' ? (
-              <DocumentView bibliographyEntries={bibliographyEntries} />
-            ) : sidebarView === 'writing' ? (
+            {sidebarView === 'writing' ? (
               <WritingPanel
                 summary={{
                   words: documentAnalysis?.counts.words ?? 0,
@@ -1378,6 +1623,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     void openDocument(active.path, { path: active.path, line, column: 1 });
                 }}
                 onToggleFocusMode={() => setFocusMode((value) => !value)}
+                onFormatDocument={() => void run(formatActive)}
+                formatAvailable={tools.some((tool) => tool.name === 'latexindent' && !!tool.path)}
               />
             ) : sidebarView === 'snippets' ? (
               <>
@@ -1551,17 +1798,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   </button>
                 </section>
                 {buildHistory.length > 0 && (
-                  <section className="writing-section" aria-label="Recent builds">
-                    <h3 className="writing-section-title">Recent builds</h3>
+                  <details className="writing-section" aria-label="Recent builds">
+                    <summary className="writing-section-title">Recent builds</summary>
                     {buildHistory.map((entry, index) => (
                       <p className="writing-empty" key={`${entry.recipe}:${entry.time}:${index}`}>
                         {entry.recipe} · {entry.outcome} · {entry.time}
                       </p>
                     ))}
-                  </section>
+                  </details>
                 )}
-                <section className="writing-section" aria-label="Project health">
-                  <h3 className="writing-section-title">Project health</h3>
+                <details className="writing-section" aria-label="Project health">
+                  <summary className="writing-section-title">Project health</summary>
                   <p className="writing-empty">
                     {errorCount} errors · {warningCount} warnings · {referenceDiagnostics.length}{' '}
                     reference checks
@@ -1581,7 +1828,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   >
                     Review problems
                   </button>
-                </section>
+                </details>
                 {project && (
                   <CompileRecipeEditor
                     activePath={activePath}
@@ -1599,8 +1846,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     }}
                   />
                 )}
-                <section className="writing-section">
-                  <h3 className="writing-section-title">Generated files</h3>
+                <details className="writing-section">
+                  <summary className="writing-section-title">Generated files</summary>
                   <p className="writing-empty">
                     Clean only TeXtra&apos;s managed build/textra folder. Custom output folders
                     stay.
@@ -1618,12 +1865,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   >
                     Clean generated files…
                   </button>
-                </section>
-                <section className="writing-section">
-                  <h3 className="writing-section-title">Document formatting</h3>
+                </details>
+                <details className="writing-section">
+                  <summary className="writing-section-title">Document formatting</summary>
                   <p className="writing-empty">
                     {tools.some((tool) => tool.name === 'latexindent' && tool.path)
-                      ? 'latexindent is available. Use Format document in the editor menu to preview changes.'
+                      ? 'latexindent is available. Use Format document in Writing to preview changes.'
                       : 'latexindent is not available. Configure it in Settings if you install it.'}
                   </p>
                   {!tools.some((tool) => tool.name === 'latexindent' && tool.path) && (
@@ -1641,7 +1888,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       Install latexindent
                     </button>
                   )}
-                </section>
+                </details>
               </div>
             ) : (
               <>
@@ -1745,7 +1992,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                               }
                               onClick={() => {
                                 if (file.kind === 'directory') toggleFolder(file.path);
-                                else {
+                                else if (/\.pdf$/i.test(file.path)) {
+                                  setFileMenu(null);
+                                  setSelected(file.path);
+                                  setRequestedPdfPreviewPath(file.path);
+                                } else {
                                   setFileMenu(null);
                                   setSelected(file.path);
                                   openExplorerFile(file.path);
@@ -1883,6 +2134,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           <span>{document.path.split('/').at(-1)}</span>
                           {dirty(document) && (
                             <span className="dirty-dot" aria-label="Unsaved changes" />
+                          )}
+                          {document.conflict && (
+                            <Warning size={12} aria-label="External change conflict" />
                           )}
                         </button>
                         <button
@@ -2052,17 +2306,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                               Focus writing
                             </button>
                           </div>
-                          <button
-                            className="text-button"
-                            aria-label="Format document with latexindent"
-                            disabled={busy || !/\.tex$/i.test(active.path)}
-                            onClick={() => {
-                              setEditorOptionsOpen(false);
-                              void run(formatActive);
-                            }}
-                          >
-                            Format document…
-                          </button>
                         </div>
                       )}
                     </div>
@@ -2073,40 +2316,58 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <>
                   {active.conflict && (
                     <div className="conflict-banner" role="alert">
-                      <span>This file changed on disk. Your open text is preserved.</span>
+                      <span>
+                        {active.externalState === 'changing'
+                          ? 'This file is changing outside TeXtra. Your open text is protected.'
+                          : 'This file changed outside TeXtra. Your open text is protected.'}
+                      </span>
                       <div>
                         <button
                           onClick={() => {
-                            if (dirty(active))
-                              setPrompt({
-                                title: 'Reload from disk',
-                                detail:
-                                  'Discard your unsaved edits and load the current file from disk? Save a copy first if you need both versions.',
-                                action: 'Discard edits and reload',
-                                run: async () => reloadDocument(active.path),
-                              });
-                            else void run(async () => reloadDocument(active.path));
+                            setConflictPath(active.path);
+                            setExternalChange((current) =>
+                              current?.path === active.path
+                                ? current
+                                : {
+                                    projectId: active.projectId,
+                                    path: active.path,
+                                    state: active.externalState ?? 'stable',
+                                    revision: null,
+                                    observedAt: Date.now(),
+                                  },
+                            );
                           }}
                         >
-                          Reload from disk
+                          Resolve conflict
                         </button>
-                        <button onClick={saveAs}>Save file as</button>
+                        <button onClick={saveAs}>Save as…</button>
                       </div>
                     </div>
                   )}
-                  <SourceEditor
-                    key={project?.id}
-                    documents={documents}
-                    activePath={active.path}
-                    theme={preferences.theme}
-                    navigation={navigation}
-                    fontSize={fontSize}
-                    wrap={wrap}
-                    readOnly={busy}
-                    formatToolbarVisible={formatToolbarVisible}
-                    bibliographyEntries={bibliographyEntries}
-                    texlab={texlabAdapter}
-                  />
+                  {comparison?.path === active.path ? (
+                    <ConflictDiffView
+                      document={{ path: comparison.path, content: comparison.localContent }}
+                      externalContent={comparison.externalContent}
+                      external={externalStatus}
+                      snapshotPath={conflictSnapshotPath}
+                      theme={preferences.theme}
+                      onClose={() => setComparison(null)}
+                    />
+                  ) : (
+                    <SourceEditor
+                      key={project?.id}
+                      documents={documents}
+                      activePath={active.path}
+                      theme={preferences.theme}
+                      navigation={navigation}
+                      fontSize={fontSize}
+                      wrap={wrap}
+                      readOnly={busy || active.conflict}
+                      formatToolbarVisible={formatToolbarVisible}
+                      bibliographyEntries={bibliographyEntries}
+                      texlab={texlabAdapter}
+                    />
+                  )}
                 </>
               ) : (
                 <div className="welcome-content">
@@ -2469,19 +2730,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 aria-labelledby="preview-tab"
                 hidden={panel !== 'preview'}
               >
-                <PdfViewer
-                  project={project}
-                  build={build}
-                  source={source}
-                  toolbarSlot={pdfSlot}
-                  compact={headerCompact}
-                  menuMode={tabMode === 'menu'}
-                  menuSlot={pdfMenuSlot}
-                  active={panel === 'preview'}
-                  onNavigate={(location) => {
-                    void openDocument(location.path, location);
-                  }}
-                />
+                {active && /\.md(?:own)?$/i.test(active.path) ? (
+                  <MarkdownPreview source={active.content} path={active.path} />
+                ) : (
+                  <PdfViewer
+                    project={project}
+                    build={build}
+                    externalPdfPath={pdfPreviewPath}
+                    source={source}
+                    toolbarSlot={pdfSlot}
+                    compact={headerCompact}
+                    menuMode={tabMode === 'menu'}
+                    menuSlot={pdfMenuSlot}
+                    active={panel === 'preview'}
+                    onNavigate={(location) => {
+                      void openDocument(location.path, location);
+                    }}
+                  />
+                )}
               </div>
               {panel !== 'preview' && (
                 <div
@@ -2499,7 +2765,16 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     </pre>
                   ) : problemDiagnostics.length ? (
                     <ProblemsPanel
+                      onAskChat={(diagnostic) => {
+                        void askProblemInChat(diagnostic).catch(showError);
+                      }}
                       diagnostics={problemDiagnostics}
+                      showCommonHelp={preferences.commonProblemHelp}
+                      onOpenCommonHelp={(url) => {
+                        void window.textra.openTexFaqHelp(url).then((result) => {
+                          if (!result.ok) showError(result.error);
+                        });
+                      }}
                       onNavigate={(diagnostic) => {
                         if (diagnostic.file)
                           void openDocument(diagnostic.file, {
@@ -2672,6 +2947,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <button
             role="menuitem"
+            disabled={
+              busy ||
+              build.running ||
+              !project.files.some((file) => file.path === fileMenu.path && file.kind === 'file')
+            }
+            onClick={() => {
+              setFileMenu(null);
+              duplicateEntry();
+            }}
+          >
+            Duplicate
+          </button>
+          <button
+            role="menuitem"
             disabled={busy || build.running || fileMenu.path === ''}
             onClick={() => {
               setFileMenu(null);
@@ -2750,7 +3039,61 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      <ConflictDialog
+        open={!!conflictedDocument}
+        document={conflictedDocument}
+        external={externalStatus}
+        onRefresh={async () => {
+          if (!conflictedDocument) return;
+          const result = await window.textra.watchExternalFile({
+            projectId: conflictedDocument.projectId,
+            path: conflictedDocument.path,
+            pollingOnly: preferences.externalChangePollingOnly,
+            quietPeriodMs: preferences.externalChangeQuietPeriodMs,
+          });
+          if (!result.ok) throw new Error(result.error);
+          if (result.value.state !== 'watching') setExternalChange(result.value);
+        }}
+        onPreserve={({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)}
+        onCreateSnapshot={
+          conflictSnapshotPath
+            ? ({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)
+            : undefined
+        }
+        onDiscard={discardConflictBuffer}
+      />
       <PromptDialog prompt={prompt} close={() => setPrompt(null)} />
+      <Dialog.Root
+        open={!!requestedPdfPreviewPath}
+        onOpenChange={(open) => {
+          if (!open) setRequestedPdfPreviewPath(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog-content" aria-describedby="pdf-preview-description">
+            <Dialog.Title>Open PDF in Preview?</Dialog.Title>
+            <Dialog.Description id="pdf-preview-description">
+              Open <code>{requestedPdfPreviewPath}</code> read-only in TeXtra's Preview pane. This
+              does not replace the current build output or modify the file.
+            </Dialog.Description>
+            <div className="dialog-actions">
+              <button onClick={() => setRequestedPdfPreviewPath(null)}>Cancel</button>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  if (!requestedPdfPreviewPath) return;
+                  setPdfPreviewPath(requestedPdfPreviewPath);
+                  setRequestedPdfPreviewPath(null);
+                  setPanel('preview');
+                }}
+              >
+                Open Preview
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <Dialog.Root
         open={!!pending}
         onOpenChange={(open) => {

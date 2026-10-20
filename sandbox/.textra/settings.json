@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "rootFile": null,
+  "engine": "pdflatex",
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "pdflatex",
+      "tools": [
+        "pdflatex-draft",
+        "pdflatex"
+      ]
+    },
+    {
+      "name": "xelatex",
+      "tools": [
+        "xelatex-draft",
+        "xelatex"
+      ]
+    },
+    {
+      "name": "lualatex",
+      "tools": [
+        "lualatex-draft",
+        "lualatex"
+      ]
+    },
+    {
+      "name": "latexmk",
+      "tools": [
+        "latexmk"
+      ]
+    },
+    {
+      "name": "bibtex-pipeline",
+      "tools": [
+        "pdflatex-draft",
+        "bibtex",
+        "pdflatex-draft",
+        "pdflatex"
+      ]
+    }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "pdflatex",
+      "command": "pdflatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-output-directory=%OUTDIR%",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    },
+    {
+      "name": "xelatex",
+      "command": "xelatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-output-directory=%OUTDIR%",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    },
+    {
+      "name": "lualatex",
+      "command": "lualatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-output-directory=%OUTDIR%",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    },
+    {
+      "name": "latexmk",
+      "command": "latexmk",
+      "args": [
+        "-pdf",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-outdir=%OUTDIR%",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    },
+    {
+      "name": "bibtex",
+      "command": "bibtex",
+      "args": [
+        "%DOCFILE%"
+      ],
+      "cwd": "%AUXDIR%"
+    },
+    {
+      "name": "biber",
+      "command": "biber",
+      "args": [
+        "%DOCFILE%"
+      ],
+      "cwd": "%AUXDIR%"
+    },
+    {
+      "name": "pdflatex-draft",
+      "command": "pdflatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-output-directory=%OUTDIR%",
+        "-draftmode",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    },
+    {
+      "name": "xelatex-draft",
+      "command": "xelatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-output-directory=%OUTDIR%",
+        "-draftmode",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    },
+    {
+      "name": "lualatex-draft",
+      "command": "lualatex",
+      "args": [
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-output-directory=%OUTDIR%",
+        "-draftmode",
+        "%DOC_EXT%"
+      ],
+      "cwd": "%DIR%"
+    }
+  ],
+  "latex-workshop.latex.outDir": "build/textra/%RELATIVE_DOC%",
+  "latex-workshop.latex.auxDir": "%OUTDIR%",
+  "latex-workshop.latex.recipe.default": "lastUsed",
+  "recipes": {
+    "test.tex": "pdflatex",
+    "test2.tex": "pdflatex"
+  }
+}

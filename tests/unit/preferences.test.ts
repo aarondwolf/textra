@@ -55,7 +55,36 @@ describe('preference boundary validation', () => {
     delete legacy.wrap;
     delete legacy.sidebarWidth;
     delete legacy.toolPaths;
+    delete legacy.externalChangeDetection;
+    delete legacy.externalChangeQuietPeriodMs;
+    delete legacy.externalChangePollingOnly;
+    delete legacy.openDiffAfterConflictCopy;
+    delete legacy.commonProblemHelp;
     expect(validatePreferences(legacy)).toEqual(DEFAULT_PREFERENCES);
+  });
+
+  it('persists external-change safety preferences within their supported bounds', () => {
+    const saved = validatePreferences({
+      ...DEFAULT_PREFERENCES,
+      externalChangeDetection: false,
+      externalChangeQuietPeriodMs: 5_000,
+      externalChangePollingOnly: true,
+      openDiffAfterConflictCopy: false,
+    });
+    expect(saved).toMatchObject({
+      externalChangeDetection: false,
+      externalChangeQuietPeriodMs: 5_000,
+      externalChangePollingOnly: true,
+      openDiffAfterConflictCopy: false,
+    });
+    for (const externalChangeQuietPeriodMs of [1_999, 5_001, 2_500.5, '3000', NaN])
+      expect(() =>
+        validatePreferences({ ...DEFAULT_PREFERENCES, externalChangeQuietPeriodMs }),
+      ).toThrow();
+    for (const externalChangeDetection of ['yes', 1, null])
+      expect(() =>
+        validatePreferences({ ...DEFAULT_PREFERENCES, externalChangeDetection }),
+      ).toThrow();
   });
 
   it('persists font size and word wrap within supported bounds', () => {
@@ -65,6 +94,18 @@ describe('preference boundary validation', () => {
     for (const fontSize of [9, 29, 14.5, '14', NaN])
       expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, fontSize })).toThrow();
     expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, wrap: 'yes' })).toThrow();
+  });
+
+  it('defaults common problem help on and only accepts a boolean preference', () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+    delete legacy.commonProblemHelp;
+    expect(validatePreferences(legacy).commonProblemHelp).toBe(true);
+    expect(
+      validatePreferences({ ...DEFAULT_PREFERENCES, commonProblemHelp: false }).commonProblemHelp,
+    ).toBe(false);
+    expect(() =>
+      validatePreferences({ ...DEFAULT_PREFERENCES, commonProblemHelp: 'yes' }),
+    ).toThrow();
   });
 
   it('bounds the persisted sidebar width', () => {

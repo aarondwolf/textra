@@ -24,6 +24,7 @@ import type {
 } from '../../shared/api';
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
+const MAX_PREVIEW_PDF_BYTES = 64 * 1024 * 1024;
 const MAX_TREE_ENTRIES = 10000;
 /** Listed in the tree but not walked, so they cannot exhaust the entry limit. */
 const unexpandedNames = new Set(['.git', 'node_modules']);
@@ -189,6 +190,24 @@ export class ProjectService {
 
   async readFile(value: FileRef): Promise<FileSnapshot> {
     return this.snapshot(this.validateRef(value));
+  }
+
+  /** Reads a selected project PDF for the read-only Preview pane. */
+  async readProjectPdf(value: FileRef): Promise<Uint8Array> {
+    const ref = this.validateRef(value);
+    if (!/\.pdf$/i.test(ref.path))
+      throw new ProjectError('INVALID_PATH', 'Select a PDF file from this project.');
+    const target = await this.resolvePath(ref);
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink())
+      throw new ProjectError('INVALID_PATH', 'Select a regular PDF file.');
+    if (info.size > MAX_PREVIEW_PDF_BYTES)
+      throw new ProjectError('FILE_TOO_LARGE', 'PDF previews must be smaller than 64 MiB.');
+    const bytes = await readFile(target);
+    if (bytes.subarray(0, 5).toString() !== '%PDF-')
+      throw new ProjectError('INVALID_PDF', 'This file is not a valid PDF.');
+    this.getRoot(ref.projectId);
+    return new Uint8Array(bytes);
   }
 
   private encode(content: unknown): Buffer {

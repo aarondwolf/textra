@@ -1,0 +1,245 @@
+.conflict-dialog {
+  position: fixed;
+  z-index: 11;
+  top: 50%;
+  left: 50%;
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  padding: 22px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 80px #0008;
+}
+.conflict-dialog h2 {
+  margin: 0;
+  font:
+    600 19px/1.25 Georgia,
+    serif;
+}
+.conflict-dialog > p {
+  margin: 8px 0 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.conflict-dialog code {
+  overflow-wrap: anywhere;
+  font:
+    10px/1.4 'Cascadia Code',
+    Consolas,
+    monospace;
+}
+.conflict-activity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--hover);
+}
+.conflict-activity strong,
+.conflict-activity span {
+  display: block;
+}
+.conflict-activity strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.conflict-activity span:not(.conflict-orbit) {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.conflict-orbit {
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+}
+.conflict-activity.changing .conflict-orbit,
+.conflict-diff-warning .conflict-orbit {
+  animation: conflict-spin 850ms linear infinite;
+}
+.conflict-activity.stable .conflict-orbit {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 4px var(--surface);
+}
+.conflict-choice {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.conflict-choice h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.conflict-choice p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.conflict-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 11px;
+}
+.conflict-dialog button,
+.conflict-diff button {
+  padding: 6px 10px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.conflict-dialog button:hover:not(:disabled),
+.conflict-diff button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.conflict-dialog button:focus-visible,
+.conflict-diff button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.conflict-dialog button:disabled,
+.conflict-diff button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.conflict-dialog .primary-button {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.conflict-dialog .danger-button {
+  margin-top: 11px;
+  color: #ffd2c6;
+  border-color: #a95b4d;
+}
+.conflict-checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.conflict-checkbox input {
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+.conflict-hint {
+  color: var(--accent) !important;
+}
+.conflict-dialog .dialog-error {
+  margin: 12px 0 0;
+}
+.conflict-diff {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--surface);
+}
+.conflict-diff-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--border);
+}
+.conflict-diff-header h2 {
+  margin: 0;
+  font:
+    600 14px/1.25 Georgia,
+    serif;
+}
+.conflict-diff-header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.conflict-diff-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.conflict-diff-actions .icon-button {
+  width: 27px;
+  padding: 4px;
+  font-size: 17px;
+  line-height: 1;
+}
+.conflict-diff-warning {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 13px;
+  color: #e7d7aa;
+  background: #493e25;
+  border-bottom: 1px solid #6f5a2c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.conflict-diff-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  color: var(--muted);
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+  font:
+    10px/1.3 'Cascadia Code',
+    Consolas,
+    monospace;
+}
+.conflict-diff-labels span {
+  min-width: 0;
+  padding: 5px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--surface);
+}
+.conflict-diff-editor {
+  flex: 1;
+  min-height: 180px;
+}
+@keyframes conflict-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conflict-activity.changing .conflict-orbit,
+  .conflict-diff-warning .conflict-orbit {
+    animation: none;
+  }
+}
+@media (max-width: 520px) {
+  .conflict-activity {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .conflict-activity button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

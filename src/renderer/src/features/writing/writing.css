@@ -6,6 +6,12 @@
   overflow: hidden;
 }
 
+/* Compile uses the shared panel shell, but its independent sections must scroll. */
+.writing-panel.compile-sidebar {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .writing-title {
   flex: 0 0 auto;
 }
@@ -40,6 +46,43 @@
 .writing-section {
   flex: 0 0 auto;
   padding: 8px 10px 2px;
+}
+
+.writing-format-section {
+  border-top: 1px solid var(--border);
+}
+
+.writing-help {
+  margin: -1px 0 7px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.writing-help code {
+  color: var(--muted);
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+.writing-format-button {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.writing-format-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--hover);
+}
+
+.writing-format-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .writing-outline-section,

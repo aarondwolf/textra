@@ -6,6 +6,7 @@ import {
   session,
   shell,
   clipboard,
+  safeStorage,
   type IpcMainInvokeEvent,
 } from 'electron';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -33,7 +34,11 @@ import { isTrustedRendererUrl } from './security';
 import { log } from './services/logger';
 import { PreferencesStore } from './services/preferences';
 import { ProjectError, ProjectService, validateRelativePath } from './services/projects';
-import { findCodeExecutable, openInExternalEditor } from './services/external-editor';
+import {
+  ExternalEditorService,
+  findCodeExecutable,
+  openInExternalEditor,
+} from './services/external-editor';
 import { BuildService, detectTools } from './services/latex';
 import { setToolPaths, validateToolPath } from './services/tool-paths';
 import { ConfigService, exportSettings, importSettings } from './services/settings';
@@ -41,6 +46,7 @@ import { validateRecipeSettings } from '../shared/recipes';
 import { LanguageService } from './services/language';
 import { TexlabManager } from './services/texlab-manager';
 import { TexlabError } from './services/texlab';
+import { AIError, GeminiService } from './services/gemini';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -59,7 +65,15 @@ if (testUserData) {
 
 let mainWindow: BrowserWindow | null = null;
 const preferences = new PreferencesStore(app.getPath('userData'));
+const gemini = new GeminiService(join(app.getAppPath(), '.textra-local'), {
+  available: () =>
+    safeStorage.isEncryptionAvailable() &&
+    (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
+  encrypt: (value) => safeStorage.encryptString(value),
+  decrypt: (value) => safeStorage.decryptString(value),
+});
 const projects = new ProjectService(app.getPath('userData'));
+const externalEditor = new ExternalEditorService(projects);
 const builds = new BuildService((id) => projects.getRoot(id));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
 const language = new LanguageService(projects, () => preferences.get());
@@ -89,6 +103,7 @@ function requireWindow(): BrowserWindow {
 }
 
 function errorResult(error: unknown): { ok: false; error: string; code: string } {
+  if (error instanceof AIError) return { ok: false, error: error.message, code: error.code };
   if (error instanceof ProjectError || (error instanceof Error && error.name === 'SettingsError'))
     return {
       ok: false,
@@ -246,6 +261,10 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  externalEditor.onChange((change) => {
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send('textra:file:external-change', change);
+  });
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
   });
@@ -256,6 +275,42 @@ void app.whenReady().then(() => {
     version: app.getVersion(),
     platform: process.platform,
   }));
+  handle('textra:ai:settings', 0, () => gemini.settings());
+  handleRequest<'saveAIKey'>('textra:ai:key', (request) => gemini.saveKey(request));
+  handle('textra:ai:delete', 0, async () => {
+    const answer = await dialog.showMessageBox(requireWindow(), {
+      type: 'question',
+      title: 'Delete saved API key?',
+      message: 'Remove the saved Gemini API key from TeXtra?',
+      detail:
+        'Chat will need a key again. This removes the local copy; it does not revoke the key in Google AI Studio.',
+      buttons: ['Cancel', 'Delete key'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    return answer.response === 1 ? gemini.deleteKey() : null;
+  });
+  handleRequest<'setAIAutoSend'>('textra:ai:auto-send', (request) => gemini.setAutoSend(request));
+  handleRequest<'sendAIMessage'>('textra:ai:send', (request) => {
+    const requestId = request?.requestId;
+    if (
+      requestId !== undefined &&
+      (typeof requestId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(requestId))
+    )
+      throw new AIError('INVALID_ARGUMENT', 'Provide a valid chat request identifier.');
+    const receiver = requireWindow().webContents;
+    return gemini.send(
+      request,
+      requestId
+        ? (text) => {
+            if (!receiver.isDestroyed()) receiver.send('textra:ai:chunk', { requestId, text });
+          }
+        : undefined,
+    );
+  });
+  handle('textra:ai:cancel', 0, () => gemini.cancel());
+  handle('textra:ai:studio', 0, () => shell.openExternal('https://aistudio.google.com/'));
   handle('textra:preferences:get', 0, () => preferences.get());
   void preferences
     .get()
@@ -291,6 +346,7 @@ void app.whenReady().then(() => {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     requireIdleProject();
+    externalEditor.clear();
     const project = await projects.openRoot(result.filePaths[0]);
     await config
       .ensureProjectConfig(project.id)
@@ -299,22 +355,18 @@ void app.whenReady().then(() => {
   });
   handleRequest<'refreshProject'>('textra:project:refresh', (id) => projects.refreshProject(id));
   handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
-  handleRequest<'saveFile'>('textra:file:save', (request) => projects.saveFile(request));
+  handleRequest<'saveFile'>('textra:file:save', async (request) => {
+    const snapshot = await projects.saveFile(request);
+    await externalEditor.noteLocalSave(snapshot);
+    return snapshot;
+  });
   handleRequest<'createEntry'>('textra:file:create', (request) => projects.createEntry(request));
   handleRequest<'renameEntry'>('textra:file:rename', async (request) => {
     requireIdleProject();
     await projects.resolvePath(request);
-    const newPath = validateRelativePath(request.newPath);
-    const answer = await dialog.showMessageBox(requireWindow(), {
-      type: 'question',
-      title: 'Rename project entry',
-      message: `Rename “${request.path}” to “${newPath}”?`,
-      buttons: ['Cancel', 'Rename'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    if (answer.response !== 1) return null;
+    validateRelativePath(request.newPath);
+    // The renderer's named Rename action is the sole confirmation; a second
+    // native dialog makes a simple rename needlessly repetitive.
     requireIdleProject();
     return projects.renameEntry(request);
   });
@@ -339,6 +391,15 @@ void app.whenReady().then(() => {
   handleRequest<'getFileRevisions'>('textra:file:revisions', (request) =>
     projects.getFileRevisions(request),
   );
+  handleRequest<'watchExternalFile'>('textra:file:watch-external', (request) =>
+    externalEditor.watch(request),
+  );
+  handleRequest<'unwatchExternalFile'>('textra:file:unwatch-external', (request) => {
+    externalEditor.unwatch(request);
+  });
+  handleRequest<'createConflictCopy'>('textra:file:create-conflict-copy', (request) =>
+    externalEditor.createConflictCopy(request),
+  );
   handleRequest<'revealEntry'>('textra:file:reveal', async (request) => {
     shell.showItemInFolder(await projects.resolvePath(request, true));
   });
@@ -348,6 +409,7 @@ void app.whenReady().then(() => {
   handle('textra:recent:get', 0, () => projects.getRecentProjects());
   handleRequest<'openRecentProject'>('textra:recent:open', async (id) => {
     requireIdleProject();
+    externalEditor.clear();
     const project = await projects.openRecentProject(id);
     await config
       .ensureProjectConfig(project.id)
@@ -430,6 +492,25 @@ void app.whenReady().then(() => {
     url.searchParams.set('q', query.trim());
     await shell.openExternal(url.toString());
   });
+  handle('textra:help:texfaq', 1, async (value) => {
+    if (typeof value !== 'string' || value.length > 512)
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX FAQ article.');
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX FAQ article.');
+    }
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'texfaq.org' ||
+      !/^\/FAQ-[A-Za-z0-9-]+$/.test(url.pathname) ||
+      url.search ||
+      url.hash
+    )
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX FAQ article.');
+    await shell.openExternal(url.toString());
+  });
   handle('textra:clipboard:copy', 1, (text) => {
     if (typeof text !== 'string' || text.length > 512_000)
       throw new ProjectError('INVALID_ARGUMENT', 'Text is too large to copy.');
@@ -449,6 +530,9 @@ void app.whenReady().then(() => {
   });
   handle('textra:build:state', 0, () => builds.getState());
   handleRequest<'readPdf'>('textra:pdf:read', (request) => builds.readPdf(request));
+  handleRequest<'readProjectPdf'>('textra:pdf:read-project', (request) =>
+    projects.readProjectPdf(request),
+  );
   handleRequest<'syncForward'>('textra:sync:forward', (request) => builds.syncForward(request));
   handleRequest<'syncInverse'>('textra:sync:inverse', (request) => builds.syncInverse(request));
   handleRequest<'getProjectConfig'>('textra:config:get', (id) => config.getProjectConfig(id));
@@ -556,6 +640,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('will-quit', () => {
+  gemini.cancel();
+  externalEditor.clear();
   void builds.cancel();
   void texlab.stop();
 });

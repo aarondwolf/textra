@@ -165,16 +165,23 @@ export class TexlabManager {
     if (!(await this.enabled()))
       throw new ProjectError('TEXLAB_DISABLED', 'TexLab is disabled in Settings.');
     const absolute = await this.sync(request);
-    const position = this.position(request);
     switch (request.method) {
-      case 'completion':
+      case 'completion': {
+        const position = this.position(request);
         return this.service.completion(absolute, position.line, position.character);
-      case 'hover':
+      }
+      case 'hover': {
+        const position = this.position(request);
         return this.service.hover(absolute, position.line, position.character);
-      case 'definition':
+      }
+      case 'definition': {
+        const position = this.position(request);
         return this.service.definition(absolute, position.line, position.character);
-      case 'references':
+      }
+      case 'references': {
+        const position = this.position(request);
         return this.service.references(absolute, position.line, position.character);
+      }
       case 'documentSymbols':
         return this.service.documentSymbols(absolute);
       case 'foldingRanges':

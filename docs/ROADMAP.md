@@ -14,6 +14,10 @@ Each phase depends on the preceding gate. Do not describe a partial gate as comp
 | 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help                                                                        | Security review, Windows install/uninstall, release matrix                     | Planned              |
 
 Common gate: `npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.
+Owner-requested AI slice (2026-10-20): optional Gemini 3.5 Flash Lite debugging chat,
+key onboarding/settings, and Problems drafts with opt-in auto-send are implemented.
+This does not close the remaining earlier phase gates. Repository-local encrypted
+settings must migrate to global app data before public release (SECURITY.md).
 Use PowerShell commands individually if the shell does not support `&&`.
 Record blockers and exact next actions in memory; continue independent tasks when external software is unavailable.
 

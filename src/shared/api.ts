@@ -23,8 +23,18 @@ export interface Preferences {
   /** Save edited documents after the configured idle delay. Disabled by default. */
   autoSave: boolean;
   autoSaveDelayMs: number;
+  /** Detect modifications by editors and background coding agents. */
+  externalChangeDetection: boolean;
+  /** Require this quiet period before an external version is offered for comparison. */
+  externalChangeQuietPeriodMs: number;
+  /** Prefer revision polling when native watching is unreliable on synced/network drives. */
+  externalChangePollingOnly: boolean;
+  /** Open the read-only comparison after a conflict snapshot is created. */
+  openDiffAfterConflictCopy: boolean;
   /** Display Monaco's document overview minimap. */
   editorMinimap: boolean;
+  /** Show plain-language explanations for frequently encountered TeX build errors. */
+  commonProblemHelp: boolean;
   /** Controls the compact rich-text-style LaTeX formatting bar above the source editor. */
   formatToolbarVisible: boolean;
   sidebarWidth: number;
@@ -83,7 +93,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   wrap: false,
   autoSave: false,
   autoSaveDelayMs: 3000,
-  editorMinimap: false,
+  externalChangeDetection: true,
+  externalChangeQuietPeriodMs: 3000,
+  externalChangePollingOnly: false,
+  openDiffAfterConflictCopy: false,
+  editorMinimap: true,
+  commonProblemHelp: true,
   formatToolbarVisible: true,
   sidebarWidth: 226,
   texlabEnabled: true,
@@ -133,6 +148,23 @@ export interface RenameRequest extends FileRef {
 export interface FileRevision {
   path: string;
   revision: string | null;
+}
+/** A file monitored by the main process for changes made outside TeXtra. */
+export interface ExternalWatchRequest extends FileRef {
+  /** Some network and sync folders report unreliable native watch events. */
+  pollingOnly?: boolean;
+  /** The unchanged interval required before a changed file is safe to compare. */
+  quietPeriodMs?: number;
+}
+export interface ExternalWatchState extends FileRef {
+  state: 'watching' | 'changing' | 'stable' | 'deleted' | 'renamed';
+  revision: string | null;
+  observedAt: number;
+}
+export type ExternalFileChangeEvent = ExternalWatchState;
+export interface CreateConflictCopyRequest extends FileRef {
+  /** The preserved in-memory editor buffer. It is never written over the source file. */
+  content: string;
 }
 export interface RecentProject {
   id: string;
@@ -259,7 +291,29 @@ export interface SourceLocation {
   line: number;
   column: number;
 }
+export interface AISettings {
+  configured: boolean;
+  autoSendProblems: boolean;
+}
+export interface AIMessage {
+  role: 'user' | 'model';
+  text: string;
+}
+export interface AIResponseChunk {
+  requestId: string;
+  /** Cumulative response text, bounded to 32,000 characters. */
+  text: string;
+}
 export interface TextraAPI {
+  getAISettings(): Promise<Result<AISettings>>;
+  saveAIKey(request: { apiKey: string }): Promise<Result<AISettings>>;
+  /** Confirms locally before clearing the single saved credential; null means cancelled. */
+  deleteAIKey(): Promise<Result<AISettings | null>>;
+  setAIAutoSend(request: { autoSendProblems: boolean }): Promise<Result<AISettings>>;
+  sendAIMessage(request: { messages: AIMessage[]; requestId?: string }): Promise<Result<string>>;
+  onAIResponseChunk(listener: (chunk: AIResponseChunk) => void): () => void;
+  cancelAIMessage(): Promise<Result<void>>;
+  openAIStudio(): Promise<Result<void>>;
   getAppInfo(): Promise<Result<AppInfo>>;
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;
@@ -274,6 +328,12 @@ export interface TextraAPI {
     projectId: string;
     paths: string[];
   }): Promise<Result<FileRevision[]>>;
+  watchExternalFile(request: ExternalWatchRequest): Promise<Result<ExternalWatchState>>;
+  unwatchExternalFile(request: FileRef): Promise<Result<void>>;
+  /** Subscribe to state changes for files registered with watchExternalFile. */
+  onExternalFileChange(listener: (event: ExternalFileChangeEvent) => void): () => void;
+  /** Creates a collision-safe sibling `*.CONFLICTED_timestamp.tex` snapshot. */
+  createConflictCopy(request: CreateConflictCopyRequest): Promise<Result<FileSnapshot>>;
   revealEntry(request: FileRef): Promise<Result<void>>;
   copyEntryPath(request: FileRef & { relative: boolean }): Promise<Result<void>>;
   openInCode(request: FileRef): Promise<Result<void>>;
@@ -288,6 +348,9 @@ export interface TextraAPI {
   cancelBuild(): Promise<Result<void>>;
   getBuildState(): Promise<Result<BuildState>>;
   readPdf(request: FileRef): Promise<Result<Uint8Array>>;
+  readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;
+  /** Reads an explicit, validated PDF selected from the active project. */
+  readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;
   syncForward(request: SyncForwardRequest): Promise<Result<PdfLocation>>;
   syncInverse(request: SyncInverseRequest): Promise<Result<SourceLocation>>;
   getProjectConfig(projectId: string): Promise<Result<ProjectConfig>>;
@@ -311,6 +374,7 @@ export interface TextraAPI {
   lintLatex(request: LintRequest): Promise<Result<Diagnostic[]>>;
   formatLatex(request: FormatRequest): Promise<Result<FormatResult>>;
   openStackExchangeSearch(query: string): Promise<Result<void>>;
+  openTexFaqHelp(url: string): Promise<Result<void>>;
   copyText(text: string): Promise<Result<void>>;
 }
 declare global {

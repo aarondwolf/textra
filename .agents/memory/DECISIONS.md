@@ -1,5 +1,11 @@
 # Decisions
 
+- 2026-10-20: Owner requests Gemini debugging chat before remaining phase gates.
+  Use exclusively gemini-3.5-flash-lite and official @google/genai; no AI file/process
+  tools. Temporary repository-local config is encrypted with safeStorage already,
+  refuses plaintext backends, and must migrate to userData before release. Ask in
+  Chat drafts are bounded to five source lines either side; auto-send is off by default.
+
 - 2026-10-18: Canonical project settings are .textra/settings.json with JSONC support
   and preserved legacy project.json migration. Recipe/tool keys use LaTeX Workshop
   syntax; main keeps a positive execution allowlist. Builder and JSON view share

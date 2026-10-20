@@ -23,6 +23,7 @@ const optionalKeys = new Set([
   'autoSave',
   'autoSaveDelayMs',
   'editorMinimap',
+  'commonProblemHelp',
   'formatToolbarVisible',
   'sidebarWidth',
   'texlabEnabled',
@@ -35,6 +36,11 @@ const optionalKeys = new Set([
   'tabCloseButtons',
   'previewTabs',
   'recentCommands',
+  // External-change protection was introduced after the original preferences schema.
+  'externalChangeDetection',
+  'externalChangeQuietPeriodMs',
+  'externalChangePollingOnly',
+  'openDiffAfterConflictCopy',
 ]);
 
 const themeNames = new Set(['dark', 'light', 'midnight', 'forest', 'ocean', 'rose', 'sand']);
@@ -154,6 +160,8 @@ export function validatePreferences(value: unknown): Preferences {
         candidate.autoSaveDelayMs < 1000 ||
         candidate.autoSaveDelayMs > 120_000)) ||
     (Object.hasOwn(candidate, 'editorMinimap') && typeof candidate.editorMinimap !== 'boolean') ||
+    (Object.hasOwn(candidate, 'commonProblemHelp') &&
+      typeof candidate.commonProblemHelp !== 'boolean') ||
     (Object.hasOwn(candidate, 'formatToolbarVisible') &&
       typeof candidate.formatToolbarVisible !== 'boolean') ||
     (Object.hasOwn(candidate, 'sidebarWidth') &&
@@ -170,7 +178,18 @@ export function validatePreferences(value: unknown): Preferences {
     (Object.hasOwn(candidate, 'tabCloseButtons') &&
       candidate.tabCloseButtons !== 'always' &&
       candidate.tabCloseButtons !== 'hover') ||
-    (Object.hasOwn(candidate, 'previewTabs') && typeof candidate.previewTabs !== 'boolean')
+    (Object.hasOwn(candidate, 'previewTabs') && typeof candidate.previewTabs !== 'boolean') ||
+    (Object.hasOwn(candidate, 'externalChangeDetection') &&
+      typeof candidate.externalChangeDetection !== 'boolean') ||
+    (Object.hasOwn(candidate, 'externalChangeQuietPeriodMs') &&
+      (typeof candidate.externalChangeQuietPeriodMs !== 'number' ||
+        !Number.isInteger(candidate.externalChangeQuietPeriodMs) ||
+        candidate.externalChangeQuietPeriodMs < 2_000 ||
+        candidate.externalChangeQuietPeriodMs > 5_000)) ||
+    (Object.hasOwn(candidate, 'externalChangePollingOnly') &&
+      typeof candidate.externalChangePollingOnly !== 'boolean') ||
+    (Object.hasOwn(candidate, 'openDiffAfterConflictCopy') &&
+      typeof candidate.openDiffAfterConflictCopy !== 'boolean')
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
@@ -189,6 +208,8 @@ export function validatePreferences(value: unknown): Preferences {
     autoSave: (candidate.autoSave ?? DEFAULT_PREFERENCES.autoSave) as boolean,
     autoSaveDelayMs: (candidate.autoSaveDelayMs ?? DEFAULT_PREFERENCES.autoSaveDelayMs) as number,
     editorMinimap: (candidate.editorMinimap ?? DEFAULT_PREFERENCES.editorMinimap) as boolean,
+    commonProblemHelp: (candidate.commonProblemHelp ??
+      DEFAULT_PREFERENCES.commonProblemHelp) as boolean,
     formatToolbarVisible: (candidate.formatToolbarVisible ??
       DEFAULT_PREFERENCES.formatToolbarVisible) as boolean,
     sidebarWidth: (candidate.sidebarWidth ?? DEFAULT_PREFERENCES.sidebarWidth) as number,
@@ -203,6 +224,14 @@ export function validatePreferences(value: unknown): Preferences {
     tabCloseButtons: (candidate.tabCloseButtons ??
       DEFAULT_PREFERENCES.tabCloseButtons) as Preferences['tabCloseButtons'],
     previewTabs: (candidate.previewTabs ?? DEFAULT_PREFERENCES.previewTabs) as boolean,
+    externalChangeDetection: (candidate.externalChangeDetection ??
+      DEFAULT_PREFERENCES.externalChangeDetection) as boolean,
+    externalChangeQuietPeriodMs: (candidate.externalChangeQuietPeriodMs ??
+      DEFAULT_PREFERENCES.externalChangeQuietPeriodMs) as number,
+    externalChangePollingOnly: (candidate.externalChangePollingOnly ??
+      DEFAULT_PREFERENCES.externalChangePollingOnly) as boolean,
+    openDiffAfterConflictCopy: (candidate.openDiffAfterConflictCopy ??
+      DEFAULT_PREFERENCES.openDiffAfterConflictCopy) as boolean,
     recentCommands: validateRecentCommands(candidate.recentCommands),
   };
 }

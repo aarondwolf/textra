@@ -13,37 +13,47 @@
 
 \maketitle
 
-This is a simple test document. Edit the text and compile it in TeXtra to check that the editor and PDF preview are working.
-
 \begin{itemize}
-  \item Test
-  \item Test 2
+	\item Item
+\end{itemize}
+
+This is a simple test document. Edit the text and compile it in TeXtra to check that the editor and PDF preview are working.
+	
+\begin{itemize}
+	\item Test
+	\item Test 2
 \end{itemize}
 
 \section{Section}
 Lorem ipsum dolor sit amet.
 
+Another.
+
 \subsection{Subsection}
 
 \begin{table}[htbp]
-  \centering
-  \caption{}
-  \label{tab:}
-  \begin{tabular}{lcc}
-    \toprule
-    Variable & (1) & (2) \\
-    \midrule
-    A & 0.00 & 0.00 \\
-    B & 0.00 & 0.00 \\
-    \bottomrule
-  \end{tabular}
+	\centering
+	\caption{}\label{tab:tab1}
+	\begin{tabular}{lcc}
+		\toprule
+		Variable & (1)  & (2)  \\
+		\midrule
+		A        & 0.00 & 0.00 \\
+		B        & 0.00 & 0.00 \\
+		\bottomrule
+	\end{tabular}
 \end{table}
 
 
 \begin{equation}
-  Y = aX + b + \varepsilon \label{eq:slope}
+	Y = aX + b + \varepsilon \label{eq:slope}
 \end{equation}
 
-Reference equation \eqref{eq:slope}.
+% TODO: description
+% FIXME: Something
+
+
+Reference equation~\eqref{eq:slope}.
+
 
 \end{document}

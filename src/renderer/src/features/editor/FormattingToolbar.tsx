@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   CaretDown,
+  EyeSlash,
   ImageSquare,
   ListBullets,
   ListNumbers,
@@ -20,8 +21,22 @@ function dispatch(request: FormatRequest): void {
   window.dispatchEvent(new CustomEvent<FormatRequest>('textra:format-source', { detail: request }));
 }
 
-export default function FormattingToolbar({ disabled }: { disabled: boolean }) {
+export default function FormattingToolbar({
+  disabled,
+  onHide,
+}: {
+  disabled: boolean;
+  onHide: () => void;
+}) {
   const [headingMenuOpen, setHeadingMenuOpen] = useState(false);
+  const closeMenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelCloseMenu = () => {
+    if (closeMenuTimer.current) clearTimeout(closeMenuTimer.current);
+  };
+  const scheduleCloseMenu = () => {
+    cancelCloseMenu();
+    closeMenuTimer.current = setTimeout(() => setHeadingMenuOpen(false), 140);
+  };
   return (
     <div className="editor-format-toolbar" role="toolbar" aria-label="LaTeX formatting">
       <button
@@ -89,7 +104,8 @@ export default function FormattingToolbar({ disabled }: { disabled: boolean }) {
       <span className="editor-format-separator" aria-hidden="true" />
       <div
         className="editor-format-heading"
-        onMouseLeave={() => setHeadingMenuOpen(false)}
+        onMouseEnter={cancelCloseMenu}
+        onMouseLeave={scheduleCloseMenu}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setHeadingMenuOpen(false);
         }}
@@ -132,6 +148,17 @@ export default function FormattingToolbar({ disabled }: { disabled: boolean }) {
           </div>
         )}
       </div>
+      <span className="editor-format-spacer" />
+      <button
+        type="button"
+        className="editor-format-hide"
+        aria-label="Hide formatting toolbar"
+        title="Hide formatting toolbar"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onHide}
+      >
+        <EyeSlash size={15} aria-hidden="true" />
+      </button>
     </div>
   );
 }

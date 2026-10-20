@@ -27,6 +27,7 @@ function document(path = 'main.tex'): OpenDocument {
     savedContent: 'original',
     revision: 'old',
     conflict: false,
+    externalState: null,
   };
 }
 function deferred<T>() {

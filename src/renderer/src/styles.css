@@ -266,24 +266,52 @@
   border-color: var(--border);
 }
 .editor-format-toolbar > button:disabled,
-.editor-format-toolbar > select:disabled {
+.editor-format-heading-trigger:disabled {
   opacity: 0.45;
 }
-.editor-format-toolbar > select {
+.editor-format-heading {
+  position: relative;
+}
+.editor-format-heading-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   height: 24px;
-  max-width: 92px;
-  padding: 1px 19px 1px 7px;
+  padding: 0 7px;
   border: 1px solid transparent;
   border-radius: 5px;
   color: var(--muted);
-  background: transparent;
   font-size: 11px;
 }
-.editor-format-toolbar > select:hover:not(:disabled),
-.editor-format-toolbar > select:focus-visible {
+.editor-format-heading-trigger:hover:not(:disabled),
+.editor-format-heading-trigger:focus-visible {
   border-color: var(--border);
   background: var(--hover);
   color: var(--text);
+}
+.editor-format-heading-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 128px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0004;
+}
+.editor-format-heading-menu button {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+}
+.editor-format-heading-menu button:hover,
+.editor-format-heading-menu button:focus-visible {
+  background: var(--hover);
 }
 .editor-format-separator {
   width: 1px;

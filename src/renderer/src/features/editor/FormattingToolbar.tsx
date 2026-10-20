@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import {
+  CaretDown,
   ImageSquare,
   ListBullets,
   ListNumbers,
@@ -19,6 +21,7 @@ function dispatch(request: FormatRequest): void {
 }
 
 export default function FormattingToolbar({ disabled }: { disabled: boolean }) {
+  const [headingMenuOpen, setHeadingMenuOpen] = useState(false);
   return (
     <div className="editor-format-toolbar" role="toolbar" aria-label="LaTeX formatting">
       <button
@@ -84,24 +87,50 @@ export default function FormattingToolbar({ disabled }: { disabled: boolean }) {
         <Table size={15} />
       </button>
       <span className="editor-format-separator" aria-hidden="true" />
-      <select
-        aria-label="Heading level"
-        defaultValue=""
-        disabled={disabled}
-        onChange={(event) => {
-          const level = Number(event.target.value);
-          event.target.value = '';
-          if (level >= 1 && level <= 5)
-            dispatch({ command: 'heading', level: level as 1 | 2 | 3 | 4 | 5 });
+      <div
+        className="editor-format-heading"
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) setHeadingMenuOpen(false);
         }}
       >
-        <option value="">Heading</option>
-        <option value="1">Section</option>
-        <option value="2">Subsection</option>
-        <option value="3">Subsubsection</option>
-        <option value="4">Paragraph</option>
-        <option value="5">Subparagraph</option>
-      </select>
+        <button
+          type="button"
+          className="editor-format-heading-trigger"
+          aria-label="Insert heading"
+          aria-haspopup="menu"
+          aria-expanded={headingMenuOpen}
+          title="Insert heading"
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setHeadingMenuOpen((open) => !open)}
+        >
+          Heading <CaretDown size={11} aria-hidden="true" />
+        </button>
+        {headingMenuOpen && (
+          <div className="editor-format-heading-menu" role="menu" aria-label="Heading levels">
+            {[
+              ['Section', 1],
+              ['Subsection', 2],
+              ['Subsubsection', 3],
+              ['Paragraph', 4],
+              ['Subparagraph', 5],
+            ].map(([label, level]) => (
+              <button
+                key={label}
+                type="button"
+                role="menuitem"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  dispatch({ command: 'heading', level: level as 1 | 2 | 3 | 4 | 5 });
+                  setHeadingMenuOpen(false);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

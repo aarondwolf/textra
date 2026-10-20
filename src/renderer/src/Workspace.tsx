@@ -608,9 +608,13 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const engine = availableRecipes.some((recipe) => recipe.name === preferred)
     ? preferred
     : availableRecipes[0].name;
+  const selectedRecipeLabel =
+    BUILD_RECIPES.find((preset) => preset.value === engine)?.label ?? engine;
   const canCompile = !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
   const recipeControl = useRef<HTMLDivElement>(null);
+  const [sidebarRecipeOpen, setSidebarRecipeOpen] = useState(false);
+  const sidebarRecipeControl = useRef<HTMLDivElement>(null);
   const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
   const [headerNode, setHeaderNode] = useState<HTMLDivElement | null>(null);
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -665,6 +669,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     document.addEventListener('mousedown', dismiss);
     return () => document.removeEventListener('mousedown', dismiss);
   }, [recipeOpen]);
+  useEffect(() => {
+    if (!sidebarRecipeOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!sidebarRecipeControl.current?.contains(event.target as Node))
+        setSidebarRecipeOpen(false);
+    };
+    document.addEventListener('mousedown', dismiss);
+    return () => document.removeEventListener('mousedown', dismiss);
+  }, [sidebarRecipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
   const analysisSources = useMemo(() => {
@@ -1076,6 +1089,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       useWorkspace.setState({ build: unwrap(result) });
     });
   }
+  async function selectRecipe(recipe: string) {
+    if (!project || !activePath) return;
+    const config = unwrap(await window.textra.getProjectConfig(project.id));
+    const saved =
+      config.recipes?.[activePath] === recipe
+        ? config
+        : unwrap(
+            await window.textra.setProjectConfig({
+              projectId: project.id,
+              config: { ...config, recipes: { ...config.recipes, [activePath]: recipe } },
+              expectedConfig: config,
+            }),
+          );
+    useWorkspace.setState((state) => ({
+      projectConfig: saved,
+      recipes: { ...state.recipes, [activePath]: recipe },
+    }));
+  }
   useEffect(() => {
     const keyboard = (event: globalThis.KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -1361,9 +1392,77 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <section className="writing-section">
                   <h3 className="writing-section-title">Build</h3>
                   <p className="writing-empty">
-                    {engine}{' '}
+                    {selectedRecipeLabel}{' '}
                     {missingTool ? 'needs a configured tool.' : 'is ready for the active file.'}
                   </p>
+                  <div
+                    className="sidebar-recipe-control"
+                    ref={sidebarRecipeControl}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setSidebarRecipeOpen(false);
+                        sidebarRecipeControl.current
+                          ?.querySelector<HTMLButtonElement>(
+                            '[aria-label="Choose compile setting"]',
+                          )
+                          ?.focus();
+                      }
+                    }}
+                  >
+                    <button
+                      className="text-button sidebar-recipe-button"
+                      aria-label="Choose compile setting"
+                      aria-expanded={sidebarRecipeOpen}
+                      aria-controls="sidebar-compile-recipes"
+                      disabled={!canCompile || busy || build.running}
+                      onClick={() => {
+                        if (sidebarRecipeOpen) setSidebarRecipeOpen(false);
+                        else if (project)
+                          void run(async () => {
+                            const config = unwrap(await window.textra.getProjectConfig(project.id));
+                            useWorkspace.setState({ projectConfig: config });
+                            setSidebarRecipeOpen(true);
+                          });
+                      }}
+                    >
+                      <span>{selectedRecipeLabel}</span>
+                      <ChevronDown size={13} />
+                    </button>
+                    {sidebarRecipeOpen && (
+                      <div
+                        className="recipe-menu sidebar-recipe-menu"
+                        id="sidebar-compile-recipes"
+                        role="group"
+                        aria-label="Compile settings"
+                      >
+                        <span className="eyebrow">COMPILE SETTINGS</span>
+                        {availableRecipes.map((recipe) => (
+                          <button
+                            key={recipe.name}
+                            aria-pressed={engine === recipe.name}
+                            onClick={() => {
+                              setSidebarRecipeOpen(false);
+                              void run(() => selectRecipe(recipe.name));
+                            }}
+                          >
+                            <span>
+                              {BUILD_RECIPES.find((preset) => preset.value === recipe.name)
+                                ?.label ?? recipe.name}
+                            </span>
+                            {engine === recipe.name && <Check size={14} />}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => {
+                            setSidebarRecipeOpen(false);
+                            useUI.getState().setRecipeEditorOpen(true);
+                          }}
+                        >
+                          Create or edit settings…
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button
                     className="text-button"
                     disabled={!canCompile || busy || build.running || !!missingTool}
@@ -1977,11 +2076,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           key={recipe.name}
                           aria-pressed={engine === recipe.name}
                           onClick={() => {
-                            if (activePath)
-                              useWorkspace.setState((state) => ({
-                                recipes: { ...state.recipes, [activePath]: recipe.name },
-                              }));
                             setRecipeOpen(false);
+                            void run(() => selectRecipe(recipe.name));
                             recipeControl.current
                               ?.querySelector<HTMLButtonElement>(
                                 '[aria-label="Choose compile recipe"]',

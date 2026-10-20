@@ -146,3 +146,11 @@ show an **Install latexindent** button. It opens an allowlisted latexindent
 documentation URL via main-process external-link IPC; it does not run an
 installer or execute a shell command. Typecheck, lint, and a focused Prettier
 check pass for this slice.
+
+## Compile rail recipe controls
+
+The Compile rail has a contextual recipe chooser for the active `.tex` file.
+Selecting a recipe writes the per-document choice to project settings
+immediately. **Create or edit settings…** opens the existing recipe builder,
+which can add and edit project recipes. Typecheck, lint, and focused Prettier
+checks pass.

@@ -1413,6 +1413,24 @@ h1 > span {
   color: var(--accent);
 }
 
+.sidebar-recipe-control {
+  position: relative;
+  width: 100%;
+}
+.sidebar-recipe-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.sidebar-recipe-menu {
+  left: 0;
+  right: auto;
+  min-width: 100%;
+}
+
 .activity-rail {
   width: 43px;
   flex-shrink: 0;

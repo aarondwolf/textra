@@ -80,6 +80,7 @@ import SnippetPalette from './features/snippets/SnippetPalette';
 import { DocumentView } from './features/document/DocumentView';
 import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import { WritingPanel } from './features/writing/WritingPanel';
+import { CompileRecipeEditor } from './features/compile/CompileRecipeEditor';
 import { parseBibliography } from '../../shared/bibliography';
 import {
   analyzeLatexDocument,
@@ -368,6 +369,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     recipes,
     navigation,
     source,
+    projectConfig,
     error,
     busy,
   } = state;
@@ -1471,6 +1473,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     Compile active document
                   </button>
                 </section>
+                {project && (
+                  <CompileRecipeEditor
+                    activePath={activePath}
+                    config={projectConfig}
+                    disabled={!canCompile || busy || build.running}
+                    projectId={project.id}
+                    recipeName={engine}
+                    onSaved={(config, savedRecipeName) => {
+                      useWorkspace.setState((state) => ({
+                        projectConfig: config,
+                        recipes: activePath
+                          ? { ...state.recipes, [activePath]: savedRecipeName }
+                          : state.recipes,
+                      }));
+                    }}
+                  />
+                )}
                 <section className="writing-section">
                   <h3 className="writing-section-title">Generated files</h3>
                   <p className="writing-empty">

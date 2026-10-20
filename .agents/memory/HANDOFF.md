@@ -8,7 +8,7 @@ SECURITY, CURRENT_STATE, and DECISIONS before working. Preserve the user-owned
 
 ## Current checkpoint
 
-- HEAD: `1fae854 feat: bundle TexLab language tooling`
+- HEAD: `e8044b0 fix: consume environment completion auto-close`
 - Phase 1 is committed. The owner manually verified XeLaTeX and LuaLaTeX.
   SyncTeX UI verification, macOS/Linux, and crop/rotation fixtures remain open.
 - Phase 2 has offline writing analysis, reference checks, ChkTeX integration,
@@ -18,6 +18,19 @@ SECURITY, CURRENT_STATE, and DECISIONS before working. Preserve the user-owned
 Recent commits: `320d42a` writing diagnostics, `682ffe6` Problems/saving,
 `901d39f` welcome recents, `38b7f4c` optional language tools, `98edcb5` Copy
 Prompt feedback, and `1fae854` TexLab.
+
+## Compile rail recipe editor (working tree)
+
+The Compile rail now includes a compact editor for the selected active-document
+recipe. It lets users rename and reorder recipe steps, add existing tools, create
+a supported tool, and edit each used tool's name, program, arguments, working
+directory, and allowed TeX environment overrides. It also exposes output and
+auxiliary directories and the project default recipe. Changes remain drafts until
+**Overwrite recipe** or **Save as new** writes them through the existing
+compare-before-save project-config bridge; both the Compile rail and Settings
+therefore share the same recipe data and validation. The working tree change is
+not committed yet. `npm run format:check`, `npm run typecheck`, and `npm run lint`
+pass for this slice.
 
 ## Problems and writing UI
 

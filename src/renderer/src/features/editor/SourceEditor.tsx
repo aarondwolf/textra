@@ -621,11 +621,17 @@ export function SourceEditor({
       const match = /\\(begin|end)\s*\{([^}]*)$/.exec(before);
       if (!match) return [];
       const [, command, partial] = match;
+      // Monaco inserts a matching `}` as soon as the opening brace is typed. A begin
+      // completion supplies its own brace and full closing environment, so consume that
+      // pending auto-close instead of leaving it after the generated `\\end{...}`.
+      const pendingAutoClose =
+        command === 'begin' &&
+        model.getLineContent(position.lineNumber).charAt(position.column - 1) === '}';
       const range = new monaco.Range(
         position.lineNumber,
         position.column - partial.length,
         position.lineNumber,
-        position.column,
+        position.column + (pendingAutoClose ? 1 : 0),
       );
       const open = unmatchedEnvironments(before);
       const candidates =

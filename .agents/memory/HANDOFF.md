@@ -165,3 +165,10 @@ runner cannot create hard links or junctions and its MiKTeX child process cannot
 read registry configuration. The native app logs `application-ready` but exits
 before the automation service can bind it. Run `docs/TESTING.md` on the owner’s
 desktop before marking the Phase 2 gate complete.
+
+## Environment completion brace fix
+
+Monaco creates a pending `}` when a user types the opening brace in
+`\\begin{…}`. The local begin-environment completion now replaces that pending
+character along with the partial environment name, preventing a stray `}` after
+the generated `\\end{…}`. Typecheck, lint, and focused Prettier checks pass.

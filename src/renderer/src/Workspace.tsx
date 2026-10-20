@@ -31,6 +31,7 @@ import {
   FileText,
   Folder,
   History,
+  Hammer,
   FolderOpen,
   FolderPlus,
   LocateFixed,
@@ -396,7 +397,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [creating, setCreating] = useState<{ kind: 'file' | 'directory'; parent: string } | null>(
     null,
   );
-  type SidebarView = 'explorer' | 'document' | 'writing' | 'equations' | 'snippets' | 'recents';
+  type SidebarView =
+    'explorer' | 'document' | 'writing' | 'equations' | 'snippets' | 'compile' | 'recents';
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
   const [focusMode, setFocusMode] = useState(false);
   const [projectSources, setProjectSources] = useState<Record<string, string>>({});
@@ -1203,6 +1205,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             </span>
           </button>
           <button
+            className="icon-button activity-view"
+            aria-label="Compile settings"
+            title="Compile settings and generated files"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'compile'}
+            onClick={() => selectSidebarView('compile')}
+          >
+            <Hammer
+              size={19}
+              weight={preferences.sidebarVisible && sidebarView === 'compile' ? 'duotone' : 'light'}
+            />
+          </button>
+          <button
             className="icon-button"
             aria-label="Command palette"
             title="Search commands (Ctrl+K)"
@@ -1345,6 +1359,54 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 </div>
                 <EquationPalette canInsert={!!active} />
               </>
+            ) : sidebarView === 'compile' ? (
+              <div className="writing-panel compile-sidebar">
+                <div className="sidebar-title writing-title">
+                  <span className="sidebar-heading">Compile</span>
+                </div>
+                <section className="writing-section">
+                  <h3 className="writing-section-title">Build</h3>
+                  <p className="writing-empty">
+                    {engine}{' '}
+                    {missingTool ? 'needs a configured tool.' : 'is ready for the active file.'}
+                  </p>
+                  <button
+                    className="text-button"
+                    disabled={!canCompile || busy || build.running || !!missingTool}
+                    onClick={() => void compile()}
+                  >
+                    Compile active document
+                  </button>
+                </section>
+                <section className="writing-section">
+                  <h3 className="writing-section-title">Generated files</h3>
+                  <p className="writing-empty">
+                    Clean only TeXtra&apos;s managed build/textra folder. Custom output folders
+                    stay.
+                  </p>
+                  <button
+                    className="text-button"
+                    disabled={!project || busy || build.running}
+                    onClick={() =>
+                      void run(async () => {
+                        if (!project) return;
+                        const result = await window.textra.cleanProjectBuildArtifacts(project.id);
+                        if (!result.ok) throw new Error(result.error);
+                      })
+                    }
+                  >
+                    Clean generated files…
+                  </button>
+                </section>
+                <section className="writing-section">
+                  <h3 className="writing-section-title">Document formatting</h3>
+                  <p className="writing-empty">
+                    {tools.some((tool) => tool.name === 'latexindent' && tool.path)
+                      ? 'latexindent is available. Use Format document in the editor menu to preview changes.'
+                      : 'latexindent is not available. Configure it in Settings if you install it.'}
+                  </p>
+                </section>
+              </div>
             ) : (
               <>
                 <div className="sidebar-title">

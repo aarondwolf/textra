@@ -25,6 +25,7 @@ export interface WritingSummary {
   equations: number;
   figures: number;
   tables: number;
+  citations: number;
   outline: WritingOutlineItem[];
   todos: WritingTodoItem[];
 }
@@ -110,6 +111,10 @@ export function WritingPanel({
           <div>
             <dt>Tables</dt>
             <dd>{formatNumber(summary.tables)}</dd>
+          </div>
+          <div>
+            <dt>Citations</dt>
+            <dd>{formatNumber(summary.citations)}</dd>
           </div>
         </dl>
       </section>

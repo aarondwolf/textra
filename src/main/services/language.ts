@@ -2,7 +2,13 @@ import { spawn } from 'node:child_process';
 import { access, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { basename, delimiter, isAbsolute, join } from 'node:path';
-import type { Diagnostic, FormatResult, LanguageToolStatus, LintRequest } from '../../shared/api';
+import type {
+  Diagnostic,
+  FormatResult,
+  LanguageToolStatus,
+  LintRequest,
+  Preferences,
+} from '../../shared/api';
 import { ProjectError, type ProjectService } from './projects';
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
@@ -100,7 +106,10 @@ async function runProcess(
 }
 
 export class LanguageService {
-  constructor(private readonly projects: ProjectService) {}
+  constructor(
+    private readonly projects: ProjectService,
+    private readonly getPreferences: () => Promise<Preferences>,
+  ) {}
 
   async status(): Promise<LanguageToolStatus> {
     const [texlab, chktex, latexindent, latexindentPerl] = await Promise.all([
@@ -120,6 +129,8 @@ export class LanguageService {
     const target = await this.projects.resolvePath(request);
     if (!/\.tex$/i.test(request.path))
       throw new ProjectError('INVALID_ARGUMENT', 'ChkTeX only lints .tex files.');
+    const preferences = await this.getPreferences();
+    if (!preferences.chktexEnabled) return [];
     const executable = await findLanguageTool('chktex');
     if (!executable) return [];
     const root = this.projects.getRoot(request.projectId);
@@ -131,7 +142,14 @@ export class LanguageService {
     // ChkTeX uses a nonzero result for some malformed inputs but still emits useful diagnostics.
     void result.code;
     void result.stderr;
-    return parseChktexOutput(result.stdout, request.path);
+    return parseChktexOutput(result.stdout, request.path).flatMap((diagnostic) => {
+      const rule = Number(diagnostic.code);
+      if (Number.isInteger(rule) && preferences.chktexIgnoredRules.includes(rule)) return [];
+      const severity = diagnostic.code
+        ? preferences.chktexRuleSeverities[diagnostic.code]
+        : undefined;
+      return severity ? [{ ...diagnostic, severity }] : [diagnostic];
+    });
   }
 
   async format(request: {

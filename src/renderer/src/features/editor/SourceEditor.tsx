@@ -17,6 +17,7 @@ import 'monaco-editor/editor/contrib/hover/browser/hoverContribution.js';
 import 'monaco-editor/editor/contrib/inlayHints/browser/inlayHints.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
+import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
 import { editDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
 
@@ -387,6 +388,7 @@ export function SourceEditor({
   wrap,
   readOnly,
   formatToolbarVisible,
+  bibliographyEntries,
   texlab,
 }: {
   documents: OpenDocument[];
@@ -397,6 +399,7 @@ export function SourceEditor({
   wrap: boolean;
   readOnly: boolean;
   formatToolbarVisible: boolean;
+  bibliographyEntries: readonly BibliographyEntry[];
   texlab?: TexlabEditorAdapter;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -406,12 +409,16 @@ export function SourceEditor({
   const current = useRef<string | null>(null);
   const documentsRef = useRef(documents);
   const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
+  const bibliographyEntriesRef = useRef(bibliographyEntries);
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
   useEffect(() => {
     texlabRef.current = texlab;
   }, [texlab]);
+  useEffect(() => {
+    bibliographyEntriesRef.current = bibliographyEntries;
+  }, [bibliographyEntries]);
   useEffect(() => {
     const instance = monaco.editor.create(container.current!, {
       ariaLabel: 'LaTeX source editor',
@@ -571,7 +578,19 @@ export function SourceEditor({
       const citations = documentsRef.current.flatMap((document) =>
         analyzeLatexDocument(document.content).citations.map((citation) => citation.value),
       );
-      const values = /cite/i.test(match[1]) ? citations : labels.map((label) => label.value);
+      const isCitation = /cite/i.test(match[1]);
+      const suggestions = isCitation
+        ? [
+            ...bibliographyEntriesRef.current.map((entry) => ({
+              value: entry.key,
+              detail: bibliographyDetail(entry),
+            })),
+            ...citations.map((value) => ({
+              value,
+              detail: 'Citation key already used in this project',
+            })),
+          ]
+        : labels.map((label) => ({ value: label.value, detail: `Label in ${label.path}` }));
       const word = model.getWordUntilPosition(position);
       const range = new monaco.Range(
         position.lineNumber,
@@ -579,11 +598,13 @@ export function SourceEditor({
         position.lineNumber,
         word.endColumn,
       );
-      return [...new Set(values)].map((value) => ({
-        label: value,
+      return [
+        ...new Map(suggestions.map((suggestion) => [suggestion.value, suggestion])).values(),
+      ].map((suggestion) => ({
+        label: suggestion.value,
         kind: monaco.languages.CompletionItemKind.Reference,
-        insertText: value,
-        detail: /cite/i.test(match[1]) ? 'Citation key' : 'LaTeX label',
+        insertText: suggestion.value,
+        detail: suggestion.detail,
         range,
       }));
     };

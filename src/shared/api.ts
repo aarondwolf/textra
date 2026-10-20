@@ -1,6 +1,8 @@
 import type { RecipeSettings } from './recipes';
 export const PRODUCT_NAME = 'TeXtra';
 export type Theme = 'dark' | 'light';
+export type ChktexRunMode = 'save' | 'live';
+export type DiagnosticSeverity = Diagnostic['severity'];
 export interface AppInfo {
   name: string;
   version: string;
@@ -21,6 +23,14 @@ export interface Preferences {
   sidebarWidth: number;
   /** TexLab is bundled and enabled by default; users may opt out of enhanced language tooling. */
   texlabEnabled: boolean;
+  /** ChkTeX remains optional because its style rules vary across projects. */
+  chktexEnabled: boolean;
+  /** Run ChkTeX after saving, or let the editor schedule debounced checks while typing. */
+  chktexRunMode: ChktexRunMode;
+  /** ChkTeX warning codes that should not be reported for this user. */
+  chktexIgnoredRules: number[];
+  /** Severity overrides keyed by a numeric ChkTeX warning code. */
+  chktexRuleSeverities: Record<string, DiagnosticSeverity>;
   /** Optional absolute executable overrides keyed by TeX tool name. Not secrets. */
   toolPaths: Partial<Record<ConfigurableTool, string>>;
 }
@@ -49,6 +59,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   formatToolbarVisible: true,
   sidebarWidth: 226,
   texlabEnabled: true,
+  chktexEnabled: true,
+  chktexRunMode: 'save',
+  chktexIgnoredRules: [],
+  chktexRuleSeverities: {},
   toolPaths: {},
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
@@ -175,6 +189,10 @@ export interface FormatResult {
   content: string;
   formatter: 'latexindent';
 }
+export interface BuildArtifactCleanupResult {
+  /** False means the TeXtra-managed build folder was already absent. */
+  removed: boolean;
+}
 export interface BuildState {
   running: boolean;
   log: string;
@@ -246,6 +264,8 @@ export interface TextraAPI {
     config: ProjectConfig;
     expectedConfig?: ProjectConfig;
   }): Promise<Result<ProjectConfig>>;
+  /** Removes only the TeXtra-managed build/textra folder after native confirmation. */
+  cleanProjectBuildArtifacts(projectId: string): Promise<Result<BuildArtifactCleanupResult>>;
   exportSettings(): Promise<Result<boolean>>;
   importSettings(): Promise<Result<Preferences | null>>;
   openSetupLink(target: SetupLink): Promise<Result<void>>;

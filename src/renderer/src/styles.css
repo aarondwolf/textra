@@ -1868,40 +1868,82 @@ h1 > span {
   display: none;
 }
 
-/* Themed drop-downs. The :not(#select) term only raises specificity above the dialog
-   rules that set a flat box. The open list itself is drawn by Chromium, so its corner
-   rounding follows the operating system; colors follow the theme. */
-:is(.setup-dialog, .recipe-dialog, .pdf-controls) select:not(#select) {
+/* Dropdown controls use the same raised surface as contextual menus. Chromium owns
+   the open native list, but the trigger and its options remain theme-aware. */
+:is(
+    .editor-toolbar,
+    .editor-format-toolbar,
+    .editor-options-menu,
+    .setup-dialog,
+    .recipe-dialog,
+    .pdf-controls,
+    .problems-filter
+  )
+  select {
   appearance: none;
-  padding: 7px 30px 7px 11px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-surface);
   color: var(--text);
-  background-color: var(--bg);
+  background-color: var(--surface);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23979c9e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.16);
   cursor: pointer;
 }
-:is(.setup-dialog, .recipe-dialog, .pdf-controls) select:not(#select):hover {
+:is(
+    .editor-toolbar,
+    .editor-format-toolbar,
+    .editor-options-menu,
+    .setup-dialog,
+    .recipe-dialog,
+    .pdf-controls,
+    .problems-filter
+  )
+  select:hover {
   border-color: var(--faint);
+  background-color: var(--raised);
 }
-:is(.setup-dialog, .recipe-dialog, .pdf-controls) select:not(#select):focus-visible {
+:is(
+    .editor-toolbar,
+    .editor-format-toolbar,
+    .editor-options-menu,
+    .setup-dialog,
+    .recipe-dialog,
+    .pdf-controls,
+    .problems-filter
+  )
+  select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
-.setup-dialog select:not(#select) {
+:is(.setup-dialog, .recipe-dialog) select {
+  padding: 7px 30px 7px 11px;
+}
+.setup-dialog select {
   width: auto;
   min-width: 200px;
   max-width: 100%;
 }
-.pdf-controls select:not(#select) {
+.pdf-controls select {
   padding: 3px 24px 3px 8px;
   background-position: right 7px center;
+}
+.problems-filter select {
+  padding: 4px 28px 4px 8px;
+  font-size: 10px;
 }
 select option {
   color: var(--text);
   background: var(--raised);
+}
+
+/* Menus opened from compact controls share the context-menu surface. */
+:is(.recipe-menu, .preview-tabs-menu, .file-menu, .editor-options-menu) {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0004;
 }
 
 /* Sidebar identity: serif sentence-case headings and pill-shaped selection */

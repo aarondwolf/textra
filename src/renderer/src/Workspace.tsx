@@ -79,6 +79,7 @@ import SnippetPalette from './features/snippets/SnippetPalette';
 import { DocumentView } from './features/document/DocumentView';
 import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import { WritingPanel } from './features/writing/WritingPanel';
+import { parseBibliography } from '../../shared/bibliography';
 import {
   analyzeLatexDocument,
   extractPromptContext,
@@ -510,7 +511,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     }
     let cancelled = false;
     const texFiles = project.files
-      .filter((file) => file.kind === 'file' && /\.tex$/i.test(file.path))
+      .filter((file) => file.kind === 'file' && /\.(?:tex|bib)$/i.test(file.path))
       .slice(0, 250);
     void Promise.all(
       texFiles.map(async (file) => {
@@ -667,9 +668,16 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const analysisSources = useMemo(() => {
     const next = { ...projectSources };
     for (const document of documents)
-      if (/\.tex$/i.test(document.path)) next[document.path] = document.content;
+      if (/\.(?:tex|bib)$/i.test(document.path)) next[document.path] = document.content;
     return next;
   }, [documents, projectSources]);
+  const bibliographyEntries = useMemo(
+    () =>
+      Object.entries(analysisSources)
+        .filter(([path]) => /\.bib$/i.test(path))
+        .flatMap(([, content]) => parseBibliography(content)),
+    [analysisSources],
+  );
   const documentAnalysis = useMemo(
     () => (active && /\.tex$/i.test(active.path) ? analyzeLatexDocument(active.content) : null),
     [active],
@@ -679,6 +687,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     const references: Array<SourceOccurrence & { file: string }> = [];
     const graphics: Array<SourceOccurrence & { file: string }> = [];
     for (const [path, content] of Object.entries(analysisSources)) {
+      if (!/\.tex$/i.test(path)) continue;
       const analysis = analyzeLatexDocument(content);
       labels.push(...analysis.labels.map((item) => ({ ...item, file: path })));
       references.push(...analysis.references.map((item) => ({ ...item, file: path })));
@@ -950,12 +959,50 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }
   async function saveAndLint(path: string) {
     const saved = await saveDocument(path);
-    if (saved)
+    if (saved && preferences.chktexEnabled && preferences.chktexRunMode === 'save')
       void lintDocument(path).catch(() => {
         // Linting is optional and must never make Ctrl+S look like a failed save.
       });
     return saved;
   }
+  useEffect(() => {
+    if (
+      !project ||
+      !active ||
+      !/\.tex$/i.test(active.path) ||
+      !preferences.chktexEnabled ||
+      preferences.chktexRunMode !== 'live'
+    )
+      return;
+    const projectId = project.id;
+    const path = active.path;
+    const timer = window.setTimeout(() => {
+      void window.textra
+        .lintLatex({ projectId, path })
+        .then((result) => {
+          if (!result.ok) {
+            if (result.code !== 'TOOL_MISSING') showError(result.error);
+            return;
+          }
+          setLintDiagnostics((previous) => [
+            ...previous.filter(
+              (diagnostic) => diagnostic.source !== 'chktex' || diagnostic.file !== path,
+            ),
+            ...result.value,
+          ]);
+        })
+        .catch(() => {
+          // Live linting is advisory and must never interrupt typing.
+        });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    active?.content,
+    active?.path,
+    preferences.chktexEnabled,
+    preferences.chktexRunMode,
+    project,
+  ]);
   async function formatActive() {
     if (!project || !active || !/\.tex$/i.test(active.path)) return;
     const result = await window.textra.formatLatex({
@@ -1201,6 +1248,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   equations: documentAnalysis?.counts.equations ?? 0,
                   figures: documentAnalysis?.counts.figures ?? 0,
                   tables: documentAnalysis?.counts.tables ?? 0,
+                  citations: documentAnalysis?.counts.citations ?? 0,
                   outline: (documentAnalysis?.outline ?? []).map((item, index) => ({
                     id: `${item.line}:${index}`,
                     title: item.title,
@@ -1709,6 +1757,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     wrap={wrap}
                     readOnly={busy}
                     formatToolbarVisible={formatToolbarVisible}
+                    bibliographyEntries={bibliographyEntries}
                     texlab={texlabAdapter}
                   />
                 </>

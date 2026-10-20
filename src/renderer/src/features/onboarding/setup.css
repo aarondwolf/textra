@@ -229,6 +229,31 @@
   gap: 5px;
   margin-top: 10px !important;
 }
+.chktex-field {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  max-width: 360px;
+}
+.chktex-field select,
+.chktex-field input {
+  min-width: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 11px;
+}
+.chktex-field input:focus-visible,
+.chktex-field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.chktex-hint {
+  margin: 10px 0 0;
+}
 
 .tool-actions {
   display: inline-flex;

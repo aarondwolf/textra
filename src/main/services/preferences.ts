@@ -22,8 +22,45 @@ const optionalKeys = new Set([
   'formatToolbarVisible',
   'sidebarWidth',
   'texlabEnabled',
+  'chktexEnabled',
+  'chktexRunMode',
+  'chktexIgnoredRules',
+  'chktexRuleSeverities',
   'toolPaths',
 ]);
+
+function validateChktexIgnoredRules(value: unknown): Preferences['chktexIgnoredRules'] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 100)
+    throw new Error('Unsupported or invalid preferences.');
+  const rules = value.map((rule) => {
+    if (!Number.isInteger(rule) || rule < 1 || rule > 10_000)
+      throw new Error('Unsupported or invalid preferences.');
+    return rule;
+  });
+  return [...new Set(rules)].sort((left, right) => left - right);
+}
+
+function validateChktexRuleSeverities(value: unknown): Preferences['chktexRuleSeverities'] {
+  if (value === undefined) return {};
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Unsupported or invalid preferences.');
+  const entries = Object.entries(value);
+  if (entries.length > 100) throw new Error('Unsupported or invalid preferences.');
+  const result: Preferences['chktexRuleSeverities'] = {};
+  for (const [rule, severity] of entries) {
+    const numericRule = Number(rule);
+    if (
+      !Number.isInteger(numericRule) ||
+      numericRule < 1 ||
+      numericRule > 10_000 ||
+      (severity !== 'error' && severity !== 'warning' && severity !== 'info')
+    )
+      throw new Error('Unsupported or invalid preferences.');
+    result[String(numericRule)] = severity;
+  }
+  return result;
+}
 
 function validateToolPaths(value: unknown): Preferences['toolPaths'] {
   if (value === undefined) return {};
@@ -72,7 +109,11 @@ export function validatePreferences(value: unknown): Preferences {
         !Number.isFinite(candidate.sidebarWidth) ||
         candidate.sidebarWidth < SIDEBAR_WIDTH_RANGE.min ||
         candidate.sidebarWidth > SIDEBAR_WIDTH_RANGE.max)) ||
-    (Object.hasOwn(candidate, 'texlabEnabled') && typeof candidate.texlabEnabled !== 'boolean')
+    (Object.hasOwn(candidate, 'texlabEnabled') && typeof candidate.texlabEnabled !== 'boolean') ||
+    (Object.hasOwn(candidate, 'chktexEnabled') && typeof candidate.chktexEnabled !== 'boolean') ||
+    (Object.hasOwn(candidate, 'chktexRunMode') &&
+      candidate.chktexRunMode !== 'save' &&
+      candidate.chktexRunMode !== 'live')
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
@@ -91,6 +132,11 @@ export function validatePreferences(value: unknown): Preferences {
       DEFAULT_PREFERENCES.formatToolbarVisible) as boolean,
     sidebarWidth: (candidate.sidebarWidth ?? DEFAULT_PREFERENCES.sidebarWidth) as number,
     texlabEnabled: (candidate.texlabEnabled ?? DEFAULT_PREFERENCES.texlabEnabled) as boolean,
+    chktexEnabled: (candidate.chktexEnabled ?? DEFAULT_PREFERENCES.chktexEnabled) as boolean,
+    chktexRunMode: (candidate.chktexRunMode ??
+      DEFAULT_PREFERENCES.chktexRunMode) as Preferences['chktexRunMode'],
+    chktexIgnoredRules: validateChktexIgnoredRules(candidate.chktexIgnoredRules),
+    chktexRuleSeverities: validateChktexRuleSeverities(candidate.chktexRuleSeverities),
     toolPaths: validateToolPaths(candidate.toolPaths),
   };
 }

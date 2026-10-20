@@ -6,6 +6,7 @@ import {
   CONFIGURABLE_TOOLS,
   type BuildEngine,
   type ConfigurableTool,
+  type DiagnosticSeverity,
   type SetupLink,
   type TexlabStatus,
 } from '../../../../shared/api';
@@ -21,6 +22,32 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = 
   { id: 'compilation', label: 'Compilation', icon: Hammer },
   { id: 'backup', label: 'Import & export', icon: Save },
 ];
+
+function parseChktexRules(value: string): number[] | null {
+  if (!value.trim()) return [];
+  const rules = value.split(',').map((part) => Number(part.trim()));
+  if (rules.some((rule) => !Number.isInteger(rule) || rule < 1 || rule > 10_000)) return null;
+  return [...new Set(rules)].sort((left, right) => left - right);
+}
+
+function parseChktexSeverities(value: string): Record<string, DiagnosticSeverity> | null {
+  if (!value.trim()) return {};
+  const result: Record<string, DiagnosticSeverity> = {};
+  for (const entry of value.split(',')) {
+    const [ruleText, severityText, ...extra] = entry.trim().split(':');
+    const rule = Number(ruleText);
+    if (
+      extra.length ||
+      !Number.isInteger(rule) ||
+      rule < 1 ||
+      rule > 10_000 ||
+      (severityText !== 'error' && severityText !== 'warning' && severityText !== 'info')
+    )
+      return null;
+    result[String(rule)] = severityText;
+  }
+  return result;
+}
 
 export default function SetupDialog({
   open,
@@ -225,6 +252,81 @@ export default function SetupDialog({
                       })
                     }
                   />
+                  <section className="texlab-settings" aria-labelledby="chktex-settings-title">
+                    <div className="texlab-settings-heading">
+                      <div>
+                        <h3 id="chktex-settings-title">ChkTeX style checks</h3>
+                        <p className="setup-hint">
+                          Local style diagnostics for LaTeX. It runs after saving by default.
+                        </p>
+                      </div>
+                      <label className="texlab-toggle">
+                        <span>Enabled</span>
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          checked={preferences.chktexEnabled}
+                          disabled={busy}
+                          onChange={(event) =>
+                            updatePreferences({ chktexEnabled: event.target.checked })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label className="field-label chktex-field">
+                      Check timing
+                      <select
+                        value={preferences.chktexRunMode}
+                        disabled={busy || !preferences.chktexEnabled}
+                        onChange={(event) =>
+                          updatePreferences({
+                            chktexRunMode: event.target.value as 'save' | 'live',
+                          })
+                        }
+                      >
+                        <option value="save">After saving</option>
+                        <option value="live">While typing (debounced)</option>
+                      </select>
+                    </label>
+                    <label className="field-label chktex-field">
+                      Hide rule codes
+                      <input
+                        defaultValue={preferences.chktexIgnoredRules.join(', ')}
+                        disabled={busy || !preferences.chktexEnabled}
+                        placeholder="For example: 1, 8, 24"
+                        onChange={(event) => {
+                          const rules = parseChktexRules(event.target.value);
+                          if (rules) updatePreferences({ chktexIgnoredRules: rules });
+                        }}
+                        onBlur={(event) => {
+                          if (parseChktexRules(event.target.value) === null)
+                            setMessage('Use comma-separated positive ChkTeX rule codes.');
+                        }}
+                      />
+                    </label>
+                    <label className="field-label chktex-field">
+                      Rule severities
+                      <input
+                        defaultValue={Object.entries(preferences.chktexRuleSeverities)
+                          .map(([rule, severity]) => `${rule}:${severity}`)
+                          .join(', ')}
+                        disabled={busy || !preferences.chktexEnabled}
+                        placeholder="For example: 8:info, 24:error"
+                        onChange={(event) => {
+                          const severities = parseChktexSeverities(event.target.value);
+                          if (severities) updatePreferences({ chktexRuleSeverities: severities });
+                        }}
+                        onBlur={(event) => {
+                          if (parseChktexSeverities(event.target.value) === null)
+                            setMessage('Use comma-separated rule:severity pairs, such as 8:info.');
+                        }}
+                      />
+                    </label>
+                    <p className="setup-hint chktex-hint">
+                      Rule filters apply before Problems is updated. Choose error, warning, or info
+                      for each listed rule.
+                    </p>
+                  </section>
                   <div className="setup-actions">
                     <button
                       disabled={busy}
@@ -333,6 +435,42 @@ export default function SetupDialog({
                   <p className="setup-hint">
                     Recipes and the output location (build folder or PDF beside the source) are
                     stored per project.
+                  </p>
+                  <h3>Generated files</h3>
+                  <p className="setup-hint">
+                    TeXtra keeps its default PDFs, logs, and auxiliary files in build/textra. Clean
+                    this folder when you need a fresh compile. Custom output folders are never
+                    removed automatically.
+                  </p>
+                  <div className="setup-actions">
+                    <button
+                      disabled={!useWorkspace.getState().project || busy || build.running}
+                      onClick={() =>
+                        void perform(async () => {
+                          const project = useWorkspace.getState().project;
+                          if (!project) throw new Error('Open a project folder first.');
+                          const result = await window.textra.cleanProjectBuildArtifacts(project.id);
+                          if (!result.ok) throw new Error(result.error);
+                          return result.value.removed
+                            ? 'TeXtra-generated build files were removed.'
+                            : 'Cleanup cancelled or the TeXtra build folder was already empty.';
+                        })
+                      }
+                    >
+                      Clean TeXtra build files
+                    </button>
+                  </div>
+                  <h3>Document formatting</h3>
+                  <p className="setup-hint">
+                    latexindent is an optional formatter included with many TeX distributions. It
+                    reorganizes LaTeX indentation and line breaks. Use Format document from the
+                    editor menu to preview its proposed changes before applying them.
+                  </p>
+                  <p className="setup-hint">
+                    Status:{' '}
+                    {tools.some((tool) => tool.name === 'latexindent' && tool.path)
+                      ? 'latexindent is available.'
+                      : 'latexindent was not found on PATH.'}
                   </p>
                 </>
               )}

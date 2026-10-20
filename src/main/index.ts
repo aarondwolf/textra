@@ -10,7 +10,17 @@ import {
 } from 'electron';
 import { dirname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, open, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdtemp,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   CONFIGURABLE_TOOLS,
@@ -52,7 +62,7 @@ const preferences = new PreferencesStore(app.getPath('userData'));
 const projects = new ProjectService(app.getPath('userData'));
 const builds = new BuildService((id) => projects.getRoot(id));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
-const language = new LanguageService(projects);
+const language = new LanguageService(projects, () => preferences.get());
 const texlab = new TexlabManager(
   projects,
   app.isPackaged ? process.resourcesPath : join(process.cwd(), 'resources'),
@@ -347,6 +357,51 @@ void app.whenReady().then(() => {
   handleRequest<'setProjectPinned'>('textra:recent:pin', (request) =>
     projects.setProjectPinned(request),
   );
+  handleRequest<'cleanProjectBuildArtifacts'>('textra:build:clean-artifacts', async (projectId) => {
+    if (builds.getState().running || healthBuild)
+      throw new ProjectError('BUILD_RUNNING', 'Wait for the current build to finish first.');
+    const root = projects.getRoot(projectId);
+    const buildRoot = join(root, 'build');
+    const managedBuild = join(buildRoot, 'textra');
+    try {
+      const buildInfo = await lstat(buildRoot);
+      if (!buildInfo.isDirectory() || buildInfo.isSymbolicLink())
+        throw new ProjectError('UNSAFE_PATH', 'The project build folder is not a safe directory.');
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+        return { removed: false };
+      throw error;
+    }
+    let info;
+    try {
+      info = await lstat(managedBuild);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+        return { removed: false };
+      throw error;
+    }
+    if (!info.isDirectory() || info.isSymbolicLink())
+      throw new ProjectError('UNSAFE_PATH', 'The TeXtra build folder is not a safe directory.');
+    const answer = await dialog.showMessageBox(requireWindow(), {
+      type: 'warning',
+      title: 'Clean TeXtra build files?',
+      message: 'Remove generated PDFs, logs, and auxiliary files?',
+      detail:
+        'This removes only the project’s build/textra folder. Custom output folders and source files are preserved.',
+      buttons: ['Cancel', 'Clean build files'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (answer.response !== 1) return { removed: false };
+    if (builds.getState().running || healthBuild)
+      throw new ProjectError(
+        'BUILD_RUNNING',
+        'A build started before cleanup could run. Try again when it finishes.',
+      );
+    await rm(managedBuild, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    return { removed: true };
+  });
   handle('textra:dirty', 1, (value) => {
     if (typeof value !== 'boolean')
       throw new ProjectError('INVALID_ARGUMENT', 'Invalid editor state.');

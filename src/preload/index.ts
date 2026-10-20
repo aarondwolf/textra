@@ -32,6 +32,8 @@ const api: TextraAPI = {
   syncInverse: (request) => ipcRenderer.invoke('textra:sync:inverse', request),
   getProjectConfig: (id) => ipcRenderer.invoke('textra:config:get', id),
   setProjectConfig: (request) => ipcRenderer.invoke('textra:config:set', request),
+  cleanProjectBuildArtifacts: (projectId) =>
+    ipcRenderer.invoke('textra:build:clean-artifacts', projectId),
   exportSettings: () => ipcRenderer.invoke('textra:settings:export'),
   importSettings: () => ipcRenderer.invoke('textra:settings:import'),
   openSetupLink: (target) => ipcRenderer.invoke('textra:setup:link', target),

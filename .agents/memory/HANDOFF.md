@@ -117,3 +117,24 @@ license and retains the bundled license/source attribution.
 Use `npm run dev`, `npm run typecheck`, `npm run lint`, `npm run format:check`,
 `npm test`, `npm run build`, and `npm run test:e2e`. Main must retain argument
 arrays, allowlists, path canonicalization, and disabled TeX shell escape.
+
+## Editor formatting toolbar
+
+The source editor now has a 29px compact formatting bar, enabled by default. It
+uses Phosphor controls for `\\textbf{}`, `\\textit{}`, enumerate, itemize,
+figure, table, and Section through Subparagraph. The toolbar is controlled by
+the persisted `Preferences.formatToolbarVisible` setting and can be hidden or
+shown from the editor ellipsis menu.
+
+`FormattingToolbar.tsx` dispatches a narrow renderer-only custom event to
+`SourceEditor.tsx`. SourceEditor owns the Monaco selection/model operation: it
+wraps selected inline text, creates a list with a single `\\item`, or inserts
+simple empty figure/table structures. Each command is bracketed by Monaco undo
+stops and restores the cursor to the intended content field. No new IPC or
+filesystem capability is introduced.
+
+Verification for this slice: `npm run typecheck`, `npm run lint`, a targeted
+Prettier check, and `npm run build` pass. The global `npm run format:check`
+reports only the pre-existing untracked `.vitest/json/output.json`. Preserve the
+untracked `.vitest/` and `sandbox/.textra/` directories plus the modified
+`sandbox/test.tex`; they are not implementation changes.

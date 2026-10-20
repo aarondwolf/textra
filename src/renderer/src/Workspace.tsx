@@ -581,7 +581,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           .slice(0, -1)
           .some((_, index, parts) => !expandedFolders.has(parts.slice(0, index + 1).join('/'))),
     ) ?? [];
-  const { fontSize, wrap } = preferences;
+  const { fontSize, wrap, formatToolbarVisible } = preferences;
   const setFontSize = (size: number) => updatePreferences({ fontSize: size });
   const setWrap = (value: boolean) => updatePreferences({ wrap: value });
   const split = useRef<HTMLDivElement>(null);
@@ -1649,6 +1649,16 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           </button>
                           <button
                             className="text-button"
+                            aria-label="Toggle formatting bar"
+                            aria-pressed={formatToolbarVisible}
+                            onClick={() =>
+                              updatePreferences({ formatToolbarVisible: !formatToolbarVisible })
+                            }
+                          >
+                            Formatting bar <span>{formatToolbarVisible ? 'Shown' : 'Hidden'}</span>
+                          </button>
+                          <button
+                            className="text-button"
                             aria-label="Format document with latexindent"
                             disabled={busy || !/\.tex$/i.test(active.path)}
                             onClick={() => {
@@ -1698,6 +1708,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     fontSize={fontSize}
                     wrap={wrap}
                     readOnly={busy}
+                    formatToolbarVisible={formatToolbarVisible}
                     texlab={texlabAdapter}
                   />
                 </>

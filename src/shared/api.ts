@@ -16,6 +16,8 @@ export interface Preferences {
   defaultRecipe: BuildEngine;
   fontSize: number;
   wrap: boolean;
+  /** Controls the compact rich-text-style LaTeX formatting bar above the source editor. */
+  formatToolbarVisible: boolean;
   sidebarWidth: number;
   /** TexLab is bundled and enabled by default; users may opt out of enhanced language tooling. */
   texlabEnabled: boolean;
@@ -44,6 +46,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   defaultRecipe: 'pdflatex',
   fontSize: 14,
   wrap: false,
+  formatToolbarVisible: true,
   sidebarWidth: 226,
   texlabEnabled: true,
   toolPaths: {},

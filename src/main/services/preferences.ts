@@ -19,6 +19,7 @@ const optionalKeys = new Set([
   'previewVisible',
   'fontSize',
   'wrap',
+  'formatToolbarVisible',
   'sidebarWidth',
   'texlabEnabled',
   'toolPaths',
@@ -64,6 +65,8 @@ export function validatePreferences(value: unknown): Preferences {
         candidate.fontSize < FONT_SIZE_RANGE.min ||
         candidate.fontSize > FONT_SIZE_RANGE.max)) ||
     (Object.hasOwn(candidate, 'wrap') && typeof candidate.wrap !== 'boolean') ||
+    (Object.hasOwn(candidate, 'formatToolbarVisible') &&
+      typeof candidate.formatToolbarVisible !== 'boolean') ||
     (Object.hasOwn(candidate, 'sidebarWidth') &&
       (typeof candidate.sidebarWidth !== 'number' ||
         !Number.isFinite(candidate.sidebarWidth) ||
@@ -84,6 +87,8 @@ export function validatePreferences(value: unknown): Preferences {
       DEFAULT_PREFERENCES.defaultRecipe) as Preferences['defaultRecipe'],
     fontSize: (candidate.fontSize ?? DEFAULT_PREFERENCES.fontSize) as number,
     wrap: (candidate.wrap ?? DEFAULT_PREFERENCES.wrap) as boolean,
+    formatToolbarVisible: (candidate.formatToolbarVisible ??
+      DEFAULT_PREFERENCES.formatToolbarVisible) as boolean,
     sidebarWidth: (candidate.sidebarWidth ?? DEFAULT_PREFERENCES.sidebarWidth) as number,
     texlabEnabled: (candidate.texlabEnabled ?? DEFAULT_PREFERENCES.texlabEnabled) as boolean,
     toolPaths: validateToolPaths(candidate.toolPaths),

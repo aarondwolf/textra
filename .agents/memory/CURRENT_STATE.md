@@ -254,6 +254,17 @@ Next three actions:
    hints; validate additional engines and PDF crop/rotation/zoom navigation.
 3. Complete full Phase 1 acceptance matrix before proceeding to Phase 2.
 
+2026-10-19 Editor formatting toolbar: a compact, default-visible toolbar now sits
+above LaTeX source tabs. It provides bold, italic, numbered and bulleted lists,
+figure, table, and section-level commands. Text selections are wrapped for inline
+commands; environment commands insert an empty structure with one list item where
+appropriate and retain the selected text. Insertions are single Monaco undoable
+edits and place the caret at the first useful editing position. The editor's
+ellipsis menu persists a Formatting bar shown/hidden preference. Typecheck, lint,
+targeted format check, and production build pass. The global format check reports
+only the pre-existing untracked `.vitest/json/output.json`. User sandbox/test.tex
+and sandbox/.textra remain user-owned changes.
+
 Launch: `npm run dev`. Checks: format:check, typecheck, lint, test, build,
 test:e2e, test:dev. Desktop permissions may be needed for sandbox-blocked output
 cleanup/junction tests. No installers, signing or cross-OS behavior verified.

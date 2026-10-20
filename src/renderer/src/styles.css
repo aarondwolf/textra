@@ -233,13 +233,63 @@
   border-radius: 50%;
   background: var(--accent);
 }
-.editor-toolbar {
+.editor-toolbar,
+.editor-format-toolbar {
   display: flex;
   align-items: center;
   gap: 4px;
   min-height: 33px;
   border-bottom: 1px solid var(--border);
   padding: 3px 10px;
+}
+.editor-format-toolbar {
+  min-height: 29px;
+  padding: 2px 8px;
+  gap: 2px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+.editor-format-toolbar > button {
+  min-width: 25px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.editor-format-toolbar > button:hover:not(:disabled),
+.editor-format-toolbar > button:focus-visible {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border);
+}
+.editor-format-toolbar > button:disabled,
+.editor-format-toolbar > select:disabled {
+  opacity: 0.45;
+}
+.editor-format-toolbar > select {
+  height: 24px;
+  max-width: 92px;
+  padding: 1px 19px 1px 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+}
+.editor-format-toolbar > select:hover:not(:disabled),
+.editor-format-toolbar > select:focus-visible {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--text);
+}
+.editor-format-separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border);
 }
 .active-file-path {
   color: var(--faint);
@@ -255,6 +305,13 @@
   font-size: 10px;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
+}
+.source-editor-shell {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .source-editor {
   flex: 1;

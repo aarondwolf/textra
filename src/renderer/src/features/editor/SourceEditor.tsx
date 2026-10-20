@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { latexFoldingRanges } from './folding';
+import FormattingToolbar from './FormattingToolbar';
 // editor.api.js does not load the icon font that Monaco's widgets (find, suggest) use, and the
 // package exports map cannot address a .css file, so import it by path.
 import '../../../../../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
@@ -325,6 +326,18 @@ export interface TexlabEditorAdapter {
   ): Promise<readonly TexlabInlayHint[]>;
 }
 
+type EditorFormatCommand =
+  'bold' | 'italic' | 'enumerate' | 'itemize' | 'figure' | 'table' | 'heading';
+
+interface EditorFormatRequest {
+  command: EditorFormatCommand;
+  level?: 1 | 2 | 3 | 4 | 5;
+}
+
+function EditorFormattingToolbar({ disabled }: { disabled: boolean }) {
+  return <FormattingToolbar disabled={disabled} />;
+}
+
 function texlabUri(document: Pick<OpenDocument, 'projectId' | 'path'>) {
   return `file:///textra/${encodeURIComponent(document.projectId)}/${document.path
     .split('/')
@@ -373,6 +386,7 @@ export function SourceEditor({
   fontSize,
   wrap,
   readOnly,
+  formatToolbarVisible,
   texlab,
 }: {
   documents: OpenDocument[];
@@ -382,6 +396,7 @@ export function SourceEditor({
   fontSize: number;
   wrap: boolean;
   readOnly: boolean;
+  formatToolbarVisible: boolean;
   texlab?: TexlabEditorAdapter;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -448,6 +463,75 @@ export function SourceEditor({
       instance.focus();
     };
     window.addEventListener('textra:insert-source', insertSource);
+    const formatSource = (event: Event) => {
+      const detail = (event as CustomEvent<EditorFormatRequest>).detail;
+      const model = instance.getModel();
+      const selection = instance.getSelection();
+      if (!model || !selection || !detail || model.getLanguageId() !== 'latex') return;
+      event.preventDefault();
+      const selected = model.getValueInRange(selection);
+      const textOrCursor = (prefix: string, suffix: string) => ({
+        text: `${prefix}${selected}${suffix}`,
+        caret: selected ? prefix.length + selected.length + suffix.length : prefix.length,
+      });
+      const heading = [
+        'section',
+        'subsection',
+        'subsubsection',
+        'paragraph',
+        'subparagraph',
+      ] as const;
+      const line = model.getLineContent(selection.startLineNumber);
+      const indentation = /^\s*/.exec(line)?.[0] ?? '';
+      const eol = model.getEOL();
+      const request = (() => {
+        switch (detail.command) {
+          case 'bold':
+            return textOrCursor('\\textbf{', '}');
+          case 'italic':
+            return textOrCursor('\\textit{', '}');
+          case 'heading': {
+            const command = heading[(detail.level ?? 1) - 1];
+            return textOrCursor(`\\${command}{`, '}');
+          }
+          case 'enumerate':
+          case 'itemize': {
+            const environment = detail.command;
+            const item = selected ? `\\item ${selected}` : '\\item ';
+            return {
+              text: `\\begin{${environment}}${eol}${indentation}\t${item}${eol}${indentation}\\end{${environment}}`,
+              caret:
+                `\\begin{${environment}}${eol}${indentation}\t\\item `.length + selected.length,
+            };
+          }
+          case 'figure':
+            return {
+              text: `\\begin{figure}[htbp]${eol}${indentation}\t\\centering${eol}${indentation}\t${selected}${eol}${indentation}\t\\caption{}${eol}${indentation}\t\\label{fig:}${eol}${indentation}\\end{figure}`,
+              caret:
+                `\\begin{figure}[htbp]${eol}${indentation}\t\\centering${eol}${indentation}\t`
+                  .length + selected.length,
+            };
+          case 'table':
+            return {
+              text: `\\begin{table}[htbp]${eol}${indentation}\t\\centering${eol}${indentation}\t\\begin{tabular}{ll}${eol}${indentation}\t\t${selected}${eol}${indentation}\t\\end{tabular}${eol}${indentation}\t\\caption{}${eol}${indentation}\t\\label{tab:}${eol}${indentation}\\end{table}`,
+              caret:
+                `\\begin{table}[htbp]${eol}${indentation}\t\\centering${eol}${indentation}\t\\begin{tabular}{ll}${eol}${indentation}\t\t`
+                  .length + selected.length,
+            };
+        }
+      })();
+      const start = model.getOffsetAt(selection.getStartPosition());
+      instance.pushUndoStop();
+      model.pushEditOperations(
+        [selection],
+        [{ range: selection, text: request.text, forceMoveMarkers: true }],
+        () => null,
+      );
+      instance.pushUndoStop();
+      instance.setPosition(model.getPositionAt(start + request.caret));
+      instance.focus();
+    };
+    window.addEventListener('textra:format-source', formatSource);
     const content = instance.onDidChangeModelContent(() => {
       if (!current.current) return;
       editDocument(current.current, instance.getValue());
@@ -786,6 +870,7 @@ export function SourceEditor({
     return () => {
       window.removeEventListener('textra:replace-source', replaceSource);
       window.removeEventListener('textra:insert-source', insertSource);
+      window.removeEventListener('textra:format-source', formatSource);
       content.dispose();
       cursor.dispose();
       environmentEnter.dispose();
@@ -883,5 +968,12 @@ export function SourceEditor({
       editor.current?.focus();
     }
   }, [navigation, activePath]);
-  return <div ref={container} className="source-editor" data-testid="source-editor" />;
+  return (
+    <div className="source-editor-shell">
+      {formatToolbarVisible && (
+        <EditorFormattingToolbar disabled={readOnly || !/\.(tex|sty|cls)$/i.test(activePath)} />
+      )}
+      <div ref={container} className="source-editor" data-testid="source-editor" />
+    </div>
+  );
 }

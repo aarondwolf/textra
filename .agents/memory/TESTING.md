@@ -40,3 +40,13 @@ EBUSY; moving cache to OS temp fixed startup and all reload assertions. One run
 was invalidated by concurrent formatting of its probe; restored and rerun alone.
 Clean final dev smoke passed exit0 with all three reload assertions and probes
 restored. Final format:check, typecheck, lint, production build and diff checks pass.
+
+2026-10-19 Phase 2 closeout: `npm run format:check`, `npm run typecheck`, and
+`npm run lint` pass. The full production build passes when run outside the managed
+sandbox, whose identity cannot remove its own prior `out/renderer/assets` output.
+The test runner under the sandbox reports 22 environment failures: hard-link and
+junction creation are denied, and MiKTeX cannot read its registry configuration.
+The remaining unit test was fixed by rejecting protected `.textra`, `.git`, and
+`node_modules` paths as project compile roots. The elevated Vitest and Playwright
+processes begin but are terminated by this managed session before they report a
+result. A local desktop run is required for the full native and real-TeX matrix.

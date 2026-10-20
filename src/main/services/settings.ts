@@ -111,7 +111,12 @@ export function validateProjectConfig(value: unknown): ProjectConfig {
     candidate.rootFile === undefined || candidate.rootFile === null
       ? null
       : validateRelativePath(candidate.rootFile);
-  if (rootFile !== null && !/\.tex$/i.test(rootFile)) return invalid();
+  if (
+    rootFile !== null &&
+    (!/\.tex$/i.test(rootFile) ||
+      rootFile.split('/').some((part) => ['.textra', '.git', 'node_modules'].includes(part)))
+  )
+    return invalid();
   let recipeSettings: ReturnType<typeof validateRecipeSettings>;
   try {
     recipeSettings = validateRecipeSettings(candidate);

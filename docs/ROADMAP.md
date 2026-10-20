@@ -9,7 +9,7 @@ Each phase depends on the preceding gate. Do not describe a partial gate as comp
 | 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                                | Real minimal/multi-file TeX and failed/cancelled builds                        | Fixed presets passed |
 | 1c Preview     | PDF.js, navigation, search, SyncTeX                                                 | Real PDF rendering and source mapping                                          | Core passed          |
 | 1d Workflow    | Project CRUD, settings, onboarding, pipelines                                       | Full phase 1 workflow and missing-tool fallbacks                               | Implemented; verify  |
-| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                                      | Offline insertions/undo, diagnostics and explicit AI consent                   | In progress          |
+| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                                      | Offline insertions/undo, diagnostics and explicit AI consent                   | Implemented; verify  |
 | 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer, environment content templates | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
 | 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help        | Security review, Windows install/uninstall, release matrix                     | Planned              |
 
@@ -35,10 +35,12 @@ Cites) so the sidebar stops resembling an editor activity bar. Not started. Furt
 (bibliography entries, review/history) would slot into the same switcher. Also pending:
 highlight the outline heading that contains the editor cursor.
 
-Phase 2 status (2026-10-19): offline writing analysis, reference diagnostics, ChkTeX
-and latexindent integration seams, a unified Problems view, and writing utilities are in
-progress. The owner deferred AI work, custom snippet libraries, and equation-helper work.
-TexLab 5.26.0 is bundled for Windows x64 and enabled by default. Its main-process LSP bridge
-provides completion, diagnostics, hover, definition/references, document symbols, folding and
-inlay hints, while TeXtra retains deterministic local fallbacks when TexLab is disabled or
-unavailable. Other platform bundles and installer packaging remain Phase 4 work.
+Phase 2 status (2026-10-19): the requested offline implementation is complete: writing analysis,
+cross-reference suggestions and diagnostics, ChkTeX and latexindent seams, unified Problems
+actions, TexLab, the formatting toolbar, and Compile rail recipe controls. The owner deferred
+AI work, custom snippet libraries, and equation-helper work to Phase 3. TexLab 5.26.0 is bundled
+for Windows x64 and enabled by default. Its main-process LSP bridge provides completion,
+diagnostics, hover, definition/references, document symbols, folding and inlay hints, while
+TeXtra retains deterministic local fallbacks when TexLab is disabled or unavailable. The Phase 2
+gate remains pending native interaction verification and the test matrix described in TESTING.md.
+Other platform bundles and installer packaging remain Phase 4 work.

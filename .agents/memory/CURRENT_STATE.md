@@ -1,5 +1,13 @@
 # Current state
 
+2026-10-19 Phase 2 closeout (working tree): Phase 2's requested offline feature
+set is implemented. The final gate is native verification, not further product
+scope. Formatting, typecheck, lint, and the production build pass. The managed
+runner cannot complete native UI automation, unrestricted Windows filesystem
+tests, or MiKTeX registry access; run the matrix in `docs/TESTING.md` from a
+normal desktop session. `validateProjectConfig` now rejects protected metadata
+folders as compile roots, and `.vitest` is ignored by Prettier.
+
 2026-10-19 Environment Enter fallback (working tree): terminal output showed
 repeated failed `textra:texlab:request` calls. These are language-server
 failures, not an Electron crash. To make paired environments independent of the

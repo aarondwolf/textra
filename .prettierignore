@@ -5,6 +5,7 @@ coverage
 test-results
 playwright-report
 .test-data
+.vitest
 **/.textra
 package-lock.json
 docs/FEATURE_SPEC.md

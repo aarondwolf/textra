@@ -154,3 +154,14 @@ Selecting a recipe writes the per-document choice to project settings
 immediately. **Create or edit settings…** opens the existing recipe builder,
 which can add and edit project recipes. Typecheck, lint, and focused Prettier
 checks pass.
+
+## Phase 2 closeout
+
+The requested offline Phase 2 scope is implemented. A final local-desktop test
+matrix remains: native interaction for the language, Problems, writing, and
+Compile UI; SyncTeX crop/rotation; and macOS/Linux. In this managed session,
+format, typecheck, lint, and elevated production build pass. The restricted test
+runner cannot create hard links or junctions and its MiKTeX child process cannot
+read registry configuration. The native app logs `application-ready` but exits
+before the automation service can bind it. Run `docs/TESTING.md` on the owner’s
+desktop before marking the Phase 2 gate complete.

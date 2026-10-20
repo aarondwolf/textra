@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import {
   buildDocumentModel,
   type DocumentModel,
@@ -6,6 +7,7 @@ import {
   type OutlineItem,
 } from '../../../../shared/document-model';
 import { basenameOf, buildFileIndex } from '../../../../shared/tex-structure';
+import { analyzeLatexDocument, type SourceOccurrence } from '../../../../shared/writing-analysis';
 import {
   BookBookmark,
   ChevronRight,
@@ -255,7 +257,78 @@ function FileNodes({
   );
 }
 
-function Outline({ items, activePath }: { items: OutlineItem[]; activePath: string }) {
+function outlineAtLine(items: OutlineItem[], path: string, line: number | null): number {
+  if (line === null || line < 1) return -1;
+  let activeIndex = -1;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item.path === path && item.line <= line) activeIndex = index;
+  }
+  return activeIndex;
+}
+
+function breadcrumbItems(items: OutlineItem[], activeIndex: number): OutlineItem[] {
+  if (activeIndex < 0) return [];
+  const ancestors: OutlineItem[] = [];
+  for (let index = 0; index <= activeIndex; index += 1) {
+    const item = items[index];
+    if (!item) continue;
+    while (true) {
+      const parent = ancestors.at(-1);
+      if (!parent || parent.level < item.level) break;
+      ancestors.pop();
+    }
+    ancestors.push(item);
+  }
+  return ancestors;
+}
+
+function Breadcrumbs({
+  activePath,
+  items,
+  activeIndex,
+}: {
+  activePath: string;
+  items: OutlineItem[];
+  activeIndex: number;
+}) {
+  const crumbs = breadcrumbItems(items, activeIndex);
+  return (
+    <nav className="doc-breadcrumbs" aria-label="Document location">
+      <button
+        type="button"
+        title={`Go to the beginning of ${activePath}`}
+        onClick={() => void openDocument(activePath, { path: activePath, line: 1, column: 1 })}
+      >
+        {basenameOf(activePath)}
+      </button>
+      {crumbs.map((item, index) => (
+        <span className="doc-breadcrumb" key={`${item.path}:${item.line}:${index}`}>
+          <ChevronRight size={11} aria-hidden="true" />
+          <button
+            type="button"
+            title={`Go to ${item.path}, line ${item.line}`}
+            onClick={() =>
+              void openDocument(item.path, { path: item.path, line: item.line, column: 1 })
+            }
+          >
+            {item.title}
+          </button>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function Outline({
+  items,
+  activePath,
+  activeIndex,
+}: {
+  items: OutlineItem[];
+  activePath: string;
+  activeIndex: number;
+}) {
   const base = Math.min(...items.map((item) => item.level));
   return (
     <ul className="doc-list">
@@ -265,6 +338,7 @@ function Outline({ items, activePath }: { items: OutlineItem[]; activePath: stri
           <li key={`${item.path}:${item.line}:${position}`}>
             <button
               className="doc-entry doc-heading-entry"
+              aria-current={position === activeIndex ? 'location' : undefined}
               style={{ paddingLeft: 10 + depth * 12 }}
               title={`${item.path}, line ${item.line}`}
               onClick={() =>
@@ -283,14 +357,80 @@ function Outline({ items, activePath }: { items: OutlineItem[]; activePath: stri
   );
 }
 
+function CitationList({
+  citations,
+  entries,
+  activePath,
+}: {
+  citations: SourceOccurrence[];
+  entries: readonly BibliographyEntry[];
+  activePath: string;
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const entryByKey = useMemo(() => new Map(entries.map((entry) => [entry.key, entry])), [entries]);
+
+  return (
+    <ul className="doc-list doc-citation-list">
+      {citations.map((citation, index) => {
+        const id = `${citation.value}:${citation.line}:${index}`;
+        const entry = entryByKey.get(citation.value);
+        const detail = entry
+          ? `${citation.value} · ${bibliographyDetail(entry)}`
+          : `${citation.value} · No matching bibliography entry is currently available.`;
+        return (
+          <li className="doc-citation" key={id}>
+            <button
+              type="button"
+              className="doc-entry doc-citation-entry"
+              aria-describedby={hovered === id ? `${id}-detail` : undefined}
+              title={detail}
+              onBlur={() => setHovered((current) => (current === id ? null : current))}
+              onFocus={() => setHovered(id)}
+              onMouseEnter={() => setHovered(id)}
+              onMouseLeave={() => setHovered((current) => (current === id ? null : current))}
+              onClick={() =>
+                void openDocument(activePath, {
+                  path: activePath,
+                  line: citation.line,
+                  column: citation.column,
+                })
+              }
+            >
+              <BookBookmark size={13} aria-hidden="true" />
+              <span className="doc-label">{citation.value}</span>
+              <span className="doc-from">Ln {citation.line}</span>
+            </button>
+            {hovered === id && (
+              <span className="doc-citation-tooltip" id={`${id}-detail`} role="tooltip">
+                {detail}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export interface DocumentViewProps {
+  /** Overrides the active source line when the host keeps cursor state outside the workspace. */
+  activeLine?: number | null;
+  /** Parsed open bibliography entries, used for citation hover details. */
+  bibliographyEntries?: readonly BibliographyEntry[];
+}
+
 /**
  * Document-centred sidebar: the open file's section outline (included chapters spliced in
  * place) and the tree of files it uses, rather than the contents of the directory.
  */
-export function DocumentView() {
+export function DocumentView({
+  activeLine: activeLineOverride,
+  bibliographyEntries = [],
+}: DocumentViewProps) {
   const project = useWorkspace((state) => state.project);
   const activePath = useWorkspace((state) => state.activePath);
   const documents = useWorkspace((state) => state.documents);
+  const source = useWorkspace((state) => state.source);
   const [model, setModel] = useState<DocumentModel | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [refreshTick, setRefreshTick] = useState(0);
@@ -302,6 +442,13 @@ export function DocumentView() {
   const projectFiles = project?.files;
   const listingComplete = !project?.truncated;
   const active = activePath && TEX_FILE.test(activePath) ? activePath : null;
+  const activeLine =
+    activeLineOverride ?? (source?.path === activePath ? (source.line ?? null) : null);
+  const activeDocument = documents.find((document) => document.path === active);
+  const citations = useMemo(
+    () => (activeDocument ? analyzeLatexDocument(activeDocument.content).citations : []),
+    [activeDocument],
+  );
 
   useEffect(() => {
     diskCache.current.clear();
@@ -350,6 +497,8 @@ export function DocumentView() {
   }, [projectId, projectFiles, active, documents, listingComplete, refreshTick]);
 
   const current = model && active && model.root.path === active ? model : null;
+  const activeOutlineIndex =
+    current && active ? outlineAtLine(current.outline, active, activeLine) : -1;
   const toggle = (key: string) =>
     setCollapsed((previous) => {
       const next = new Set(previous);
@@ -392,6 +541,11 @@ export function DocumentView() {
             </div>
           ) : (
             <div className="doc-view" ref={container}>
+              <Breadcrumbs
+                activeIndex={activeOutlineIndex}
+                activePath={active}
+                items={current.outline}
+              />
               <section
                 className={'doc-pane doc-outline-pane' + (layout.outlineOpen ? ' open' : '')}
                 aria-label="Outline"
@@ -406,9 +560,25 @@ export function DocumentView() {
                 {layout.outlineOpen && (
                   <div className="doc-scroll" id="doc-outline-body">
                     {current.outline.length ? (
-                      <Outline items={current.outline} activePath={active} />
+                      <Outline
+                        activeIndex={activeOutlineIndex}
+                        items={current.outline}
+                        activePath={active}
+                      />
                     ) : (
                       <p className="doc-note">No sections in this file yet.</p>
+                    )}
+                    {citations.length > 0 && (
+                      <section className="doc-citations" aria-labelledby="doc-citations-heading">
+                        <h4 id="doc-citations-heading" className="doc-subsection-title">
+                          Citations <span>{citations.length}</span>
+                        </h4>
+                        <CitationList
+                          activePath={active}
+                          citations={citations}
+                          entries={bibliographyEntries}
+                        />
+                      </section>
                     )}
                   </div>
                 )}

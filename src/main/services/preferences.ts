@@ -16,9 +16,13 @@ const preferenceKeys = Object.keys(DEFAULT_PREFERENCES);
 // Added after version 1 shipped; older files without them migrate to defaults.
 const optionalKeys = new Set([
   'defaultRecipe',
+  'themeCustomizations',
   'previewVisible',
   'fontSize',
   'wrap',
+  'autoSave',
+  'autoSaveDelayMs',
+  'editorMinimap',
   'formatToolbarVisible',
   'sidebarWidth',
   'texlabEnabled',
@@ -27,7 +31,47 @@ const optionalKeys = new Set([
   'chktexIgnoredRules',
   'chktexRuleSeverities',
   'toolPaths',
+  'restoreSession',
+  'tabCloseButtons',
+  'previewTabs',
+  'recentCommands',
 ]);
+
+const themeNames = new Set(['dark', 'light', 'midnight', 'forest', 'ocean', 'rose', 'sand']);
+const colorPattern = /^#[0-9a-fA-F]{6}$/;
+
+function validateThemeCustomizations(value: unknown): Preferences['themeCustomizations'] {
+  if (value === undefined) return { ...DEFAULT_PREFERENCES.themeCustomizations };
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Unsupported or invalid preferences.');
+  const candidate = value as Record<string, unknown>;
+  if (
+    Object.keys(candidate).length !== 3 ||
+    !['accent', 'accentStrong', 'accentBackground'].every((key) => Object.hasOwn(candidate, key)) ||
+    !Object.values(candidate).every(
+      (color) => typeof color === 'string' && colorPattern.test(color),
+    )
+  )
+    throw new Error('Unsupported or invalid preferences.');
+  return {
+    accent: candidate.accent as string,
+    accentStrong: candidate.accentStrong as string,
+    accentBackground: candidate.accentBackground as string,
+  };
+}
+
+function validateRecentCommands(value: unknown): Preferences['recentCommands'] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 12)
+    throw new Error('Unsupported or invalid preferences.');
+  if (
+    !value.every(
+      (command) => typeof command === 'string' && command.length > 0 && command.length <= 100,
+    )
+  )
+    throw new Error('Unsupported or invalid preferences.');
+  return [...new Set(value)];
+}
 
 function validateChktexIgnoredRules(value: unknown): Preferences['chktexIgnoredRules'] {
   if (value === undefined) return [];
@@ -88,7 +132,8 @@ export function validatePreferences(value: unknown): Preferences {
     (Object.hasOwn(candidate, 'defaultRecipe') &&
       !BUILD_RECIPES.some((recipe) => recipe.value === candidate.defaultRecipe)) ||
     candidate.version !== 1 ||
-    (candidate.theme !== 'dark' && candidate.theme !== 'light') ||
+    typeof candidate.theme !== 'string' ||
+    !themeNames.has(candidate.theme) ||
     typeof candidate.sidebarVisible !== 'boolean' ||
     (Object.hasOwn(candidate, 'previewVisible') && typeof candidate.previewVisible !== 'boolean') ||
     typeof candidate.outputVisible !== 'boolean' ||
@@ -102,6 +147,13 @@ export function validatePreferences(value: unknown): Preferences {
         candidate.fontSize < FONT_SIZE_RANGE.min ||
         candidate.fontSize > FONT_SIZE_RANGE.max)) ||
     (Object.hasOwn(candidate, 'wrap') && typeof candidate.wrap !== 'boolean') ||
+    (Object.hasOwn(candidate, 'autoSave') && typeof candidate.autoSave !== 'boolean') ||
+    (Object.hasOwn(candidate, 'autoSaveDelayMs') &&
+      (typeof candidate.autoSaveDelayMs !== 'number' ||
+        !Number.isInteger(candidate.autoSaveDelayMs) ||
+        candidate.autoSaveDelayMs < 1000 ||
+        candidate.autoSaveDelayMs > 120_000)) ||
+    (Object.hasOwn(candidate, 'editorMinimap') && typeof candidate.editorMinimap !== 'boolean') ||
     (Object.hasOwn(candidate, 'formatToolbarVisible') &&
       typeof candidate.formatToolbarVisible !== 'boolean') ||
     (Object.hasOwn(candidate, 'sidebarWidth') &&
@@ -113,13 +165,19 @@ export function validatePreferences(value: unknown): Preferences {
     (Object.hasOwn(candidate, 'chktexEnabled') && typeof candidate.chktexEnabled !== 'boolean') ||
     (Object.hasOwn(candidate, 'chktexRunMode') &&
       candidate.chktexRunMode !== 'save' &&
-      candidate.chktexRunMode !== 'live')
+      candidate.chktexRunMode !== 'live') ||
+    (Object.hasOwn(candidate, 'restoreSession') && typeof candidate.restoreSession !== 'boolean') ||
+    (Object.hasOwn(candidate, 'tabCloseButtons') &&
+      candidate.tabCloseButtons !== 'always' &&
+      candidate.tabCloseButtons !== 'hover') ||
+    (Object.hasOwn(candidate, 'previewTabs') && typeof candidate.previewTabs !== 'boolean')
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
   return {
     version: 1,
-    theme: candidate.theme,
+    theme: candidate.theme as Preferences['theme'],
+    themeCustomizations: validateThemeCustomizations(candidate.themeCustomizations),
     sidebarVisible: candidate.sidebarVisible,
     previewVisible: (candidate.previewVisible ?? DEFAULT_PREFERENCES.previewVisible) as boolean,
     outputVisible: candidate.outputVisible,
@@ -128,6 +186,9 @@ export function validatePreferences(value: unknown): Preferences {
       DEFAULT_PREFERENCES.defaultRecipe) as Preferences['defaultRecipe'],
     fontSize: (candidate.fontSize ?? DEFAULT_PREFERENCES.fontSize) as number,
     wrap: (candidate.wrap ?? DEFAULT_PREFERENCES.wrap) as boolean,
+    autoSave: (candidate.autoSave ?? DEFAULT_PREFERENCES.autoSave) as boolean,
+    autoSaveDelayMs: (candidate.autoSaveDelayMs ?? DEFAULT_PREFERENCES.autoSaveDelayMs) as number,
+    editorMinimap: (candidate.editorMinimap ?? DEFAULT_PREFERENCES.editorMinimap) as boolean,
     formatToolbarVisible: (candidate.formatToolbarVisible ??
       DEFAULT_PREFERENCES.formatToolbarVisible) as boolean,
     sidebarWidth: (candidate.sidebarWidth ?? DEFAULT_PREFERENCES.sidebarWidth) as number,
@@ -138,6 +199,11 @@ export function validatePreferences(value: unknown): Preferences {
     chktexIgnoredRules: validateChktexIgnoredRules(candidate.chktexIgnoredRules),
     chktexRuleSeverities: validateChktexRuleSeverities(candidate.chktexRuleSeverities),
     toolPaths: validateToolPaths(candidate.toolPaths),
+    restoreSession: (candidate.restoreSession ?? DEFAULT_PREFERENCES.restoreSession) as boolean,
+    tabCloseButtons: (candidate.tabCloseButtons ??
+      DEFAULT_PREFERENCES.tabCloseButtons) as Preferences['tabCloseButtons'],
+    previewTabs: (candidate.previewTabs ?? DEFAULT_PREFERENCES.previewTabs) as boolean,
+    recentCommands: validateRecentCommands(candidate.recentCommands),
   };
 }
 

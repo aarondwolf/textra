@@ -15,6 +15,21 @@ SECURITY, CURRENT_STATE, and DECISIONS before working. Preserve the user-owned
   latexindent preview, unified Problems, writing utilities, and welcome recents.
 - AI work, custom snippet libraries, and equation helpers are deferred by owner.
 
+## UX refinement round (working tree)
+
+The owner approved the UX backlog except PDF presentation controls (fit/rotate
+and persistent page entry) and micro-animations, which are now Phase 3 items.
+Interface density presets are intentionally not implemented: they would change
+global spacing, control sizes, and typography across every surface, so they
+need an accessibility review and a coherent responsive design rather than a
+single preference toggle. This round adds off-by-default configurable autosave,
+theme customization and six additional palettes, editor minimap, command and
+shortcut discovery, global toasts, diagnostics filtering/navigation/detail,
+document breadcrumbs/cursor-aware outline/citation hover, compile status and
+history, project health, file filtering, layout presets, tab behavior controls,
+session recovery, formatting feedback, and first-run guidance. The changes are
+not committed yet.
+
 Recent commits: `320d42a` writing diagnostics, `682ffe6` Problems/saving,
 `901d39f` welcome recents, `38b7f4c` optional language tools, `98edcb5` Copy
 Prompt feedback, and `1fae854` TexLab.

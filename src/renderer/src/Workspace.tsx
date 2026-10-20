@@ -78,6 +78,7 @@ import PdfViewer from './features/pdf/PdfViewer';
 import EquationPalette from './features/equations/EquationPalette';
 import SnippetPalette from './features/snippets/SnippetPalette';
 import { DocumentView } from './features/document/DocumentView';
+import { notify } from './features/notifications/ToastViewport';
 import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import { WritingPanel } from './features/writing/WritingPanel';
 import { CompileRecipeEditor } from './features/compile/CompileRecipeEditor';
@@ -393,6 +394,39 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     if (!activePath && useUI.getState().expandedPane === 'editor')
       useUI.getState().setExpandedPane(null);
   }, [activePath]);
+  useEffect(() => {
+    if (restoredSession.current || !preferences.restoreSession) return;
+    restoredSession.current = true;
+    const raw = window.localStorage.getItem('textra:workspace-session');
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw) as {
+        projectId?: string;
+        paths?: string[];
+        activePath?: string;
+      };
+      if (!saved.projectId) return;
+      void window.textra.openRecentProject(saved.projectId).then(async (result) => {
+        if (!result.ok || !result.value) return;
+        await setProject(result.value);
+        for (const path of saved.paths?.slice(0, 50) ?? []) await openDocument(path);
+        if (saved.activePath) useWorkspace.setState({ activePath: saved.activePath });
+      });
+    } catch {
+      window.localStorage.removeItem('textra:workspace-session');
+    }
+  }, [preferences.restoreSession]);
+  useEffect(() => {
+    if (!project || !preferences.restoreSession) return;
+    window.localStorage.setItem(
+      'textra:workspace-session',
+      JSON.stringify({
+        projectId: project.id,
+        paths: documents.map((document) => document.path),
+        activePath,
+      }),
+    );
+  }, [activePath, documents, preferences.restoreSession, project]);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -403,6 +437,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     'explorer' | 'document' | 'writing' | 'equations' | 'snippets' | 'compile' | 'recents';
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
   const [focusMode, setFocusMode] = useState(false);
+  const [fileFilter, setFileFilter] = useState('');
+  const [buildHistory, setBuildHistory] = useState<
+    { outcome: string; recipe: string; time: string }[]
+  >([]);
+  const restoredSession = useRef(false);
   const [projectSources, setProjectSources] = useState<Record<string, string>>({});
   const [lintDiagnostics, setLintDiagnostics] = useState<ProblemDiagnostic[]>([]);
   const [texlabStatus, setTexlabStatus] = useState<TexlabStatus | null>(null);
@@ -581,6 +620,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const visibleFiles =
     project?.files.filter(
       (file) =>
+        (!fileFilter || file.path.toLowerCase().includes(fileFilter.trim().toLowerCase())) &&
         !file.path
           .split('/')
           .slice(0, -1)
@@ -591,6 +631,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const setWrap = (value: boolean) => updatePreferences({ wrap: value });
   const split = useRef<HTMLDivElement>(null);
   const logEnd = useRef<HTMLDivElement>(null);
+  const buildStartedAt = useRef<number | null>(null);
   const polling = useRef(false);
   const operations = useRef(0);
   const active = documents.find((document) => document.path === activePath);
@@ -807,6 +848,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   useEffect(() => {
     logEnd.current?.scrollIntoView({ block: 'end' });
   }, [build.log]);
+  useEffect(() => {
+    if (build.running) {
+      buildStartedAt.current ??= Date.now();
+      return;
+    }
+    if (buildStartedAt.current === null || build.outcome === 'idle') return;
+    const seconds = Math.max(0.1, (Date.now() - buildStartedAt.current) / 1000).toFixed(1);
+    buildStartedAt.current = null;
+    setBuildHistory((previous) =>
+      [{ outcome: build.outcome, recipe: engine, time: `${seconds}s` }, ...previous].slice(0, 5),
+    );
+  }, [build.outcome, build.running, engine]);
 
   async function run(action: () => Promise<void>) {
     operations.current++;
@@ -976,6 +1029,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }
   async function saveAndLint(path: string) {
     const saved = await saveDocument(path);
+    if (saved) notify('Saved', 'success');
     if (saved && preferences.chktexEnabled && preferences.chktexRunMode === 'save')
       void lintDocument(path).catch(() => {
         // Linting is optional and must never make Ctrl+S look like a failed save.
@@ -1279,7 +1333,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             style={{ width: preferences.sidebarWidth }}
           >
             {sidebarView === 'document' ? (
-              <DocumentView />
+              <DocumentView bibliographyEntries={bibliographyEntries} />
             ) : sidebarView === 'writing' ? (
               <WritingPanel
                 summary={{
@@ -1397,6 +1451,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     {selectedRecipeLabel}{' '}
                     {missingTool ? 'needs a configured tool.' : 'is ready for the active file.'}
                   </p>
+                  <p className="writing-empty" role="status">
+                    {build.running
+                      ? `Building${build.stepCount ? ` step ${(build.stepsDone ?? 0) + 1} of ${build.stepCount}` : ''}…`
+                      : build.outcome === 'success'
+                        ? 'Last build succeeded.'
+                        : build.outcome === 'failed'
+                          ? 'Last build reported problems.'
+                          : 'Ready to compile.'}
+                  </p>
                   <div
                     className="sidebar-recipe-control"
                     ref={sidebarRecipeControl}
@@ -1471,6 +1534,38 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     onClick={() => void compile()}
                   >
                     Compile active document
+                  </button>
+                </section>
+                {buildHistory.length > 0 && (
+                  <section className="writing-section" aria-label="Recent builds">
+                    <h3 className="writing-section-title">Recent builds</h3>
+                    {buildHistory.map((entry, index) => (
+                      <p className="writing-empty" key={`${entry.recipe}:${entry.time}:${index}`}>
+                        {entry.recipe} · {entry.outcome} · {entry.time}
+                      </p>
+                    ))}
+                  </section>
+                )}
+                <section className="writing-section" aria-label="Project health">
+                  <h3 className="writing-section-title">Project health</h3>
+                  <p className="writing-empty">
+                    {errorCount} errors · {warningCount} warnings · {referenceDiagnostics.length}{' '}
+                    reference checks
+                  </p>
+                  <p className="writing-empty">
+                    {missingTool
+                      ? 'A required compile tool needs setup.'
+                      : 'Selected compile tools are available.'}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setPanel('problems');
+                      updatePreferences({ previewVisible: true });
+                    }}
+                  >
+                    Review problems
                   </button>
                 </section>
                 {project && (
@@ -1593,6 +1688,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 </div>
                 {project ? (
                   <>
+                    <label className="file-filter">
+                      <span className="sr-only">Filter project files</span>
+                      <input
+                        aria-label="Filter project files"
+                        placeholder="Filter files"
+                        value={fileFilter}
+                        onChange={(event) => setFileFilter(event.target.value)}
+                      />
+                    </label>
                     <div className="file-tree" aria-label="Project files">
                       {creating?.parent === '' && (
                         <NewEntryRow
@@ -1747,6 +1851,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       <div
                         className={`document-tab ${document.path === activePath ? 'selected' : ''}`}
                         key={document.path}
+                        data-close-buttons={preferences.tabCloseButtons}
                       >
                         <button
                           role="tab"
@@ -1894,6 +1999,42 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           >
                             Formatting bar <span>{formatToolbarVisible ? 'Shown' : 'Hidden'}</span>
                           </button>
+                          <div
+                            className="editor-layout-presets"
+                            aria-label="Workspace layout presets"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedPane(null);
+                                updatePreferences({
+                                  sidebarVisible: true,
+                                  previewVisible: true,
+                                  editorWidth: 55,
+                                });
+                              }}
+                            >
+                              Split
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedPane('preview');
+                                updatePreferences({ sidebarVisible: false, previewVisible: true });
+                              }}
+                            >
+                              Preview
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedPane(null);
+                                updatePreferences({ sidebarVisible: false, previewVisible: false });
+                              }}
+                            >
+                              Focus writing
+                            </button>
+                          </div>
                           <button
                             className="text-button"
                             aria-label="Format document with latexindent"
@@ -1967,6 +2108,26 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     {project ? 'Create a source file' : 'Choose a project folder'}
                     <ArrowRight size={15} />
                   </button>
+                  {!project && (
+                    <section className="welcome-checklist" aria-label="Getting started">
+                      <h2>Getting started</h2>
+                      <p>1. Choose a project folder.</p>
+                      <p>
+                        2. TeX tools{' '}
+                        {toolsReady &&
+                        tools.some((tool) => /latex|tex$/i.test(tool.name) && tool.path)
+                          ? 'detected.'
+                          : 'can be configured in Settings.'}
+                      </p>
+                      <p>
+                        3. TexLab{' '}
+                        {texlabStatus?.installation === 'managed' ||
+                        texlabStatus?.installation === 'external'
+                          ? 'is ready.'
+                          : 'can be checked in Settings.'}
+                      </p>
+                    </section>
+                  )}
                   {!project && recents.length > 0 && (
                     <section className="welcome-recents" aria-labelledby="welcome-recents-heading">
                       <h2 id="welcome-recents-heading">Recent projects</h2>

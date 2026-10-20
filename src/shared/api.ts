@@ -1,6 +1,6 @@
 import type { RecipeSettings } from './recipes';
 export const PRODUCT_NAME = 'TeXtra';
-export type Theme = 'dark' | 'light';
+export type Theme = 'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
 export type ChktexRunMode = 'save' | 'live';
 export type DiagnosticSeverity = Diagnostic['severity'];
 export interface AppInfo {
@@ -11,6 +11,8 @@ export interface AppInfo {
 export interface Preferences {
   version: 1;
   theme: Theme;
+  /** Accent overrides apply to every built-in color scheme. */
+  themeCustomizations: ThemeCustomizations;
   sidebarVisible: boolean;
   previewVisible: boolean;
   outputVisible: boolean;
@@ -18,6 +20,11 @@ export interface Preferences {
   defaultRecipe: BuildEngine;
   fontSize: number;
   wrap: boolean;
+  /** Save edited documents after the configured idle delay. Disabled by default. */
+  autoSave: boolean;
+  autoSaveDelayMs: number;
+  /** Display Monaco's document overview minimap. */
+  editorMinimap: boolean;
   /** Controls the compact rich-text-style LaTeX formatting bar above the source editor. */
   formatToolbarVisible: boolean;
   sidebarWidth: number;
@@ -33,6 +40,19 @@ export interface Preferences {
   chktexRuleSeverities: Record<string, DiagnosticSeverity>;
   /** Optional absolute executable overrides keyed by TeX tool name. Not secrets. */
   toolPaths: Partial<Record<ConfigurableTool, string>>;
+  /** Restore the previous workspace after a normal restart. */
+  restoreSession: boolean;
+  /** Keep close controls visible or reveal them when a tab is hovered. */
+  tabCloseButtons: 'always' | 'hover';
+  /** Open a file in a reusable preview tab until it is edited. */
+  previewTabs: boolean;
+  /** Command names, newest first; only labels are stored. */
+  recentCommands: string[];
+}
+export interface ThemeCustomizations {
+  accent: string;
+  accentStrong: string;
+  accentBackground: string;
 }
 export const CONFIGURABLE_TOOLS = [
   'pdflatex',
@@ -49,6 +69,11 @@ export const FONT_SIZE_RANGE = { min: 10, max: 28 } as const;
 export const DEFAULT_PREFERENCES: Preferences = {
   version: 1,
   theme: 'dark',
+  themeCustomizations: {
+    accent: '#9bc9bb',
+    accentStrong: '#b0ddcf',
+    accentBackground: '#293e37',
+  },
   sidebarVisible: true,
   previewVisible: true,
   outputVisible: true,
@@ -56,6 +81,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   defaultRecipe: 'pdflatex',
   fontSize: 14,
   wrap: false,
+  autoSave: false,
+  autoSaveDelayMs: 3000,
+  editorMinimap: false,
   formatToolbarVisible: true,
   sidebarWidth: 226,
   texlabEnabled: true,
@@ -64,6 +92,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   chktexIgnoredRules: [],
   chktexRuleSeverities: {},
   toolPaths: {},
+  restoreSession: true,
+  tabCloseButtons: 'hover',
+  previewTabs: false,
+  recentCommands: [],
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 export interface FileEntry {

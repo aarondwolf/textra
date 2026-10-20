@@ -2,16 +2,16 @@
 
 Each phase depends on the preceding gate. Do not describe a partial gate as complete.
 
-| Milestone      | Scope                                                                               | Acceptance / verification                                                      | Status               |
-| -------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------- |
-| 0 Foundation   | Electron/Vite, typed IPC, secure shell, themes, palette, panels, memory             | dev native window + HMR; format, typecheck, lint, unit, build, Electron smoke  | Complete             |
-| 1a Files       | Project selection, safe file service, Monaco, tabs, conflicts                       | Traversal/symlink rejection, atomic save, dirty and external edit preservation | Core passed          |
-| 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                                | Real minimal/multi-file TeX and failed/cancelled builds                        | Fixed presets passed |
-| 1c Preview     | PDF.js, navigation, search, SyncTeX                                                 | Real PDF rendering and source mapping                                          | Core passed          |
-| 1d Workflow    | Project CRUD, settings, onboarding, pipelines                                       | Full phase 1 workflow and missing-tool fallbacks                               | Implemented; verify  |
-| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                                      | Offline insertions/undo, diagnostics and explicit AI consent                   | Implemented; verify  |
-| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer, environment content templates | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
-| 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help        | Security review, Windows install/uninstall, release matrix                     | Planned              |
+| Milestone      | Scope                                                                                                                                               | Acceptance / verification                                                      | Status               |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------- |
+| 0 Foundation   | Electron/Vite, typed IPC, secure shell, themes, palette, panels, memory                                                                             | dev native window + HMR; format, typecheck, lint, unit, build, Electron smoke  | Complete             |
+| 1a Files       | Project selection, safe file service, Monaco, tabs, conflicts                                                                                       | Traversal/symlink rejection, atomic save, dirty and external edit preservation | Core passed          |
+| 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                                                                                                | Real minimal/multi-file TeX and failed/cancelled builds                        | Fixed presets passed |
+| 1c Preview     | PDF.js, navigation, search, SyncTeX                                                                                                                 | Real PDF rendering and source mapping                                          | Core passed          |
+| 1d Workflow    | Project CRUD, settings, onboarding, pipelines                                                                                                       | Full phase 1 workflow and missing-tool fallbacks                               | Implemented; verify  |
+| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                                                                                                      | Offline insertions/undo, diagnostics and explicit AI consent                   | Implemented; verify  |
+| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer, environment content templates, PDF presentation controls, reduced-motion-aware UI transitions | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
+| 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help                                                                        | Security review, Windows install/uninstall, release matrix                     | Planned              |
 
 Common gate: `npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.
 Use PowerShell commands individually if the shell does not support `&&`.

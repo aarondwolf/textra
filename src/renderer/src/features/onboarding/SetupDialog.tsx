@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Hammer, Palette, Pencil, Save, Undo2, Wrench, X } from '../../icons';
+import { Article, Hammer, Palette, Pencil, Save, Undo2, Wrench, X } from '../../icons';
 import {
   BUILD_RECIPES,
   CONFIGURABLE_TOOLS,
@@ -8,6 +8,7 @@ import {
   type ConfigurableTool,
   type DiagnosticSeverity,
   type SetupLink,
+  type Theme,
   type TexlabStatus,
 } from '../../../../shared/api';
 import { preferencesSaved, useUI } from '../../state/ui';
@@ -15,9 +16,10 @@ import { useWorkspace } from '../../state/workspace';
 import { TexLabSettings } from './TexLabSettings';
 import './setup.css';
 
-type SectionId = 'appearance' | 'tools' | 'compilation' | 'backup';
+type SectionId = 'appearance' | 'editor' | 'tools' | 'compilation' | 'backup';
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'editor', label: 'Editor', icon: Article },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
   { id: 'backup', label: 'Import & export', icon: Save },
@@ -162,13 +164,138 @@ export default function SetupDialog({
                       aria-label="Theme"
                       value={preferences.theme}
                       onChange={(event) =>
-                        updatePreferences({ theme: event.target.value as 'dark' | 'light' })
+                        updatePreferences({ theme: event.target.value as Theme })
                       }
                     >
-                      <option value="dark">Dark</option>
+                      <option value="dark">Dark (default)</option>
                       <option value="light">Light</option>
+                      <option value="midnight">Midnight</option>
+                      <option value="forest">Forest</option>
+                      <option value="ocean">Ocean</option>
+                      <option value="rose">Rose</option>
+                      <option value="sand">Sand</option>
                     </select>
                   </label>
+                  <h3>Accent colors</h3>
+                  <p className="setup-hint">
+                    Personalize the accent used by the selected color scheme. Your choices stay
+                    local and are included in exported settings.
+                  </p>
+                  <div className="setup-actions">
+                    {(
+                      [
+                        ['accent', 'Accent'],
+                        ['accentStrong', 'Strong accent'],
+                        ['accentBackground', 'Accent background'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label className="field-label" key={key}>
+                        {label}
+                        <input
+                          aria-label={label}
+                          type="color"
+                          value={preferences.themeCustomizations[key]}
+                          onChange={(event) =>
+                            updatePreferences({
+                              themeCustomizations: {
+                                ...preferences.themeCustomizations,
+                                [key]: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+              {section === 'editor' && (
+                <>
+                  <h3>Editor</h3>
+                  <label className="texlab-toggle">
+                    <span>Show minimap</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.editorMinimap}
+                      onChange={(event) =>
+                        updatePreferences({ editorMinimap: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <p className="setup-hint">
+                    A compact document overview is useful in long source files. It is off by default
+                    to keep the editor uncluttered.
+                  </p>
+                  <h3>Autosave</h3>
+                  <label className="texlab-toggle">
+                    <span>Save after typing stops</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.autoSave}
+                      onChange={(event) => updatePreferences({ autoSave: event.target.checked })}
+                    />
+                  </label>
+                  <label className="chktex-field">
+                    Delay before saving (milliseconds)
+                    <input
+                      type="number"
+                      min="1000"
+                      max="120000"
+                      step="500"
+                      disabled={!preferences.autoSave}
+                      value={preferences.autoSaveDelayMs}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isInteger(value) && value >= 1000 && value <= 120000)
+                          updatePreferences({ autoSaveDelayMs: value });
+                      }}
+                    />
+                  </label>
+                  <p className="setup-hint">
+                    Autosave uses the same conflict checks as Ctrl/Cmd+S. It is disabled by default
+                    and starts at a three-second delay.
+                  </p>
+                  <h3>Tabs and recovery</h3>
+                  <label className="texlab-toggle">
+                    <span>Restore the previous session after restart</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.restoreSession}
+                      onChange={(event) =>
+                        updatePreferences({ restoreSession: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <label className="texlab-toggle">
+                    <span>Use preview tabs for unedited files</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.previewTabs}
+                      onChange={(event) => updatePreferences({ previewTabs: event.target.checked })}
+                    />
+                  </label>
+                  <label className="chktex-field">
+                    Tab close buttons
+                    <select
+                      value={preferences.tabCloseButtons}
+                      onChange={(event) =>
+                        updatePreferences({
+                          tabCloseButtons: event.target.value as 'always' | 'hover',
+                        })
+                      }
+                    >
+                      <option value="hover">Show on hover</option>
+                      <option value="always">Always show</option>
+                    </select>
+                  </label>
+                  <p className="setup-hint">
+                    These session and tab options are saved now; their workspace behavior is being
+                    connected with the broader tab and recovery work.
+                  </p>
                 </>
               )}
               {section === 'tools' && (

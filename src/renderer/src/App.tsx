@@ -6,6 +6,19 @@ import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
 import SetupDialog from './features/onboarding/SetupDialog';
 import RecipeDialog from './features/onboarding/RecipeDialog';
+import { ToastViewport } from './features/notifications/ToastViewport';
+
+const SHORTCUT_REFERENCE = [
+  ['Command palette', 'Ctrl/Cmd K'],
+  ['Save current file', 'Ctrl/Cmd S'],
+  ['Save file as', 'Shift Ctrl/Cmd S'],
+  ['Compile active document', 'Ctrl/Cmd Enter'],
+  ['Toggle sidebar', 'Ctrl/Cmd B'],
+  ['Toggle preview/output', 'Ctrl/Cmd J'],
+  ['Find in editor or preview', 'Ctrl/Cmd F'],
+  ['Find and replace in editor', 'Ctrl/Cmd H'],
+] as const;
+
 function CommandPalette() {
   const {
     preferences,
@@ -16,9 +29,10 @@ function CommandPalette() {
     setExpandedPane,
   } = useUI();
   const [query, setQuery] = useState('');
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLElement | null>(null);
-  const commands = [
+  const allCommands = [
     {
       label: 'Toggle sidebar',
       shortcut: 'Ctrl B',
@@ -64,10 +78,40 @@ function CommandPalette() {
         });
       },
     },
-  ].filter((command) => command.label.toLowerCase().includes(query.toLowerCase().trim()));
+  ];
+  const search = query.toLowerCase().trim();
+  const commands = [...allCommands]
+    .filter(
+      (command) =>
+        command.label.toLowerCase().includes(search) ||
+        command.shortcut.toLowerCase().includes(search),
+    )
+    .sort((left, right) => {
+      const leftRecent = preferences.recentCommands.indexOf(left.label);
+      const rightRecent = preferences.recentCommands.indexOf(right.label);
+      const leftIndex = leftRecent < 0 ? Number.MAX_SAFE_INTEGER : leftRecent;
+      const rightIndex = rightRecent < 0 ? Number.MAX_SAFE_INTEGER : rightRecent;
+      return leftIndex - rightIndex;
+    });
+  const recentCommands = commands.filter((command) =>
+    preferences.recentCommands.includes(command.label),
+  );
+  const otherCommands = commands.filter(
+    (command) => !preferences.recentCommands.includes(command.label),
+  );
+  const matchingShortcuts = SHORTCUT_REFERENCE.filter(
+    ([label, shortcut]) =>
+      label.toLowerCase().includes(search) || shortcut.toLowerCase().includes(search),
+  );
 
-  function runCommand(run: () => void) {
+  function runCommand(label: string, run: () => void) {
     run();
+    updatePreferences({
+      recentCommands: [
+        label,
+        ...preferences.recentCommands.filter((entry) => entry !== label),
+      ].slice(0, 12),
+    });
     setPaletteOpen(false);
   }
 
@@ -99,7 +143,8 @@ function CommandPalette() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && commands[0]) runCommand(commands[0].run);
+                if (event.key === 'Enter' && commands[0])
+                  runCommand(commands[0].label, commands[0].run);
                 if (event.key === 'ArrowDown') {
                   event.preventDefault();
                   document.querySelector<HTMLButtonElement>('.command-item')?.focus();
@@ -127,13 +172,27 @@ function CommandPalette() {
               }
             }}
           >
-            <div className="eyebrow command-group">WORKSPACE</div>
-            {commands.map(({ label, shortcut, icon: Icon, run }) => (
+            {recentCommands.length > 0 && <div className="eyebrow command-group">RECENT</div>}
+            {recentCommands.map(({ label, shortcut, icon: Icon, run }) => (
               <button
                 className="command-item"
                 aria-label={label}
                 key={label}
-                onClick={() => runCommand(run)}
+                onClick={() => runCommand(label, run)}
+              >
+                <Icon size={17} aria-hidden="true" />
+                <span>{label}</span>
+                {shortcut && <kbd>{shortcut}</kbd>}
+                <ArrowRight size={15} aria-hidden="true" />
+              </button>
+            ))}
+            {otherCommands.length > 0 && <div className="eyebrow command-group">WORKSPACE</div>}
+            {otherCommands.map(({ label, shortcut, icon: Icon, run }) => (
+              <button
+                className="command-item"
+                aria-label={label}
+                key={label}
+                onClick={() => runCommand(label, run)}
               >
                 <Icon size={17} aria-hidden="true" />
                 <span>{label}</span>
@@ -142,6 +201,19 @@ function CommandPalette() {
               </button>
             ))}
             {commands.length === 0 && <p className="no-commands">No commands match “{query}”.</p>}
+            <details
+              className="command-shortcuts"
+              open={shortcutsOpen || search.length > 0}
+              onToggle={(event) => setShortcutsOpen(event.currentTarget.open)}
+            >
+              <summary>Keyboard shortcuts</summary>
+              {matchingShortcuts.map(([label, shortcut]) => (
+                <p key={label}>
+                  <span>{label}</span> <kbd>{shortcut}</kbd>
+                </p>
+              ))}
+              {matchingShortcuts.length === 0 && <p>No shortcuts match “{query}”.</p>}
+            </details>
           </div>
           <div className="command-footer">
             Your workspace, a few keystrokes away.
@@ -164,8 +236,25 @@ export function App() {
     void hydratePreferences();
   }, []);
   useEffect(() => {
-    document.documentElement.dataset.theme = preferences.theme;
-  }, [preferences.theme]);
+    const root = document.documentElement;
+    root.dataset.theme = preferences.theme;
+    const custom = preferences.themeCustomizations;
+    const defaults = DEFAULT_PREFERENCES.themeCustomizations;
+    for (const [name, value] of [
+      ['--accent', custom.accent],
+      ['--accent-strong', custom.accentStrong],
+      ['--accent-bg', custom.accentBackground],
+    ] as const) {
+      const defaultValue =
+        name === '--accent'
+          ? defaults.accent
+          : name === '--accent-strong'
+            ? defaults.accentStrong
+            : defaults.accentBackground;
+      if (value === defaultValue) root.style.removeProperty(name);
+      else root.style.setProperty(name, value);
+    }
+  }, [preferences.theme, preferences.themeCustomizations]);
   useEffect(() => {
     const handleKey = (event: globalThis.KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || !hydrated) return;
@@ -196,6 +285,7 @@ export function App() {
       )}
       <Workspace onOpenSettings={() => setSettingsOpen(true)} />
       <CommandPalette />
+      <ToastViewport />
       <SetupDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <RecipeDialog open={recipeEditorOpen} onOpenChange={setRecipeEditorOpen} />
     </div>

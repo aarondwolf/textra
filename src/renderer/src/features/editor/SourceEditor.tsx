@@ -19,7 +19,8 @@ import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
 import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
-import { editDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
+import { editDocument, saveDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
+import { useUI } from '../../state/ui';
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
   getWorker: () => new EditorWorker(),
@@ -196,6 +197,106 @@ const editorThemes: Record<string, monaco.editor.IStandaloneThemeData> = {
       focusBorder: '#326958',
       'editor.findMatchBackground': '#E8C98A99',
       'editor.findMatchHighlightBackground': '#E8C98A55',
+    },
+  },
+  'textra-midnight': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'D8E2F2' },
+      { token: 'keyword', foreground: '87BFFF' },
+      { token: 'comment', foreground: '71829B', fontStyle: 'italic' },
+      { token: 'string.math', foreground: 'E5B567' },
+      { token: 'delimiter.math', foreground: 'E5B567' },
+      { token: 'number', foreground: 'E5B567' },
+    ],
+    colors: {
+      'editor.background': '#121A2A',
+      'editor.foreground': '#D8E2F2',
+      'editorCursor.foreground': '#87BFFF',
+      'editorLineNumber.foreground': '#52637B',
+      'editor.lineHighlightBackground': '#1A263A',
+      'editor.selectionBackground': '#315B8A88',
+    },
+  },
+  'textra-forest': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'DEE7D9' },
+      { token: 'keyword', foreground: '9AC68E' },
+      { token: 'comment', foreground: '80907B', fontStyle: 'italic' },
+      { token: 'string.math', foreground: 'E3C177' },
+      { token: 'delimiter.math', foreground: 'E3C177' },
+      { token: 'number', foreground: 'E3C177' },
+    ],
+    colors: {
+      'editor.background': '#18231C',
+      'editor.foreground': '#DEE7D9',
+      'editorCursor.foreground': '#9AC68E',
+      'editorLineNumber.foreground': '#5D725E',
+      'editor.lineHighlightBackground': '#223126',
+      'editor.selectionBackground': '#496C4488',
+    },
+  },
+  'textra-ocean': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'D9E9ED' },
+      { token: 'keyword', foreground: '75C9D7' },
+      { token: 'comment', foreground: '759199', fontStyle: 'italic' },
+      { token: 'string.math', foreground: 'E6B980' },
+      { token: 'delimiter.math', foreground: 'E6B980' },
+      { token: 'number', foreground: 'E6B980' },
+    ],
+    colors: {
+      'editor.background': '#10252D',
+      'editor.foreground': '#D9E9ED',
+      'editorCursor.foreground': '#75C9D7',
+      'editorLineNumber.foreground': '#4E737D',
+      'editor.lineHighlightBackground': '#16333D',
+      'editor.selectionBackground': '#36738388',
+    },
+  },
+  'textra-rose': {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'F1E0E5' },
+      { token: 'keyword', foreground: 'E8A4B8' },
+      { token: 'comment', foreground: 'A27E8A', fontStyle: 'italic' },
+      { token: 'string.math', foreground: 'E9C47F' },
+      { token: 'delimiter.math', foreground: 'E9C47F' },
+      { token: 'number', foreground: 'E9C47F' },
+    ],
+    colors: {
+      'editor.background': '#291B23',
+      'editor.foreground': '#F1E0E5',
+      'editorCursor.foreground': '#E8A4B8',
+      'editorLineNumber.foreground': '#7D5967',
+      'editor.lineHighlightBackground': '#38242E',
+      'editor.selectionBackground': '#884D6588',
+    },
+  },
+  'textra-sand': {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: '', foreground: '3B342B' },
+      { token: 'keyword', foreground: '946C2E' },
+      { token: 'comment', foreground: '827868', fontStyle: 'italic' },
+      { token: 'string.math', foreground: 'A85A3A' },
+      { token: 'delimiter.math', foreground: 'A85A3A' },
+      { token: 'number', foreground: 'A85A3A' },
+    ],
+    colors: {
+      'editor.background': '#F6F0E3',
+      'editor.foreground': '#3B342B',
+      'editorCursor.foreground': '#946C2E',
+      'editorLineNumber.foreground': '#A69A87',
+      'editor.lineHighlightBackground': '#ECE2CF',
+      'editor.selectionBackground': '#DCC48D99',
     },
   },
 };
@@ -410,6 +511,10 @@ export function SourceEditor({
   const documentsRef = useRef(documents);
   const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
   const bibliographyEntriesRef = useRef(bibliographyEntries);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { autoSave, autoSaveDelayMs, editorMinimap } = useUI((state) => state.preferences);
+  const autoSavePreferences = useRef({ enabled: autoSave, delayMs: autoSaveDelayMs, readOnly });
+  const minimapPreference = useRef(editorMinimap);
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
@@ -420,11 +525,18 @@ export function SourceEditor({
     bibliographyEntriesRef.current = bibliographyEntries;
   }, [bibliographyEntries]);
   useEffect(() => {
+    autoSavePreferences.current = { enabled: autoSave, delayMs: autoSaveDelayMs, readOnly };
+    if (!autoSave && autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+  }, [autoSave, autoSaveDelayMs, readOnly]);
+  useEffect(() => {
+    minimapPreference.current = editorMinimap;
+  }, [editorMinimap]);
+  useEffect(() => {
     const instance = monaco.editor.create(container.current!, {
       ariaLabel: 'LaTeX source editor',
       editContext: false,
       automaticLayout: true,
-      minimap: { enabled: false },
+      minimap: { enabled: minimapPreference.current },
       fontFamily: "'Cascadia Code', Consolas, monospace",
       fontSize: 14,
       lineHeight: 23,
@@ -537,12 +649,30 @@ export function SourceEditor({
       instance.pushUndoStop();
       instance.setPosition(model.getPositionAt(start + request.caret));
       instance.focus();
+      window.dispatchEvent(
+        new CustomEvent('textra:notify', {
+          detail: { message: 'Formatting applied', tone: 'success' },
+        }),
+      );
     };
     window.addEventListener('textra:format-source', formatSource);
     const content = instance.onDidChangeModelContent(() => {
       if (!current.current) return;
-      editDocument(current.current, instance.getValue());
-      const document = documentsRef.current.find(({ path }) => path === current.current);
+      const path = current.current;
+      editDocument(path, instance.getValue());
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      const autoSaveSettings = autoSavePreferences.current;
+      if (autoSaveSettings.enabled && !autoSaveSettings.readOnly) {
+        autoSaveTimer.current = setTimeout(() => {
+          void saveDocument(path).then((saved) => {
+            if (saved)
+              window.dispatchEvent(
+                new CustomEvent('textra:notify', { detail: { message: 'Saved', tone: 'success' } }),
+              );
+          });
+        }, autoSaveSettings.delayMs);
+      }
+      const document = documentsRef.current.find(({ path: documentPath }) => documentPath === path);
       const model = instance.getModel();
       if (document && model && texlabRef.current?.isReady)
         void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
@@ -899,6 +1029,7 @@ export function SourceEditor({
       window.removeEventListener('textra:insert-source', insertSource);
       window.removeEventListener('textra:format-source', formatSource);
       content.dispose();
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       cursor.dispose();
       environmentEnter.dispose();
       completion.dispose();
@@ -983,11 +1114,16 @@ export function SourceEditor({
     }
   }, [documents, texlab?.diagnostics]);
   useEffect(() => {
-    monaco.editor.setTheme(theme === 'dark' ? 'textra-dark' : 'textra-light');
+    monaco.editor.setTheme(`textra-${theme}`);
   }, [theme]);
   useEffect(() => {
-    editor.current?.updateOptions({ fontSize, wordWrap: wrap ? 'on' : 'off', readOnly });
-  }, [fontSize, wrap, readOnly]);
+    editor.current?.updateOptions({
+      fontSize,
+      wordWrap: wrap ? 'on' : 'off',
+      readOnly,
+      minimap: { enabled: editorMinimap },
+    });
+  }, [fontSize, wrap, readOnly, editorMinimap]);
   useEffect(() => {
     if (navigation && navigation.path === activePath) {
       editor.current?.setPosition({ lineNumber: navigation.line, column: navigation.column });

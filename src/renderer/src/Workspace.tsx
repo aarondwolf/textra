@@ -998,13 +998,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
         });
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [
-    active?.content,
-    active?.path,
-    preferences.chktexEnabled,
-    preferences.chktexRunMode,
-    project,
-  ]);
+  }, [active, preferences.chktexEnabled, preferences.chktexRunMode, project]);
   async function formatActive() {
     if (!project || !active || !/\.tex$/i.test(active.path)) return;
     const result = await window.textra.formatLatex({
@@ -1405,6 +1399,21 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       ? 'latexindent is available. Use Format document in the editor menu to preview changes.'
                       : 'latexindent is not available. Configure it in Settings if you install it.'}
                   </p>
+                  {!tools.some((tool) => tool.name === 'latexindent' && tool.path) && (
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        void window.textra
+                          .openSetupLink('latexindent')
+                          .then((result) => {
+                            if (!result.ok) showError(result.error);
+                          })
+                          .catch(showError);
+                      }}
+                    >
+                      Install latexindent
+                    </button>
+                  )}
                 </section>
               </div>
             ) : (

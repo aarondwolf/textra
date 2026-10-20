@@ -517,6 +517,7 @@ void app.whenReady().then(() => {
       miktex: 'https://miktex.org/download',
       texlive: 'https://tug.org/texlive/acquire-netinstall.html',
       mactex: 'https://tug.org/mactex/',
+      latexindent: 'https://latexindentpl.readthedocs.io/en/latest/',
     };
     if (typeof target !== 'string' || !Object.hasOwn(links, target))
       throw new ProjectError('INVALID_ARGUMENT', 'Unknown setup destination.');

@@ -138,3 +138,11 @@ Prettier check, and `npm run build` pass. The global `npm run format:check`
 reports only the pre-existing untracked `.vitest/json/output.json`. Preserve the
 untracked `.vitest/` and `sandbox/.textra/` directories plus the modified
 `sandbox/test.tex`; they are not implementation changes.
+
+## latexindent install help
+
+When `latexindent` is missing, the Compile rail and Settings → Compilation now
+show an **Install latexindent** button. It opens an allowlisted latexindent
+documentation URL via main-process external-link IPC; it does not run an
+installer or execute a shell command. Typecheck, lint, and a focused Prettier
+check pass for this slice.

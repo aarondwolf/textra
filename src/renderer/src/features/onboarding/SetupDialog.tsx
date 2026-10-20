@@ -472,6 +472,13 @@ export default function SetupDialog({
                       ? 'latexindent is available.'
                       : 'latexindent was not found on PATH.'}
                   </p>
+                  {!tools.some((tool) => tool.name === 'latexindent' && tool.path) && (
+                    <div className="setup-actions">
+                      <button onClick={() => void perform(() => setupLink('latexindent'))}>
+                        Install latexindent
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
               {section === 'backup' && (

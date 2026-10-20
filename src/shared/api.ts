@@ -135,7 +135,7 @@ export interface ProjectConfig extends Partial<RecipeSettings> {
   engine: BuildEngine;
   recipes?: Record<string, string>;
 }
-export type SetupLink = 'miktex' | 'texlive' | 'mactex';
+export type SetupLink = 'miktex' | 'texlive' | 'mactex' | 'latexindent';
 export interface Diagnostic {
   severity: 'error' | 'warning' | 'info';
   message: string;

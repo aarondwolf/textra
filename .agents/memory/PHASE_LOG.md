@@ -1,5 +1,13 @@
 # Phase log
 
+- 2026-10-21: Revised automatic completion to 1–10 lines/384 tokens, 30s local/10s
+  remote deadlines and installed Qwen0.5B preference for new bindings. Generic word
+  suggestions are off; deterministic suggestions require command/structured-argument
+  context. Full unit suite passes 494/494; saved automatic model switched to local
+  0.5B through validated IPC. Live figure fixture returned four lines in 13.669s.
+  Native completion/shell checks pass 2/2; typecheck, lint, changed-file formatting
+  and production build pass. No unrelated phase gates advance.
+
 - 2026-10-21: Fixed Qwen cancellation and TexLab timeout follow-up. Local native
   generation stops on useful output/suffix, local context/deadlines fit CPU
   inference, and normal cancellation is quiet. TexLab sync/query feedback loop

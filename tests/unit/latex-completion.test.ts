@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { buildCompletionContext, scanLatexCursor } from '../../src/shared/latex-completion';
+import {
+  buildCompletionContext,
+  scanLatexCursor,
+  isLatexSuggestionContext,
+} from '../../src/shared/latex-completion';
 
 const scan = (source: string) => scanLatexCursor(source, source.length);
+describe('deterministic LaTeX suggestion contexts', () => {
+  it('keeps command and structured argument completion', () => {
+    for (const text of [
+      '\\',
+      '\\frac',
+      '\\begin{equ',
+      '\\cite{one,tw',
+      '\\includegraphics[width=2cm]{fig',
+      '\\usepackage{tik',
+    ])
+      expect(isLatexSuggestionContext(text), text).toBe(true);
+  });
+  it('does not query word completion for prose or literal line breaks', () => {
+    for (const text of ['Th', 'The theorem', '\\textbf{Th', '\\\\Th', 'ordinary {Th'])
+      expect(isLatexSuggestionContext(text), text).toBe(false);
+  });
+});
 describe('cursor-aware LaTeX completion context', () => {
   it('tracks nested custom and unfinished environments without treating document as eligible', () => {
     expect(scan('\\begin{document}\nProse').eligible).toBe(false);

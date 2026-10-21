@@ -448,8 +448,9 @@ describe('multi-provider AI settings and requests', () => {
     expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(3);
   });
 
-  it('prefills only an installed local Qwen coder and prefers 3B before 1.5B and 7B', async () => {
+  it('prefills only an installed local Qwen coder and prefers 0.5B for testing', async () => {
     list.mockResolvedValueOnce([
+      { id: 'qwen2.5-coder:0.5b', label: '0.5B' },
       { id: 'qwen2.5-coder:7b', label: '7B' },
       { id: 'qwen2.5-coder:1.5b', label: '1.5B' },
       { id: 'qwen2.5-coder:3b', label: '3B' },
@@ -467,7 +468,7 @@ describe('multi-provider AI settings and requests', () => {
     await writeFile(file, JSON.stringify(raw));
     expect((await service.settings()).roleDefaults.completion).toEqual({
       provider: 'ollama-local',
-      model: 'qwen2.5-coder:3b',
+      model: 'qwen2.5-coder:0.5b',
     });
     expect(ollama.start).not.toHaveBeenCalled();
   });

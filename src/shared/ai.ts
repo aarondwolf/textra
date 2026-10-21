@@ -148,10 +148,10 @@ export function isLocalAIModel(model: AIModelRef): boolean {
 export function completionTimeout(role: AICompletionRole, model: AIModelRef): number {
   return isLocalAIModel(model)
     ? role === 'completion'
-      ? 10_000
+      ? 30_000
       : 30_000
     : role === 'completion'
-      ? 2_500
+      ? 10_000
       : 15_000;
 }
 export type AIRoleDefaults = Record<AIRole, AIModelRef | null>;

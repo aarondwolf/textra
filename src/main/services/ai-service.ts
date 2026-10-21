@@ -381,6 +381,7 @@ export class AIService {
       (m) => /qwen.*coder/i.test(m.id) && !/cloud/i.test(m.id) && supportsAIRole(m, 'completion'),
     );
     const chosen =
+      eligible.find((m) => /^qwen2\.5-coder:0\.5b(?:-|$)/i.test(m.id)) ??
       eligible.find((m) => m.id === local.defaultModel) ??
       ['3b', '1.5b', '7b']
         .map((size) =>
@@ -914,7 +915,8 @@ export class AIService {
         prefix: request.prefix,
         suffix: request.suffix,
         metadata: request.metadata,
-        maxTokens: request.role === 'completion' ? 128 : 512,
+        maxTokens: request.role === 'completion' ? 384 : 512,
+        maxLines: request.role === 'completion' ? 10 : 20,
         signal: controller.signal,
         transport: resolved.info.capabilities?.transport ?? 'chat',
       });
@@ -1072,7 +1074,7 @@ export function normalizeCompletion(
   raw: string,
   request: Pick<AICompletionRequest, 'role' | 'prefix' | 'suffix'>,
 ): string {
-  const limit = request.role === 'completion' ? 3000 : 20000;
+  const limit = request.role === 'completion' ? 10000 : 20000;
   if (typeof raw !== 'string' || raw.length > limit)
     throw new AIError('AI_COMPLETION_OUTPUT', 'The completion response was too large.');
   let text = raw.replace(/^```[^\r\n]*\r?\n([\s\S]*?)\r?\n```\s*$/, '$1');
@@ -1091,7 +1093,7 @@ export function normalizeCompletion(
     }
   }
   const lines = text.replace(/\r\n/g, '\n').split('\n');
-  if (lines.length > (request.role === 'completion' ? 3 : 20))
+  if (lines.length > (request.role === 'completion' ? 10 : 20))
     throw new AIError('AI_COMPLETION_OUTPUT', 'The completion exceeded its line limit.');
   const eol = request.prefix.includes('\r\n') || request.suffix.includes('\r\n') ? '\r\n' : '\n';
   text = lines.join(eol);

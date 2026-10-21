@@ -254,7 +254,7 @@ describe('editor AI completion coordination', () => {
     f.edit();
     await vi.advanceTimersByTimeAsync(750);
     const request = f.requestAICompletion.mock.calls[0][0];
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(f.cancelAICompletion).toHaveBeenCalledWith({ requestId: request.requestId });
     resolve({ ok: true, value: { ...request, text: 'late' } });
     await vi.advanceTimersByTimeAsync(0);

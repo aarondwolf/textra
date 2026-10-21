@@ -56,7 +56,15 @@ describe('bounded completion output and request validation', () => {
   it('rejects empty, oversized and excessive-line outputs', () => {
     for (const text of ['', 'after', 'x'.repeat(20001), Array(21).fill('line').join('\n')])
       expect(() => normalizeCompletion(text, snapshot)).toThrow();
-    expect(() => normalizeCompletion('1\n2\n3\n4', { ...snapshot, role: 'completion' })).toThrow();
+    expect(
+      normalizeCompletion(Array(10).fill('line').join('\n'), {
+        ...snapshot,
+        role: 'completion',
+      }).split('\n'),
+    ).toHaveLength(10);
+    expect(() =>
+      normalizeCompletion(Array(11).fill('line').join('\n'), { ...snapshot, role: 'completion' }),
+    ).toThrow();
   });
 });
 
@@ -115,7 +123,7 @@ describe('completion service coordination', () => {
     expect(generate).not.toHaveBeenCalled();
     await service.setCompletionSettings({ enabled: true, allowOutsideEnvironments: false });
     await service.complete(automatic);
-    expect(generate.mock.calls[0][2].maxTokens).toBe(128);
+    expect(generate.mock.calls[0][2]).toMatchObject({ maxTokens: 384, maxLines: 10 });
   });
   it('remembers cancellation that arrives before canonical path validation finishes', async () => {
     service.cancelCompletion({ requestId: snapshot.requestId });
@@ -206,7 +214,7 @@ describe('completion service coordination', () => {
     await expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
   });
   it.each([
-    ['completion', 10000],
+    ['completion', 30000],
     ['inlineCompletion', 30000],
   ] as const)('times out %s requests after their bounded deadline', async (role, deadline) => {
     await service.setCompletionSettings({ enabled: true, allowOutsideEnvironments: false });

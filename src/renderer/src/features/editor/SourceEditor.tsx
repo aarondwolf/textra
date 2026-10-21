@@ -3,6 +3,7 @@ import { latexFoldingRanges } from './folding';
 import { minimalEditorScrollbars } from './scrollbars';
 import FormattingToolbar from './FormattingToolbar';
 import { installAICompletion, type CompletionView } from './ai-completion';
+import { isLatexSuggestionContext } from '../../../../shared/latex-completion';
 import { ModelPicker } from '../chat/ModelPicker';
 import { useAISettings } from '../chat/useAISettings';
 import { useAIRoleSelection } from '../../state/ai-role-selections';
@@ -617,6 +618,7 @@ export function SourceEditor({
       quickSuggestions: { other: true, comments: false, strings: false },
       quickSuggestionsDelay: 80,
       suggestOnTriggerCharacters: true,
+      wordBasedSuggestions: 'off',
       folding: true,
       foldingStrategy: 'auto',
       showFoldingControls: 'mouseover',
@@ -968,6 +970,8 @@ export function SourceEditor({
       triggerCharacters: ['\\', '{', ',', '['],
       async provideCompletionItems(model, position) {
         if (isLatexCommentAtPosition(model, position)) return { suggestions: [] };
+        const before = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+        if (!isLatexSuggestionContext(before)) return { suggestions: [] };
         // Environment suggestions are deliberately local and synchronous. They remain stable while
         // Monaco cancels superseded asynchronous LSP requests as the user types.
         const environments = environmentCompletion(model, position);
@@ -1219,7 +1223,7 @@ export function SourceEditor({
           ? { other: true, comments: false, strings: false }
           : false,
         suggestOnTriggerCharacters: enhancedTexFeatures,
-        wordBasedSuggestions: enhancedTexFeatures ? 'matchingDocuments' : 'off',
+        wordBasedSuggestions: 'off',
       });
       instance.focus();
     }

@@ -127,9 +127,9 @@ model IDs are identified as cloud destinations. Automatic context is limited to 
 prefix, 2,000 suffix and 2,000 metadata characters; explicit Ctrl+I allows 16,000/4,000/4,000.
 Both use only the active buffer, never other files or Chat history. Suggestions and source
 cache remain memory-only (32 entries, 30 seconds), and dismissed suggestions are not reused.
-Remote requests time out after 2.5 seconds automatically or 15 seconds for Ctrl+I;
-local-only Ollama gets 10/30 seconds and reduced 1,024/256 or 4,096/1,024-character
-prefix/suffix context. Output remains bounded to 128/512 tokens and 3/20 lines
+Remote requests time out after 10 seconds automatically or 15 seconds for Ctrl+I;
+local-only Ollama gets 30 seconds for either mode and reduced 1,024/256 or 4,096/1,024-character
+prefix/suffix context. Output remains bounded to 384/512 tokens and 10/20 lines
 respectively. Authentication/quota failures suspend automatic
 requests until retry or configuration change. No retries, provider/model fallback, model
 downloads, automatic server start or warming on launch occur. Acceptance rechecks the

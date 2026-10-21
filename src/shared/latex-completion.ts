@@ -1,5 +1,17 @@
 import type { AICompletionRole } from './ai';
 
+/** Ordinary prose should never request deterministic word completion. */
+export function isLatexSuggestionContext(before: string): boolean {
+  const match =
+    /\\(?:[A-Za-z@]*|(?:begin|end|[A-Za-z]*ref|[A-Za-z]*cite[A-Za-z]*|label|usepackage|documentclass|input|include|includegraphics|bibliography|bibliographystyle|addbibresource)(?:\[[^\]]*\])?\{[^}\n]*)$/.exec(
+      before,
+    );
+  if (!match) return false;
+  let escaped = 0;
+  for (let index = match.index - 1; index >= 0 && before[index] === '\\'; index--) escaped++;
+  return escaped % 2 === 0;
+}
+
 const EMBEDDED_LANGUAGES = new Set([
   'python',
   'py',

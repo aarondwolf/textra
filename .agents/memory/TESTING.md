@@ -1,5 +1,20 @@
 # Test evidence
 
+2026-10-21 multiline automatic-completion revision: provider checks pass 53/53
+(`npx vitest run tests/unit/ai-providers.test.ts`). Focused provider lint and
+formatting pass. Mock streams verify automatic ten-line and manual twenty-line
+limits, multiple useful lines, CRLF split across chunks, early reader cancellation
+and suffix-echo stopping. Full suite passes 494/494 (40 files, 113.80s).
+Real saved automatic binding changed through typed IPC to local Qwen2.5-Coder0.5B,
+with consent retained and other roles preserved. Live synthetic TikZ supply/demand
+completion returned four lines/836 characters in 13.669s with identity matched.
+Command: node tests/manual/ai-completion-live.mjs --run --provider=ollama-local
+--automatic --figure. Native editor/shell checks pass 2/2 (31.7s/53.8s),
+including quiet prose and multiline insertion/one-step Undo. Typecheck, lint,
+changed-file formatting and production build pass. Build used electron-vite
+emptyOutDir:false to avoid the known Dropbox asset-cleanup lock. Earlier evidence
+below uses the earlier budgets/models.
+
 2026-10-21 Qwen/TexLab follow-up: 488/488 unit/integration tests pass serially
 (40 files, 119.29s). Focused AI adapters/service/editor checks pass 69/69 before
 the added leading-newline case, which also passes; TexLab checks pass 14/14 with

@@ -14,8 +14,10 @@ await mkdir(root, { recursive: true });
 const directory = await mkdtemp(join(root, 'case-'));
 const project = join(directory, 'project');
 await mkdir(project);
-const source =
-  '\\documentclass{article}\n\\begin{document}\nThe Pythagorean theorem states that \n\\begin{lstlisting}[language=Python]\ndef add(a, b):\n    return \n\\end{lstlisting}\n\\end{document}\n';
+const figure = process.argv.includes('--figure');
+const source = figure
+  ? '\\documentclass{article}\n\\usepackage{tikz}\n\\begin{document}\n% Draw a supply and demand figure with labeled axes and two curves.\n\\begin{tikzpicture}\n\n\\end{tikzpicture}\n\\end{document}\n'
+  : '\\documentclass{article}\n\\begin{document}\nThe Pythagorean theorem states that \n\\begin{lstlisting}[language=Python]\ndef add(a, b):\n    return \n\\end{lstlisting}\n\\end{document}\n';
 await writeFile(join(project, 'main.tex'), source);
 const env = { ...process.env, TEXTRA_USER_DATA_DIR: join(directory, 'user-data') };
 delete env.ELECTRON_RUN_AS_NODE;
@@ -36,7 +38,7 @@ try {
     ?.split('=')[1];
   const automatic = process.argv.includes('--automatic');
   const report = await page.evaluate(
-    async ({ selectedProvider, automatic }) => {
+    async ({ selectedProvider, automatic, figure }) => {
       const bridge = window.textra;
       const opened = await bridge.chooseProject();
       if (!opened.ok || !opened.value)
@@ -93,10 +95,12 @@ try {
           });
           continue;
         }
-        const code = id !== 'google';
-        const offset = code
-          ? snapshot.value.content.indexOf('    return ') + '    return '.length
-          : snapshot.value.content.indexOf('\n\\begin{lstlisting}');
+        const code = !figure && id !== 'google';
+        const offset = figure
+          ? snapshot.value.content.indexOf('\n\\end{tikzpicture}')
+          : code
+            ? snapshot.value.content.indexOf('    return ') + '    return '.length
+            : snapshot.value.content.indexOf('\n\\begin{lstlisting}');
         const request = {
           requestId: crypto.randomUUID(),
           role: automatic ? 'completion' : 'inlineCompletion',
@@ -111,7 +115,11 @@ try {
           metadata: JSON.stringify({
             language: code ? 'python' : 'latex',
             literal: code,
-            environments: code ? ['document', 'lstlisting'] : ['document'],
+            environments: figure
+              ? ['document', 'tikzpicture']
+              : code
+                ? ['document', 'lstlisting']
+                : ['document'],
             indentation: code ? '    ' : '',
           }),
         };
@@ -138,7 +146,7 @@ try {
       }
       return evidence;
     },
-    { selectedProvider, automatic },
+    { selectedProvider, automatic, figure },
   );
   // Report only model identifiers, timings and response sizes; no keys or source.
   console.log(JSON.stringify(report, null, 2));

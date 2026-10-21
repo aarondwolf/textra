@@ -707,23 +707,91 @@ describe('insertion completion adapters', () => {
       }),
     ).toBe('a + b');
   });
-  it('returns a short automatic local insertion without waiting for EOS', async () => {
+  it('preserves several automatic local lines instead of stopping after the first', async () => {
     stubFetch(streamResponse(['{"response":"one\\ntwo\\nthree\\nfour"}\n']));
     expect(
       await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:3b', {
         ...request,
         transport: 'ollama-generate',
       }),
-    ).toBe('one');
+    ).toBe('one\ntwo\nthree\nfour');
   });
-  it('preserves a leading newline before the first useful local line', async () => {
-    stubFetch(streamResponse(['{"response":"\\n"}\n', '{"response":"  a + b\\nexplanation"}\n']));
+  it('preserves a leading newline and indentation across multiple useful local lines', async () => {
+    stubFetch(streamResponse(['{"response":"\\n"}\n', '{"response":"  a + b\\n  + c"}\n']));
     expect(
       await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:3b', {
         ...request,
         transport: 'ollama-generate',
       }),
-    ).toBe('\n  a + b');
+    ).toBe('\n  a + b\n  + c');
+  });
+  it('stops automatic local generation at ten lines without waiting for EOS and preserves CRLF', async () => {
+    const cancel = vi.fn();
+    const output = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\r\n');
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ response: output })}\n`));
+        },
+        cancel,
+      }),
+    );
+    const sent = stubFetch(response);
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:0.5b', {
+        ...request,
+        maxTokens: 384,
+        maxLines: 10,
+        transport: 'ollama-generate',
+      }),
+    ).toBe(output.split('\r\n').slice(0, 10).join('\r\n'));
+    expect(sent[0].body?.options).toEqual({ num_predict: 384 });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+  it('allows twenty manual local lines with an explicit line budget', async () => {
+    const output = Array.from({ length: 21 }, (_, index) => `line ${index + 1}`).join('\n');
+    stubFetch(streamResponse([`${JSON.stringify({ response: output })}\n`]));
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:0.5b', {
+        ...request,
+        maxTokens: 512,
+        maxLines: 20,
+        transport: 'ollama-generate',
+      }),
+    ).toBe(output.split('\n').slice(0, 20).join('\n'));
+  });
+  it('preserves CRLF split across streamed response chunks', async () => {
+    stubFetch(
+      streamResponse([
+        `${JSON.stringify({ response: 'first\r' })}\n`,
+        `${JSON.stringify({ response: '\nsecond\r\nthird', done: true })}\n`,
+      ]),
+    );
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:0.5b', {
+        ...request,
+        maxLines: 10,
+        transport: 'ollama-generate',
+      }),
+    ).toBe('first\r\nsecond\r\nthird');
+  });
+  it('applies the automatic line budget to chat completion streams too', async () => {
+    const output = Array.from({ length: 11 }, (_, index) => `line ${index + 1}`).join('\n');
+    const sent = stubFetch(
+      streamResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: output } }] })}\n\n`,
+      ]),
+    );
+    expect(
+      await completionGenerate(access('openai'), 'gpt-5-mini', {
+        ...request,
+        maxTokens: 384,
+        maxLines: 10,
+      }),
+    ).toBe(output.split('\n').slice(0, 10).join('\n'));
+    const messages = sent[0].body?.messages as { content: string }[];
+    expect(JSON.parse(messages[1].content)).toMatchObject({ maxLines: 10 });
+    expect(sent[0].body?.max_completion_tokens).toBe(384);
   });
   it.each(AI_PROVIDER_IDS)(
     'uses identical completion instructions and small budgets on %s chat',

@@ -1,5 +1,20 @@
 # Current state
 
+2026-10-21 automatic-completion revision: target 1–10 lines/384 tokens instead of
+stopping after the first useful line. Local Ollama automatic requests get 30s;
+remote automatic requests get 10s. Ctrl+I stays 20 lines/512 tokens and 30s local,
+15s remote. New bindings prefer installed Qwen2.5-Coder0.5B. Monaco word suggestions
+are off; deterministic LaTeX/TexLab completion only runs for commands/structured
+arguments, leaving prose quiet. Provider checks pass 53/53 with multiline, CRLF,
+line-budget and suffix-stop coverage. Saved automatic model is now local
+qwen2.5-coder:0.5b, with enabled consent and other role bindings preserved through
+validated IPC. A live synthetic supply/demand TikZ request returned four lines/836
+characters in 13.669s. Full unit checks pass 494/494. Native completion and shell checks pass 2/2
+(31.7s/53.8s), covering quiet prose, multiline Tab insertion and one-step Undo.
+Typecheck, lint, changed-file formatting and production build pass.
+No phase gates advance.
+Launch npm run dev after rebuilding main/preload changes.
+
 2026-10-21 Qwen/TexLab follow-up: fixed a diagnostics/sync feedback loop by making
 unchanged TexLab source idempotent and decoupling source sync from adapter identity.
 Queries deduplicate, supersede/cancel on edits, close/reopen safely, and have bounded

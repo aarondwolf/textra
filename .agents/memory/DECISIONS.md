@@ -1,17 +1,21 @@
 # Decisions
 
-- 2026-10-21 observed CPU Qwen behavior revises local completion timing: remote
-  2.5/15s stays, local-only Ollama gets 10/30s and shorter contiguous context.
-  Automatic local insertion stops after its first useful line (up to three with
-  leading newlines); manual can span twenty. A distinctive echoed suffix stops
+- 2026-10-21 owner requests automatic continuation through 1–10 lines/384 tokens,
+  replacing the first-useful-line stop. Automatic deadlines are 30s for local-only
+  Ollama and 10s remotely; manual stays 30s local/15s remote and 20 lines/512 tokens.
+  New automatic bindings prefer installed Qwen2.5-Coder0.5B for testing. Keep the
+  smaller contiguous local context. A distinctive echoed suffix stops
   native generation before model explanation/EOS. No model or provider fallback.
+  Disable Monaco word-based suggestions and gate deterministic LaTeX/TexLab
+  suggestions to commands and structured arguments so prose stays quiet.
   TexLab repeated source sync is idempotent; stale/cancelled work must not produce
   warning storms. Explicit document closure resets client version epochs.
 
 - 2026-10-21 completion: AIRole chat/agent/completion/inlineCompletion means Chat,
   Agent, automatic and Ctrl+I respectively. v3 replaces the overall model binding;
   v2's model seeds Chat/Agent, configured Google seeds Ctrl+I, and an existing local
-  Qwen coder preference (otherwise Qwen2.5-Coder3B/1.5B/7B) seeds automatic. No pulls
+  Qwen2.5-Coder0.5B is preferred for new automatic bindings, with existing eligible
+  coder/installed-size choices retained as fallbacks. No pulls
   or alternate-provider substitution. Session role choices reset on restart and
   unavailable overrides become explicit null choices. Native model-bound consent
   protects automatic sharing; source and suggestions are never persisted. Main

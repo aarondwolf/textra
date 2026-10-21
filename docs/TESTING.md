@@ -19,6 +19,10 @@ Inline completion has parser, editor-coordinator, settings migration/consent and
 provider contract tests. `tests/e2e/completion.spec.ts` uses real Monaco/project IO
 with explicitly mocked AI IPC: opt-in, quiet prose, Ctrl+I continuation after a
 selection, stale cancellation, equation/literal suggestions, Tab/Escape and undo.
+Provider regressions cover multiline automatic output through ten lines, manual
+output through twenty, CRLF preservation, streamed line-budget cancellation and
+early termination on an echoed suffix. Verify prose does not open generic word or
+TexLab suggestions, while command/structured-argument completion remains available.
 Run `node tests/manual/ai-completion-live.mjs --run` only for an explicitly requested
 live check against already configured local Qwen, dedicated Codestral and Google.
 It sends synthetic fixture text through the real main service and reports model,
@@ -27,6 +31,9 @@ transport, latency and response bounds without printing keys or source. Optional
 it refreshes configured catalogues. Missing credentials, decryption failures and
 timeouts are live limitations, not mocked successes.
 `--automatic` uses the already saved automatic model/consent and never enables it.
+`--figure` tests a synthetic TikZ supply/demand comment followed by an open
+environment. On 2026-10-21, real Qwen2.5-Coder0.5B automatic completion returned
+four lines/836 characters in 13.669s. The unit suite passes 494/494 with these budgets.
 TexLab has mocked protocol/adapter regressions plus a Windows bundled-process
 integration test exercising unchanged syncs and a burst of real editor requests.
 

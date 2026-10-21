@@ -98,11 +98,16 @@ insertion. Main normalizes fences, exact context echoes, suffix overlap, line en
 and response bounds. Native Mistral/Codestral FIM and verified local Ollama generate
 receive contiguous prefix/suffix; chat transports share COMPLETION_SYSTEM_PROMPT.
 
-Native local generation stops at its automatic single-line budget or an exact
+Automatic completion targets 1–10 lines with 384 tokens; manual completion permits
+20 lines with 512 tokens. Chat adapters receive the line budget as shared context.
+Native local generation stops at its requested line budget or an exact
 distinctive suffix line instead of waiting for the model's explanation/EOS.
 Shared completionTimeout keeps renderer and main deadlines consistent: remote
-2.5/15 seconds, local-only Ollama 10/30 seconds. The renderer shrinks local context
+10/15 seconds, local-only Ollama 30/30 seconds. The renderer shrinks local context
 to avoid unnecessary CPU prefill. Expected supersession is separate from timeout.
+New automatic bindings prefer installed Qwen2.5-Coder 0.5B without pulling models.
+Monaco word-based suggestions are disabled; deterministic LaTeX/TexLab completion
+is gated to commands and structured arguments rather than ordinary prose.
 TexLab synchronization is idempotent across adapter/diagnostic updates. It keeps
 monotonic document versions, closes removed buffers, deduplicates equivalent queries
 and cancels superseded/expired work. Eight active requests and 64 total queued

@@ -1,8 +1,14 @@
 # Known issues
 
+- 2026-10-21 automatic-completion revision: saved automatic binding is local
+  Qwen2.5-Coder0.5B. A live synthetic supply/demand figure returned four lines in
+  13.669s; cold/larger requests can still exceed the 30s local bound. Output quality
+  remains model-dependent; ten lines is a maximum, not a required length.
+
 - 2026-10-21 local Qwen timeout follow-up is resolved for the tested synthetic paths:
   native generation now stops before echoed closing source/explanations, local
-  context is smaller, and CPU deadlines are 10s automatic/30s Ctrl+I. Live Qwen3B
+  context is smaller. At that checkpoint CPU deadlines were 10s automatic/30s
+  Ctrl+I; the later multiline revision raises local automatic to 30s. Live Qwen3B
   Ctrl+I and the consented Qwen1.5B automatic model return valid insertions. Large
   buffers/cold CPU models can still exceed bounded deadlines; no automatic fallback.
   Dedicated Codestral remains unconfigured. The existing

@@ -116,7 +116,7 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
                 ? 'STALE_RESPONSE'
                 : request.role === 'inlineCompletion'
                   ? ' MANUAL_CONTINUATION'
-                  : ' AUTO_CONTINUATION',
+                  : ' AUTO_CONTINUATION\nSECOND_LINE\nTHIRD_LINE',
             },
           };
           if (!state.hold) return reply;
@@ -167,9 +167,10 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
     await dialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await go(3);
-    await page.keyboard.insertText(' prose');
+    await page.keyboard.insertText(' prose Th');
     await page.waitForTimeout(1200); // Plain prose remains quiet with automatic completion enabled.
     expect(await count()).toBe(0);
+    await expect(page.locator('.suggest-widget.visible')).toHaveCount(0);
     await editor.focus();
     await page.keyboard.press('Control+i');
     await expect(manual.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
@@ -192,9 +193,9 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
         globalThis as typeof globalThis & { completionTest: CompletionTestState }
       ).completionTest.requests.at(-1),
     );
-    expect(selectedRequest?.prefix).toMatch(/ prose$/);
+    expect(selectedRequest?.prefix).toMatch(/ prose Th$/);
     await page.keyboard.press('Tab');
-    await expect(source).toContainText(/prose\s+MANUAL_CONTINUATION/);
+    await expect(source).toContainText(/prose\s+Th\s+MANUAL_CONTINUATION/);
     await page.keyboard.press('Control+z');
     await expect(source).not.toContainText('MANUAL_CONTINUATION');
 
@@ -232,8 +233,10 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
     expect(await count()).toBe(beforeEquation + 1);
     await page.keyboard.press('Tab');
     await expect(source).toContainText('AUTO_CONTINUATION');
+    await expect(source).toContainText('THIRD_LINE');
     await page.keyboard.press('Control+z');
     await expect(source).not.toContainText('AUTO_CONTINUATION');
+    await expect(source).not.toContainText('THIRD_LINE');
     await page.waitForTimeout(2200); // Respect the automatic request rate bound.
     await go(8);
     await page.keyboard.insertText(' ');

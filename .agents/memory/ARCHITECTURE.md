@@ -6,8 +6,11 @@ updates and duplicate queries across recreated adapters. Main ignores identical
 text and stale versions, serializes document transitions and closes removed buffers
 through closeTexlabDocument(FileRef). LSP supersession/edits/timeouts cancel server
 work; queues cap at 8 active and 64 total with whole-request deadlines. Local FIM
-generation now stops on useful short output or echoed suffix instead of EOS,
-using smaller CPU context and shared 10s/30s local deadlines.
+generation stops at its line budget or echoed suffix instead of EOS, using smaller
+CPU context. Automatic completion targets 1–10 lines/384 tokens with 30s local or
+10s remote deadlines; Ctrl+I remains 20 lines/512 tokens and 30s local/15s remote.
+New bindings prefer installed Qwen2.5-Coder0.5B. Monaco word-based suggestions are
+off; deterministic completion is gated to LaTeX commands/structured arguments.
 
 AI settings v3 stores roleDefaults plus automatic completion consent. Models carry
 optional chat/completion/transport capabilities; old sparse chat metadata remains

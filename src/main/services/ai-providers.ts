@@ -629,6 +629,13 @@ export async function completionGenerate(
       keep_alive: '5m',
     });
     let text = '';
+    // Automatic suggestions need a short usable insertion, not a full statement
+    // followed by the echoed closing environment. One line fits the 1–3 line role.
+    const automatic = maxTokens <= 128;
+    // A native model can emit the existing suffix before its own EOS marker.
+    // Stop on a distinctive first suffix line instead of generating explanations.
+    const suffixHead = /^(?:\r?\n)*([^\r\n]+)/.exec(suffix)?.[1] ?? '';
+    const suffixStop = suffixHead.trim().length >= 8 ? suffixHead : '';
     for await (const line of lines(response, signal)) {
       if (!line.trim()) continue;
       let event: unknown;
@@ -640,6 +647,14 @@ export async function completionGenerate(
       if (!record(event)) continue;
       if (typeof event.error === 'string') throw new ProviderHTTPError(500, event.error);
       if (typeof event.response === 'string') text += event.response;
+      if (suffixStop) {
+        const overlap = text.indexOf(suffixStop);
+        if (overlap >= 0) return text.slice(0, overlap).replace(/\r?\n$/, '');
+      }
+      const outputLines = text.split(/\r?\n/);
+      const firstContent = outputLines.findIndex((line) => line.trim().length > 0);
+      const lineLimit = automatic ? (firstContent < 0 ? 3 : Math.min(firstContent + 1, 3)) : 20;
+      if (outputLines.length > lineLimit) return outputLines.slice(0, lineLimit).join('\n');
       if (text.length > OUTPUT_LIMIT)
         throw new ProviderHTTPError(502, 'Completion response exceeded its size limit.');
       if (event.done === true) break;

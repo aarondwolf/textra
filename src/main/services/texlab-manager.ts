@@ -66,6 +66,22 @@ export class TexlabManager {
   private readonly service: TexlabService;
   private readonly diagnostics = new Map<string, Diagnostic[]>();
   private currentProjectId: string | null = null;
+  private syncQueue: Promise<void> = Promise.resolve();
+  private queuedSyncs = 0;
+
+  private enqueue<T>(action: () => Promise<T>): Promise<T> {
+    if (this.queuedSyncs >= 64)
+      return Promise.reject(new TexlabError('TEXLAB_BUSY', 'TexLab synchronization is busy.'));
+    this.queuedSyncs++;
+    const run = this.syncQueue.then(action).finally(() => {
+      this.queuedSyncs--;
+    });
+    this.syncQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   constructor(
     private readonly projects: ProjectService,
@@ -162,9 +178,8 @@ export class TexlabManager {
       ].includes(request.method)
     )
       throw new ProjectError('INVALID_ARGUMENT', 'Unsupported TexLab editor request.');
-    if (!(await this.enabled()))
-      throw new ProjectError('TEXLAB_DISABLED', 'TexLab is disabled in Settings.');
     const absolute = await this.sync(request);
+    if (!this.service.matchesDocument(absolute, request.content)) return null;
     switch (request.method) {
       case 'completion': {
         const position = this.position(request);
@@ -199,14 +214,18 @@ export class TexlabManager {
 
   async sync(request: TexlabDocumentRequest): Promise<string> {
     this.validateDocument(request);
+    return this.enqueue(() => this.syncDocument(request));
+  }
+
+  private async syncDocument(request: TexlabDocumentRequest): Promise<string> {
     if (!(await this.enabled()))
       throw new ProjectError('TEXLAB_DISABLED', 'TexLab is disabled in Settings.');
     const absolute = await this.projects.resolvePath(request);
     const root = this.projects.getRoot(request.projectId);
-    const installation = await this.resolveInstallation();
-    if (!installation.path)
-      throw new ProjectError('TOOL_MISSING', 'TexLab is not available for this platform.');
     if (this.currentProjectId !== request.projectId || !this.service.status.running) {
+      const installation = await this.resolveInstallation();
+      if (!installation.path)
+        throw new ProjectError('TOOL_MISSING', 'TexLab is not available for this platform.');
       if (this.currentProjectId !== request.projectId) this.diagnostics.clear();
       await this.service.start({ executable: installation.path, workspaceRoot: root });
       this.currentProjectId = request.projectId;
@@ -226,9 +245,21 @@ export class TexlabManager {
   }
 
   async stop(): Promise<void> {
-    await this.service.stop();
-    this.currentProjectId = null;
-    this.diagnostics.clear();
+    await this.enqueue(async () => {
+      await this.service.stop();
+      this.currentProjectId = null;
+      this.diagnostics.clear();
+    });
+  }
+
+  async close(request: FileRef): Promise<void> {
+    await this.enqueue(async () => {
+      // Closing a deleted buffer still needs to release the LSP document.
+      const path = await this.projects.resolvePath(request, false, true);
+      if (this.currentProjectId !== request.projectId) return;
+      this.service.closeDocument(path);
+      this.diagnostics.delete(this.diagnosticKey(request));
+    });
   }
 
   private validateDocument(request: TexlabDocumentRequest): void {

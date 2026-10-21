@@ -1,8 +1,11 @@
 # Known issues
 
-- 2026-10-21 live completion verification remains partial: installed local
-  qwen2.5-coder:3b has a verified FIM template, but first cold request exceeded the
-  required 15s Ctrl+I deadline. Dedicated Codestral is not configured. The existing
+- 2026-10-21 local Qwen timeout follow-up is resolved for the tested synthetic paths:
+  native generation now stops before echoed closing source/explanations, local
+  context is smaller, and CPU deadlines are 10s automatic/30s Ctrl+I. Live Qwen3B
+  Ctrl+I and the consented Qwen1.5B automatic model return valid insertions. Large
+  buffers/cold CPU models can still exceed bounded deadlines; no automatic fallback.
+  Dedicated Codestral remains unconfigured. The existing
   Google encrypted key cannot decrypt in the isolated native test profile; retry
   a live Google check from its intended desktop profile. This does not establish
   that the credential is invalid in the owner's normal app session. Synthetic/mock

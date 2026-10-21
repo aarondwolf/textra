@@ -21,6 +21,7 @@ import type {
 } from '../../shared/api';
 import {
   AI_ROLES,
+  completionTimeout,
   sameModel,
   supportsAIRole,
   type AIRole,
@@ -869,6 +870,7 @@ export class AIService {
   }
   async complete(request: AICompletionRequest): Promise<AICompletionResponse> {
     validateCompletionRequest(request);
+    const selectedModel = this.modelArgument(request.model);
     for (const [id, expires] of this.cancelledCompletions)
       if (expires <= Date.now()) this.cancelledCompletions.delete(id);
     if (this.cancelledCompletions.has(request.requestId))
@@ -883,9 +885,13 @@ export class AIService {
     const controller = new AbortController();
     const entry = { requestId: request.requestId, role: request.role, controller };
     this.completionActive = entry;
+    let timedOut = false;
     const timeout = setTimeout(
-      () => controller.abort(),
-      request.role === 'completion' ? 2500 : 15000,
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      completionTimeout(request.role, selectedModel),
     );
     let access: ProviderAccess | undefined;
     try {
@@ -928,6 +934,11 @@ export class AIService {
         text: normalizeCompletion(raw, request),
       };
     } catch (error) {
+      if (timedOut)
+        throw new AIError(
+          'AI_COMPLETION_TIMEOUT',
+          'The selected model did not finish in time. Try a smaller model or regenerate.',
+        );
       if (access) throw this.providerError(error, controller.signal, access);
       throw error;
     } finally {

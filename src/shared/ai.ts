@@ -141,6 +141,19 @@ export type AICompletionTransport = 'chat' | 'mistral-fim' | 'ollama-generate';
 export const AI_ROLES = ['chat', 'agent', 'completion', 'inlineCompletion'] as const;
 export type AIRole = (typeof AI_ROLES)[number];
 export type AICompletionRole = 'completion' | 'inlineCompletion';
+export function isLocalAIModel(model: AIModelRef): boolean {
+  return model.provider === 'ollama-local' && !/cloud/i.test(model.model);
+}
+/** CPU inference needs more time; local context is separately kept small. */
+export function completionTimeout(role: AICompletionRole, model: AIModelRef): number {
+  return isLocalAIModel(model)
+    ? role === 'completion'
+      ? 10_000
+      : 30_000
+    : role === 'completion'
+      ? 2_500
+      : 15_000;
+}
 export type AIRoleDefaults = Record<AIRole, AIModelRef | null>;
 export interface AIAutomaticSettings {
   enabled: boolean;

@@ -692,6 +692,39 @@ describe('insertion completion adapters', () => {
       keep_alive: '5m',
     });
   });
+  it('ends local generation at an echoed suffix before explanation or EOS', async () => {
+    stubFetch(
+      streamResponse([
+        '{"response":"a + b\\n\\\\end{lst"}\n',
+        '{"response":"listing}\\nUnwanted explanation"}\n',
+      ]),
+    );
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:3b', {
+        ...request,
+        suffix: '\n\\end{lstlisting}\n\\end{document}',
+        transport: 'ollama-generate',
+      }),
+    ).toBe('a + b');
+  });
+  it('returns a short automatic local insertion without waiting for EOS', async () => {
+    stubFetch(streamResponse(['{"response":"one\\ntwo\\nthree\\nfour"}\n']));
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:3b', {
+        ...request,
+        transport: 'ollama-generate',
+      }),
+    ).toBe('one');
+  });
+  it('preserves a leading newline before the first useful local line', async () => {
+    stubFetch(streamResponse(['{"response":"\\n"}\n', '{"response":"  a + b\\nexplanation"}\n']));
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:3b', {
+        ...request,
+        transport: 'ollama-generate',
+      }),
+    ).toBe('\n  a + b');
+  });
   it.each(AI_PROVIDER_IDS)(
     'uses identical completion instructions and small budgets on %s chat',
     async (provider) => {

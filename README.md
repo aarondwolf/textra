@@ -181,8 +181,12 @@ are preserved; unknown languages and verbatim receive literal-text continuation.
 Completion sends only bounded context from the active buffer: automatic requests use
 8,000 prefix / 2,000 suffix / 2,000 metadata characters; Ctrl+I uses 16,000 / 4,000 / 4,000.
 No Chat history or other project files are included. Automatic suggestions target 1–3 lines
-after a 750 ms pause, at most one start every two seconds, and time out after 2.5 seconds.
-Ctrl+I allows up to 20 lines and 15 seconds. Typing, navigation, model changes and review
+after a 750 ms pause, at most one start every two seconds. Remote requests time out
+after 2.5 seconds automatically or 15 seconds for Ctrl+I. Local-only Ollama models
+get bounded 10/30-second deadlines for CPU inference, with smaller nearby context
+(1,024/256 prefix/suffix characters automatically, 4,096/1,024 for Ctrl+I).
+Local automatic generation returns its first useful line and stops before echoed
+closing source. Ctrl+I allows up to 20 lines. Typing, navigation, model changes and review
 invalidate pending suggestions. Suggestions never apply themselves.
 
 Local Qwen coder models with verified FIM templates use Ollama's native generate API;

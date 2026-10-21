@@ -1,5 +1,14 @@
 # Architecture memory
 
+TexLab request-loop fix: SourceEditor sync depends on document content/readiness,
+not diagnostic-driven adapter identity. Shared adapter sessions coalesce source
+updates and duplicate queries across recreated adapters. Main ignores identical
+text and stale versions, serializes document transitions and closes removed buffers
+through closeTexlabDocument(FileRef). LSP supersession/edits/timeouts cancel server
+work; queues cap at 8 active and 64 total with whole-request deadlines. Local FIM
+generation now stops on useful short output or echoed suffix instead of EOS,
+using smaller CPU context and shared 10s/30s local deadlines.
+
 AI settings v3 stores roleDefaults plus automatic completion consent. Models carry
 optional chat/completion/transport capabilities; old sparse chat metadata remains
 compatible. Dedicated completion request/cancel IPC validates canonical TeX scope,

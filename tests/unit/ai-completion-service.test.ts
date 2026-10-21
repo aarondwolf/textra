@@ -206,8 +206,8 @@ describe('completion service coordination', () => {
     await expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
   });
   it.each([
-    ['completion', 2500],
-    ['inlineCompletion', 15000],
+    ['completion', 10000],
+    ['inlineCompletion', 30000],
   ] as const)('times out %s requests after their bounded deadline', async (role, deadline) => {
     await service.setCompletionSettings({ enabled: true, allowOutsideEnvironments: false });
     let started!: () => void;
@@ -219,7 +219,7 @@ describe('completion service coordination', () => {
     vi.useFakeTimers();
     try {
       const pending = service.complete({ ...snapshot, role });
-      const cancelled = expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
+      const cancelled = expect(pending).rejects.toMatchObject({ code: 'AI_COMPLETION_TIMEOUT' });
       await ready;
       await vi.advanceTimersByTimeAsync(deadline);
       await cancelled;

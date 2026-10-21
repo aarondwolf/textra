@@ -1,6 +1,8 @@
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import type { AISettings } from '../../../../shared/api';
 import {
+  completionTimeout,
+  isLocalAIModel,
   sameModel,
   type AICompletionRequest,
   type AICompletionRole,
@@ -136,6 +138,10 @@ export function installAICompletion(
       return;
     }
     const context = buildCompletionContext(model.getValue(), model.getOffsetAt(position), role);
+    if (isLocalAIModel(ref)) {
+      context.prefix = context.prefix.slice(isManual ? -4096 : -1024);
+      context.suffix = context.suffix.slice(0, isManual ? 1024 : 256);
+    }
     if (
       !isManual &&
       (!state.settings?.completion.enabled ||
@@ -195,9 +201,14 @@ export function installAICompletion(
           manual = true;
           status = 'Completion timed out. Regenerate to try again.';
           view();
+        } else {
+          status = isLocalAIModel(ref)
+            ? 'Local AI timed out — try a smaller completion model.'
+            : 'AI suggestion timed out';
+          view();
         }
       },
-      isManual ? 15_000 : 2_500,
+      completionTimeout(role, ref),
     );
     try {
       const result = await window.textra.requestAICompletion(request);

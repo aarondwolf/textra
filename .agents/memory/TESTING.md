@@ -1,5 +1,25 @@
 # Test evidence
 
+2026-10-21 Qwen/TexLab follow-up: 488/488 unit/integration tests pass serially
+(40 files, 119.29s). Focused AI adapters/service/editor checks pass 69/69 before
+the added leading-newline case, which also passes; TexLab checks pass 14/14 with
+a real bundled Windows process. A pending real symbol query survives 15 unchanged
+syncs and a 16-request hover/completion/symbol/folding burst; edits remain usable.
+Live synthetic main-service verification: Qwen2.5-Coder3B Ctrl+I returns one line,
+five characters in 16354ms, with matching request/version/offset. Existing consented
+Qwen2.5-Coder1.5B automatic selection returns one line/five characters in 1498ms.
+No model defaults, consent or credentials changed. Earlier 10s automatic probe
+timed out before the first-useful-line stop was added; final automatic probe passes.
+Native completion passes (47.5s), exercising real Monaco/FS with mocked AI IPC.
+Native shell passes (1.1m) with the additional close-document bridge method. Its
+first rerun passed UI assertions but exceeded the old 90s cleanup budget; the
+Windows two-launch/profile-cleanup budget is now 120s. Typecheck passes.
+Final lint and production build pass; changed-file formatting/diff checks pass.
+Initial full-suite preference fixtures hit Dropbox EBUSY cleanup/EPERM rename;
+moving those fixtures to OS temp makes all six preference checks and the full
+suite pass. Product preference storage/atomic writes are unchanged. Build uses
+the recorded emptyOutDir:false workaround for generated Dropbox asset locks.
+
 2026-10-21 inline completion: full Windows unit/integration suite passes 470/470
 (37 files, 94.76s) using npm test -- --maxWorkers=1. Parallel runs passed all
 completion tests but intermittently hit existing real-TeX deadlines and a

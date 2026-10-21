@@ -447,6 +447,7 @@ export interface TextraAPI {
   getTexlabStatus(): Promise<Result<TexlabStatus>>;
   checkTexlab(): Promise<Result<TexlabStatus>>;
   syncTexlabDocument(request: TexlabDocumentRequest): Promise<Result<void>>;
+  closeTexlabDocument(request: FileRef): Promise<Result<void>>;
   texlabRequest(request: TexlabRequest): Promise<Result<unknown>>;
   getTexlabDiagnostics(request: FileRef): Promise<Result<Diagnostic[]>>;
   lintLatex(request: LintRequest): Promise<Result<Diagnostic[]>>;

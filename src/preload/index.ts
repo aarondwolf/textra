@@ -94,6 +94,7 @@ const api: TextraAPI = {
   getTexlabStatus: () => ipcRenderer.invoke('textra:texlab:status'),
   checkTexlab: () => ipcRenderer.invoke('textra:texlab:check'),
   syncTexlabDocument: (request) => ipcRenderer.invoke('textra:texlab:sync', request),
+  closeTexlabDocument: (request) => ipcRenderer.invoke('textra:texlab:close', request),
   texlabRequest: (request) => ipcRenderer.invoke('textra:texlab:request', request),
   getTexlabDiagnostics: (request) => ipcRenderer.invoke('textra:texlab:diagnostics', request),
   lintLatex: (request) => ipcRenderer.invoke('textra:language:lint', request),

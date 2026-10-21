@@ -209,7 +209,11 @@ function handle<T>(
     } catch (error) {
       // Raw errors can contain local paths or private preference data.
       const result = errorResult(error);
-      log('warn', 'ipc-request-failed', { channel, code: result.code });
+      const expectedCompletionStop =
+        channel === 'textra:ai:completion:request' &&
+        (result.code === 'AI_CANCELLED' || result.code === 'AI_BUSY');
+      if (!expectedCompletionStop)
+        log('warn', 'ipc-request-failed', { channel, code: result.code });
       return result;
     }
   });
@@ -602,6 +606,7 @@ void app.whenReady().then(() => {
     await texlab.sync(request);
   });
   handleRequest<'texlabRequest'>('textra:texlab:request', (request) => texlab.request(request));
+  handleRequest<'closeTexlabDocument'>('textra:texlab:close', (request) => texlab.close(request));
   handleRequest<'getTexlabDiagnostics'>('textra:texlab:diagnostics', (request) =>
     texlab.diagnosticsFor(request),
   );

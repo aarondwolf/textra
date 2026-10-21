@@ -1233,13 +1233,14 @@ export function SourceEditor({
       }
   }, [documents, activePath]);
   useEffect(() => {
-    if (!texlab?.isReady) return;
+    const adapter = texlabRef.current;
+    if (!adapter?.isReady) return;
     for (const document of documents) {
       const model = models.current.get(document.path);
       if (model && isTexPath(document.path))
-        void texlab.syncDocument?.(toTexlabDocument(model, document));
+        void adapter.syncDocument?.(toTexlabDocument(model, document));
     }
-  }, [documents, texlab]);
+  }, [documents, texlab?.isReady]);
   useEffect(() => {
     const diagnostics = texlab?.diagnostics;
     for (const [path, model] of models.current) {

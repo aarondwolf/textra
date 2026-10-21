@@ -59,7 +59,13 @@ export interface TexlabServiceOptions {
 interface PendingRequest {
   resolve: (value: JsonValue) => void;
   reject: (reason: Error) => void;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | null;
+  method: string;
+  params?: JsonValue;
+  lane: string | null;
+  signature: string;
+  sent: boolean;
+  promise: Promise<JsonValue>;
 }
 
 interface JsonRpcMessage {
@@ -78,6 +84,7 @@ export class TexlabError extends Error {
       | 'TEXLAB_START_FAILED'
       | 'TEXLAB_PROTOCOL_ERROR'
       | 'TEXLAB_REQUEST_FAILED'
+      | 'TEXLAB_BUSY'
       | 'TEXLAB_REQUEST_TIMEOUT',
     message: string,
   ) {
@@ -90,6 +97,8 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 12_000;
 const STOP_TIMEOUT_MS = 2_000;
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
+const MAX_ACTIVE_REQUESTS = 8;
+const MAX_PENDING_REQUESTS = 64;
 
 function isJsonValue(value: unknown): value is JsonValue {
   if (
@@ -131,6 +140,7 @@ export class TexlabService {
   private receiveBuffer = Buffer.alloc(0);
   private readonly pending = new Map<number, PendingRequest>();
   private readonly documentVersions = new Map<string, number>();
+  private readonly documentTexts = new Map<string, string>();
   private starting: Promise<TexlabInitializeResult> | null = null;
 
   constructor(private readonly options: TexlabServiceOptions = {}) {}
@@ -153,7 +163,10 @@ export class TexlabService {
       );
     if (this.running && this.workspaceRoot === options.workspaceRoot) return this.initializeResult;
     if (this.running) await this.stop();
-    if (this.starting) return this.starting;
+    if (this.starting) {
+      await this.starting;
+      return this.start(options);
+    }
 
     this.starting = this.spawnAndInitialize(options).finally(() => {
       this.starting = null;
@@ -217,6 +230,7 @@ export class TexlabService {
   async stop(): Promise<void> {
     const child = this.child;
     if (!child) return;
+    for (const [id, request] of this.pending) if (request.lane) this.cancelRequest(id);
     try {
       if (this.initialized) await this.requestInternal('shutdown', null);
       this.notifyInternal('exit');
@@ -247,6 +261,7 @@ export class TexlabService {
     }
     const documentVersion = this.validDocumentVersion(document.version) ?? 1;
     this.documentVersions.set(uri, documentVersion);
+    this.documentTexts.set(uri, document.text);
     this.notifyInternal('textDocument/didOpen', {
       textDocument: {
         uri,
@@ -263,23 +278,36 @@ export class TexlabService {
     const uri = documentUri(change.path);
     const previous = this.documentVersions.get(uri);
     if (previous === undefined) {
-      await this.openDocument({ path: change.path, text: change.text });
+      await this.openDocument({ path: change.path, text: change.text, version: change.version });
       return;
     }
     const requestedVersion = this.validDocumentVersion(change.version);
+    // Repeated syncs are common across Monaco providers. Re-publishing identical
+    // source invalidates TexLab work and can create a diagnostics/render loop.
+    if (this.documentTexts.get(uri) === change.text) return;
+    if (requestedVersion !== undefined && requestedVersion <= previous) return;
     const version =
       requestedVersion && requestedVersion > previous ? requestedVersion : previous + 1;
     this.documentVersions.set(uri, version);
+    this.documentTexts.set(uri, change.text);
+    this.cancelDocumentRequests(uri);
     this.notifyInternal('textDocument/didChange', {
       textDocument: { uri, version },
       contentChanges: [{ text: change.text }],
     });
   }
 
+  /** A delayed editor request cannot navigate against a newer source snapshot. */
+  matchesDocument(path: string, text: string): boolean {
+    return this.documentTexts.get(documentUri(path)) === text;
+  }
+
   closeDocument(path: string): void {
     if (!this.running) return;
     const uri = documentUri(path);
     if (!this.documentVersions.delete(uri)) return;
+    this.documentTexts.delete(uri);
+    this.cancelDocumentRequests(uri);
     this.notifyInternal('textDocument/didClose', { textDocument: { uri } });
   }
 
@@ -353,8 +381,11 @@ export class TexlabService {
     child.stderr.on('data', () => {
       // TexLab writes human-readable progress to stderr; it is not an LSP channel.
     });
-    child.once('error', () => this.clearState('TexLab stopped unexpectedly.'));
-    child.once('close', () => this.clearState('TexLab stopped unexpectedly.'));
+    const stopped = () => {
+      if (this.child === child) this.clearState('TexLab stopped unexpectedly.');
+    };
+    child.once('error', stopped);
+    child.once('close', stopped);
   }
 
   private receive(chunk: Buffer): void {
@@ -392,7 +423,7 @@ export class TexlabService {
     if (typeof message.id === 'number' && ('result' in message || 'error' in message)) {
       const pending = this.pending.get(message.id);
       if (!pending) return;
-      clearTimeout(pending.timer);
+      if (pending.timer) clearTimeout(pending.timer);
       this.pending.delete(message.id);
       if ('error' in message && message.error !== undefined) {
         pending.reject(new TexlabError('TEXLAB_REQUEST_FAILED', this.errorMessage(message.error)));
@@ -403,6 +434,7 @@ export class TexlabService {
           new TexlabError('TEXLAB_PROTOCOL_ERROR', 'TexLab returned invalid request data.'),
         );
       }
+      this.dispatchPending();
       return;
     }
     if (typeof message.method === 'string') {
@@ -415,21 +447,107 @@ export class TexlabService {
   }
 
   private requestInternal(method: string, params?: JsonValue): Promise<JsonValue> {
-    const id = this.nextRequestId++;
-    return new Promise<JsonValue>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new TexlabError('TEXLAB_REQUEST_TIMEOUT', `TexLab did not respond to ${method}.`));
-      }, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer });
-      try {
-        this.write({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
-      } catch (error) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(error instanceof Error ? error : new Error('TexLab request failed.'));
+    const document =
+      params && !Array.isArray(params) && typeof params === 'object'
+        ? params.textDocument
+        : undefined;
+    const uri =
+      document &&
+      !Array.isArray(document) &&
+      typeof document === 'object' &&
+      typeof document.uri === 'string'
+        ? document.uri
+        : null;
+    const lane = uri && method.startsWith('textDocument/') ? `${uri}\0${method}` : null;
+    const signature = JSON.stringify([params, uri ? this.documentVersions.get(uri) : null]);
+    if (lane) {
+      for (const [previousId, previous] of this.pending) {
+        if (previous.lane !== lane) continue;
+        if (previous.signature === signature) return previous.promise;
+        // The newer cursor/document snapshot supersedes older background work.
+        this.cancelRequest(previousId);
       }
+    }
+    if (this.pending.size >= MAX_PENDING_REQUESTS)
+      return Promise.reject(
+        new TexlabError('TEXLAB_BUSY', 'TexLab has too many pending requests.'),
+      );
+    const id = this.nextRequestId++;
+    let resolve!: (value: JsonValue) => void;
+    let reject!: (reason: Error) => void;
+    const promise = new Promise<JsonValue>((success, failure) => {
+      resolve = success;
+      reject = failure;
     });
+    const pending: PendingRequest = {
+      resolve,
+      reject,
+      promise,
+      method,
+      params,
+      lane,
+      signature,
+      sent: false,
+      timer: null,
+    };
+    pending.timer = setTimeout(() => {
+      if (!this.pending.delete(id)) return;
+      if (pending.sent) this.cancelOnServer(id);
+      pending.reject(
+        new TexlabError('TEXLAB_REQUEST_TIMEOUT', `TexLab did not respond to ${method}.`),
+      );
+      this.dispatchPending();
+    }, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
+    this.pending.set(id, pending);
+    this.dispatchPending();
+    return promise;
+  }
+
+  private dispatchPending(): void {
+    let active = [...this.pending.values()].filter((request) => request.sent).length;
+    for (const [id, request] of this.pending) {
+      if (request.sent) continue;
+      if (active >= MAX_ACTIVE_REQUESTS && request.lane) continue;
+      request.sent = true;
+      active++;
+      try {
+        this.write({
+          jsonrpc: '2.0',
+          id,
+          method: request.method,
+          ...(request.params === undefined ? {} : { params: request.params }),
+        });
+      } catch (error) {
+        if (request.timer) clearTimeout(request.timer);
+        this.pending.delete(id);
+        request.reject(error instanceof Error ? error : new Error('TexLab request failed.'));
+        active--;
+      }
+    }
+  }
+
+  private cancelOnServer(id: number): void {
+    try {
+      this.notifyInternal('$/cancelRequest', { id });
+    } catch {
+      /* Server already stopped. */
+    }
+  }
+
+  private cancelRequest(id: number): void {
+    const request = this.pending.get(id);
+    if (!request) return;
+    this.pending.delete(id);
+    if (request.timer) clearTimeout(request.timer);
+    if (request.sent) this.cancelOnServer(id);
+    // Superseded editor work is normal cancellation, not a failed user action.
+    request.resolve(null);
+  }
+
+  private cancelDocumentRequests(uri: string): void {
+    for (const [id, request] of this.pending)
+      if (request.lane?.startsWith(`${uri}\0`)) this.cancelRequest(id);
+    this.dispatchPending();
   }
 
   private notifyInternal(method: string, params?: JsonValue): void {
@@ -502,7 +620,7 @@ export class TexlabService {
   private clearState(reason: string): void {
     const error = new TexlabError('TEXLAB_NOT_STARTED', reason);
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
+      if (pending.timer) clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();
@@ -511,5 +629,6 @@ export class TexlabService {
     this.workspaceRoot = null;
     this.receiveBuffer = Buffer.alloc(0);
     this.documentVersions.clear();
+    this.documentTexts.clear();
   }
 }

@@ -1,4 +1,4 @@
-import type { Diagnostic, TexlabRequest } from '../../../../shared/api';
+import type { Diagnostic, TexlabRequest, TextraAPI } from '../../../../shared/api';
 import type { OpenDocument } from '../../state/workspace';
 import type {
   TexlabCompletion,
@@ -15,6 +15,28 @@ import type {
 } from './SourceEditor';
 
 type JsonRecord = Record<string, unknown>;
+
+interface SyncSlot {
+  projectId: string;
+  path: string;
+  latest: { document: TexlabEditorDocument; projectId: string } | null;
+  running: Promise<void> | null;
+  text: string | null;
+  diagnostics: string | null;
+  timer?: ReturnType<typeof setTimeout>;
+  onDiagnostics: (path: string, diagnostics: readonly Diagnostic[]) => void;
+}
+interface AdapterRequests {
+  sync: Map<string, SyncSlot>;
+  requests: Map<string, Promise<unknown>>;
+}
+// React recreates the adapter when diagnostics change. Coordination belongs to
+// the bridge session, so a render cannot restart identical synchronization work.
+const sessions = new WeakMap<TextraAPI, AdapterRequests>();
+
+function documentKey(projectId: string, path: string): string {
+  return `${projectId}\0${path}`;
+}
 
 function record(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -198,6 +220,26 @@ export function createTexlabAdapter({
   diagnostics: ReadonlyMap<string, readonly TexlabDiagnostic[]>;
   onDiagnostics: (path: string, diagnostics: readonly Diagnostic[]) => void;
 }): TexlabEditorAdapter {
+  const bridge = window.textra;
+  let state = sessions.get(bridge);
+  if (!state) {
+    state = { sync: new Map(), requests: new Map() };
+    sessions.set(bridge, state);
+  }
+  const session = state;
+  const openKeys = new Set(
+    documents.map((document) => documentKey(document.projectId, document.path)),
+  );
+  for (const [key, slot] of session.sync) {
+    if (!ready || !openKeys.has(key)) {
+      slot.latest = null;
+      if (slot.timer) clearTimeout(slot.timer);
+      session.sync.delete(key);
+      void bridge
+        .closeTexlabDocument({ projectId: slot.projectId, path: slot.path })
+        .catch(() => undefined);
+    } else slot.onDiagnostics = onDiagnostics;
+  }
   const open = (path: string) => documents.find((document) => document.path === path) ?? null;
   const request = async (
     document: TexlabEditorDocument,
@@ -206,34 +248,85 @@ export function createTexlabAdapter({
   ): Promise<unknown> => {
     const openDocument = open(document.path);
     if (!openDocument) throw new Error('The TexLab document is no longer open.');
-    const result = await window.textra.texlabRequest({
-      projectId: openDocument.projectId,
-      path: document.path,
-      content: document.text,
-      version: document.version,
+    const key = JSON.stringify([
+      openDocument.projectId,
+      document.path,
+      document.version,
       method,
-      ...(position ? { line: position.line, character: position.character } : {}),
-    });
-    if (!result.ok) throw new Error(result.error);
-    return result.value;
+      position,
+    ]);
+    const pending = session.requests.get(key);
+    if (pending) return pending;
+    const run = bridge
+      .texlabRequest({
+        projectId: openDocument.projectId,
+        path: document.path,
+        content: document.text,
+        version: document.version,
+        method,
+        ...(position ? { line: position.line, character: position.character } : {}),
+      })
+      .then((result) => {
+        if (!result.ok) throw new Error(result.error);
+        return result.value;
+      })
+      .finally(() => session.requests.delete(key));
+    session.requests.set(key, run);
+    return run;
   };
   const sync = async (document: TexlabEditorDocument) => {
     const openDocument = open(document.path);
     if (!openDocument) return;
-    const result = await window.textra.syncTexlabDocument({
-      projectId: openDocument.projectId,
-      path: document.path,
-      content: document.text,
-      version: document.version,
-    });
-    if (!result.ok) throw new Error(result.error);
-    window.setTimeout(async () => {
-      const latest = await window.textra.getTexlabDiagnostics({
+    const key = documentKey(openDocument.projectId, document.path);
+    let slot = session.sync.get(key);
+    if (!slot) {
+      slot = {
         projectId: openDocument.projectId,
         path: document.path,
-      });
-      if (latest.ok) onDiagnostics(document.path, latest.value);
-    }, 300);
+        latest: null,
+        running: null,
+        text: null,
+        diagnostics: null,
+        onDiagnostics,
+      };
+      session.sync.set(key, slot);
+    }
+    const current = slot;
+    if (current.text === document.text && !current.running) return;
+    current.latest = { document, projectId: openDocument.projectId };
+    if (current.running) return current.running;
+    current.running = (async () => {
+      while (current.latest && session.sync.get(key) === current) {
+        const next = current.latest;
+        current.latest = null;
+        if (current.text === next.document.text) continue;
+        const result = await bridge.syncTexlabDocument({
+          projectId: next.projectId,
+          path: next.document.path,
+          content: next.document.text,
+          version: next.document.version,
+        });
+        if (!result.ok) throw new Error(result.error);
+        if (session.sync.get(key) !== current) return;
+        current.text = next.document.text;
+        if (current.timer) clearTimeout(current.timer);
+        current.timer = setTimeout(() => {
+          void bridge
+            .getTexlabDiagnostics({ projectId: next.projectId, path: next.document.path })
+            .then((latest) => {
+              if (!latest.ok || session.sync.get(key) !== current) return;
+              const signature = JSON.stringify(latest.value);
+              if (signature === current.diagnostics) return;
+              current.diagnostics = signature;
+              current.onDiagnostics(next.document.path, latest.value);
+            })
+            .catch(() => undefined);
+        }, 300);
+      }
+    })().finally(() => {
+      current.running = null;
+    });
+    return current.running;
   };
   return {
     isReady: ready,

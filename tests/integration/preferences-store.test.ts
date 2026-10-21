@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PreferencesStore } from '../../src/main/services/preferences';
@@ -9,14 +10,13 @@ describe('preference files in isolated temporary storage', () => {
   let store: PreferencesStore;
 
   beforeEach(async () => {
-    const root = join(process.cwd(), 'test-results', 'preferences');
-    await mkdir(root, { recursive: true });
-    directory = await mkdtemp(join(root, 'case-'));
+    // Keep atomic-write fixtures outside synchronized Dropbox/OneDrive folders.
+    directory = await mkdtemp(join(tmpdir(), 'textra-preferences-'));
     store = new PreferencesStore(directory);
   });
 
   afterEach(async () => {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it('uses defaults without creating a file before the first preference change', async () => {

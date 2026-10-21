@@ -1,5 +1,12 @@
 # Phase log
 
+- 2026-10-21: Fixed Qwen cancellation and TexLab timeout follow-up. Local native
+  generation stops on useful output/suffix, local context/deadlines fit CPU
+  inference, and normal cancellation is quiet. TexLab sync/query feedback loop
+  removed, stale work cancelled and queues bounded. 488 unit/integration tests
+  pass; real Qwen automatic/manual and bundled TexLab checks pass. No phase gates
+  advanced. Restart npm run dev to load main/preload fixes.
+
 - 2026-10-21: Inline completion slice: independent AI role defaults/session
   selections, atomic v3 migration, automatic consent and environment-aware
   suggestions, Ctrl+I continuation toolbar, native FIM/chat routes and guarded

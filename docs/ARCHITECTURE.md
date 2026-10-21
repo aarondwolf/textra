@@ -98,6 +98,16 @@ insertion. Main normalizes fences, exact context echoes, suffix overlap, line en
 and response bounds. Native Mistral/Codestral FIM and verified local Ollama generate
 receive contiguous prefix/suffix; chat transports share COMPLETION_SYSTEM_PROMPT.
 
+Native local generation stops at its automatic single-line budget or an exact
+distinctive suffix line instead of waiting for the model's explanation/EOS.
+Shared completionTimeout keeps renderer and main deadlines consistent: remote
+2.5/15 seconds, local-only Ollama 10/30 seconds. The renderer shrinks local context
+to avoid unnecessary CPU prefill. Expected supersession is separate from timeout.
+TexLab synchronization is idempotent across adapter/diagnostic updates. It keeps
+monotonic document versions, closes removed buffers, deduplicates equivalent queries
+and cancels superseded/expired work. Eight active requests and 64 total queued
+requests bound load; queued time counts toward the request deadline.
+
 Development uses `electron-vite dev --watch`: React HMR, main restart and preload
 reload. See the [official watch documentation](https://electron-vite.org/guide/hmr-and-hot-reloading)
 and [Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security/).

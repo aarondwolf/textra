@@ -1,5 +1,18 @@
 # Current state
 
+2026-10-21 Qwen/TexLab follow-up: fixed a diagnostics/sync feedback loop by making
+unchanged TexLab source idempotent and decoupling source sync from adapter identity.
+Queries deduplicate, supersede/cancel on edits, close/reopen safely, and have bounded
+8-active/64-total queues. Queued time counts toward deadlines. Local Qwen generation
+stops at a useful automatic line or echoed suffix rather than waiting for EOS and
+explanations. Local-only context is reduced to 1,024/256 (auto) or 4,096/1,024
+(Ctrl+I) prefix/suffix characters; local deadlines are 10/30s, remote stay 2.5/15s.
+Expected completion cancellation/busy is quiet; true timeouts have their own code.
+Live main-service Qwen3B Ctrl+I succeeds (16.354s); the user's existing consented
+Qwen1.5B automatic binding succeeds (1.498s) with synthetic code context. No model
+choices, credentials, or consent settings changed. Real bundled TexLab burst
+regression and mocked adapter/protocol regressions pass. See TESTING for final checks.
+
 2026-10-21 inline completion implemented: four independent saved AI roles, v3
 atomic config migration preserving keys/catalogues and separate Chat/Agent/Ctrl+I session
 choices. Automatic starts off, requires native consent tied to its exact model,

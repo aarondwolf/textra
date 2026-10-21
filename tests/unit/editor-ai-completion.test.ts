@@ -16,7 +16,7 @@ vi.mock('monaco-editor/editor/editor.api.js', () => ({
   languages: { registerInlineCompletionsProvider: () => ({ dispose() {} }) },
 }));
 
-function fixture(source = 'Some prose') {
+function fixture(source = 'Some prose', local = false) {
   const events = new Map<string, (...args: never[]) => void>();
   const listen = (name: string) => (handler: (...args: never[]) => void) => {
     events.set(name, handler);
@@ -60,7 +60,10 @@ function fixture(source = 'Some prose') {
     onDidCompositionEnd: listen('compositionEnd'),
     onDidScrollChange: listen('scroll'),
   };
-  const ref = { provider: 'google' as const, model: 'gemini-test' };
+  const ref = {
+    provider: local ? ('ollama-local' as const) : ('google' as const),
+    model: local ? 'qwen2.5-coder:1.5b' : 'gemini-test',
+  };
   const settings = {
     roleDefaults: { chat: ref, agent: ref, completion: ref, inlineCompletion: ref },
     completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
@@ -114,6 +117,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('editor AI completion coordination', () => {
+  it('bounds local context and permits CPU inference beyond the remote manual deadline', async () => {
+    vi.useFakeTimers();
+    const f = fixture('x'.repeat(20_000), true);
+    let resolve!: (value: unknown) => void;
+    f.requestAICompletion.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }) as never,
+    );
+    const pending = f.controller.request();
+    const request = f.requestAICompletion.mock.calls[0][0];
+    expect(request.prefix).toHaveLength(4096);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(f.cancelAICompletion).not.toHaveBeenCalled();
+    resolve({ ok: true, value: { ...request, text: 'continuation' } });
+    await pending;
+    expect(f.controller.accept()).toBe(true);
+    f.controller.dispose();
+  });
   it('requests manual prose continuation while automatic suggestions are disabled and accepts once', async () => {
     const f = fixture();
     await f.controller.request();
@@ -236,6 +259,7 @@ describe('editor AI completion coordination', () => {
     resolve({ ok: true, value: { ...request, text: 'late' } });
     await vi.advanceTimersByTimeAsync(0);
     expect(f.controller.accept()).toBe(false);
+    expect(f.view.mock.lastCall?.[0].status).toContain('timed out');
     f.controller.dispose();
   });
 });

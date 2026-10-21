@@ -26,6 +26,9 @@ transport, latency and response bounds without printing keys or source. Optional
 `--provider=ollama-local` limits that check. It never pulls models or changes keys;
 it refreshes configured catalogues. Missing credentials, decryption failures and
 timeouts are live limitations, not mocked successes.
+`--automatic` uses the already saved automatic model/consent and never enables it.
+TexLab has mocked protocol/adapter regressions plus a Windows bundled-process
+integration test exercising unchanged syncs and a burst of real editor requests.
 
 Run Playwright suites serially on Windows: parallel runs can clean shared profiles and
 traces. The managed desktop test environment needs elevated filesystem access for

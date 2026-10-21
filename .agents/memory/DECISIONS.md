@@ -1,5 +1,13 @@
 # Decisions
 
+- 2026-10-21 observed CPU Qwen behavior revises local completion timing: remote
+  2.5/15s stays, local-only Ollama gets 10/30s and shorter contiguous context.
+  Automatic local insertion stops after its first useful line (up to three with
+  leading newlines); manual can span twenty. A distinctive echoed suffix stops
+  native generation before model explanation/EOS. No model or provider fallback.
+  TexLab repeated source sync is idempotent; stale/cancelled work must not produce
+  warning storms. Explicit document closure resets client version epochs.
+
 - 2026-10-21 completion: AIRole chat/agent/completion/inlineCompletion means Chat,
   Agent, automatic and Ctrl+I respectively. v3 replaces the overall model binding;
   v2's model seeds Chat/Agent, configured Google seeds Ctrl+I, and an existing local

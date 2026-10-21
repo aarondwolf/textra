@@ -127,8 +127,16 @@ model IDs are identified as cloud destinations. Automatic context is limited to 
 prefix, 2,000 suffix and 2,000 metadata characters; explicit Ctrl+I allows 16,000/4,000/4,000.
 Both use only the active buffer, never other files or Chat history. Suggestions and source
 cache remain memory-only (32 entries, 30 seconds), and dismissed suggestions are not reused.
-Automatic requests time out after 2.5 seconds, Ctrl+I after 15 seconds, with 128/512-token
-and 3/20-line output bounds respectively. Authentication/quota failures suspend automatic
+Remote requests time out after 2.5 seconds automatically or 15 seconds for Ctrl+I;
+local-only Ollama gets 10/30 seconds and reduced 1,024/256 or 4,096/1,024-character
+prefix/suffix context. Output remains bounded to 128/512 tokens and 3/20 lines
+respectively. Authentication/quota failures suspend automatic
 requests until retry or configuration change. No retries, provider/model fallback, model
 downloads, automatic server start or warming on launch occur. Acceptance rechecks the
 live editor snapshot and is an explicit undoable insertion.
+
+TexLab document closure uses a narrow canonical project/file reference and only
+releases in-memory language-server state. Repeated unchanged source is not sent
+again. Superseded or expired queries send LSP cancellation; active requests and
+pending queues are bounded. Expected completion cancellation/busy results do not
+produce warning logs; genuine model deadlines retain a distinct timeout error.

@@ -1,5 +1,13 @@
 # Current state
 
+2026-10-20 Chat history deletion and Problems mode handoff: history menu now offers a
+per-chat delete action with native confirmation. Main validates the workspace chat ID;
+the workspace history service serializes deletion with saves and atomically rewrites the
+transcript list. Removing the active transcript also clears it from the panel. Problems
+drafts now force Chat mode (and its default model) before checking the saved auto-send
+preference, so the Ask in Chat button works after Agent mode. Targeted lint and formatting
+and typecheck pass. No tests were added or run in this slice.
+
 2026-10-20 AI defaults/handoff complete: Chat and Agent both default to Gemini
 3.5 Flash Lite and expose all seven configured Google models. Chat asks for concise
 answers and labels actionable fixes; the latest completed suggestion shows an

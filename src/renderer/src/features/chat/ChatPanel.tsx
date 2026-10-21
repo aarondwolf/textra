@@ -22,7 +22,7 @@ import {
 } from '../../../../shared/ai';
 import { AI_SETTINGS_CHANGED, AISettingsForm } from './AISettingsForm';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
-import { ArrowUp, Check, ChevronDown, Copy, Square, History } from '../../icons';
+import { ArrowUp, Check, ChevronDown, Copy, Square, History, Trash2 } from '../../icons';
 import './chat.css';
 
 const AGENT_NOTICE_SEEN_KEY = 'textra:agent-notice-seen:v1';
@@ -225,30 +225,33 @@ export function ChatPanel({
     followResponse.current = true;
   }, []);
 
-  function changeMode(next: AIMode) {
-    if (mode === next || sending.current || reviewActive || historyBusy) return;
-    ++requestId.current;
-    streamRequestId.current = null;
-    setPartialResponse('');
-    setRetryMessages(null);
-    setError('');
-    setRateLimited(false);
-    setModelOpen(false);
-    setMode(next);
-    setModel(next === 'chat' ? DEFAULT_CHAT_MODEL : DEFAULT_AGENT_MODEL);
-    if (next === 'agent') {
-      if (!noticeSeen.current) {
-        noticeSeen.current = true;
-        agentNoticeSeenThisSession = true;
-        setAgentNoticePhase('visible');
-        try {
-          localStorage.setItem(AGENT_NOTICE_SEEN_KEY, '1');
-        } catch {
-          /* The session fallback still prevents repeated notices. */
+  const changeMode = useCallback(
+    (next: AIMode) => {
+      if (mode === next || sending.current || reviewActive || historyBusy) return;
+      ++requestId.current;
+      streamRequestId.current = null;
+      setPartialResponse('');
+      setRetryMessages(null);
+      setError('');
+      setRateLimited(false);
+      setModelOpen(false);
+      setMode(next);
+      setModel(next === 'chat' ? DEFAULT_CHAT_MODEL : DEFAULT_AGENT_MODEL);
+      if (next === 'agent') {
+        if (!noticeSeen.current) {
+          noticeSeen.current = true;
+          agentNoticeSeenThisSession = true;
+          setAgentNoticePhase('visible');
+          try {
+            localStorage.setItem(AGENT_NOTICE_SEEN_KEY, '1');
+          } catch {
+            /* The session fallback still prevents repeated notices. */
+          }
         }
-      }
-    } else setAgentNoticePhase('hidden');
-  }
+      } else setAgentNoticePhase('hidden');
+    },
+    [mode, reviewActive, historyBusy],
+  );
 
   useEffect(() => {
     if (agentNoticePhase === 'hidden') return;
@@ -355,6 +358,36 @@ export function ChatPanel({
         );
     } finally {
       if (generation === projectGeneration.current) setHistoryBusy(false);
+    }
+  }
+
+  async function deleteSavedChat(chat: AIStoredChat) {
+    if (!sessionProject || sending.current || reviewActive || historyBusy) return;
+    const projectId = sessionProject;
+    const current = session.current;
+    const key = `${projectId}:${chat.id}`;
+    setHistoryBusy(true);
+    setHistoryError('');
+    try {
+      await saves.current.get(key)?.catch(() => undefined);
+      if (liveProject.current !== projectId) return;
+      const result = await window.textra.deleteAIChat({ projectId, chatId: chat.id });
+      if (!result.ok) throw new Error(result.error);
+      if (!result.value) return;
+      setSavedChats((items) => items.filter((item) => item.id !== chat.id));
+      if (current.projectId === projectId && current.id === chat.id) {
+        clearConversation();
+        setChatId(crypto.randomUUID());
+        setMessages([]);
+        setInput('');
+        projectSessions.current.delete(projectId);
+        settled.current = null;
+      }
+    } catch (cause) {
+      if (liveProject.current === projectId)
+        setHistoryError(cause instanceof Error ? cause.message : 'Could not delete this chat.');
+    } finally {
+      if (liveProject.current === projectId) setHistoryBusy(false);
     }
   }
 
@@ -631,7 +664,13 @@ export function ChatPanel({
 
   useEffect(() => {
     if (sessionProject !== (resetKey ?? null)) return;
-    if (!draft || !settings?.configured || consumedDraft.current === draft.id || loading) return;
+    if (!draft || consumedDraft.current === draft.id || loading || reviewActive || historyBusy)
+      return;
+    if (mode === 'agent') {
+      changeMode('chat');
+      return;
+    }
+    if (!settings?.configured) return;
     let current = true;
     // Recheck consent at the moment a Problems prompt is consumed.
     void window.textra
@@ -677,6 +716,8 @@ export function ChatPanel({
     reviewActive,
     sessionProject,
     resetKey,
+    changeMode,
+    historyBusy,
   ]);
 
   async function cancel() {
@@ -757,21 +798,34 @@ export function ChatPanel({
               {historyLoading && <p role="status">Loading history…</p>}
               {!historyLoading && savedChats.length === 0 && <p>No saved chats yet.</p>}
               {savedChats.map((chat) => (
-                <button
-                  key={chat.id}
-                  type="button"
-                  role="menuitem"
-                  tabIndex={-1}
-                  disabled={historyBusy}
-                  title={chat.title}
-                  onClick={() => void chooseChat(chat)}
-                >
-                  <span>{chat.title}</span>
-                  <small>
-                    {new Date(chat.updatedAt).toLocaleDateString()}
-                    {chat.id === chatId ? ' · Current' : ''}
-                  </small>
-                </button>
+                <div key={chat.id} className="ai-history-row" role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    disabled={historyBusy}
+                    title={chat.title}
+                    onClick={() => void chooseChat(chat)}
+                  >
+                    <span>{chat.title}</span>
+                    <small>
+                      {new Date(chat.updatedAt).toLocaleDateString()}
+                      {chat.id === chatId ? ' · Current' : ''}
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    className="ai-history-delete"
+                    disabled={historyBusy}
+                    aria-label={`Delete chat ${chat.title}`}
+                    title="Delete saved chat"
+                    onClick={() => void deleteSavedChat(chat)}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </div>
               ))}
             </div>
           )}

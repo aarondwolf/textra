@@ -338,6 +338,7 @@ export interface TextraAPI {
   openAIRateLimits(): Promise<Result<void>>;
   listAIChats(projectId: string): Promise<Result<AIStoredChat[]>>;
   saveAIChat(request: { projectId: string; chat: AIStoredChat }): Promise<Result<void>>;
+  deleteAIChat(request: { projectId: string; chatId: string }): Promise<Result<boolean>>;
   onAIResponseChunk(listener: (chunk: AIResponseChunk) => void): () => void;
   cancelAIMessage(): Promise<Result<void>>;
   openAIStudio(): Promise<Result<void>>;

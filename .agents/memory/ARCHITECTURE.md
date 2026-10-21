@@ -23,6 +23,12 @@ fades after five seconds and stores only a seen flag in profile localStorage.
 Agent read line tables include Unicode endColumn; invalid insertions return precise
 column bounds, avoiding repeated guessed positions without widening tool budgets.
 
+Workspace transcript deletion uses a narrow project-token/chat-ID IPC operation. Main
+asks for native confirmation; the history service validates the ID, serializes removal
+with saves and atomically publishes the filtered workspace history. Deleting the active
+transcript clears its in-memory conversation. Problems drafts switch Agent to Chat before
+reading the persisted auto-send setting, then follow the existing consent check.
+
 Single-key AI settings expose deleteAIKey() through preload. Main confirms with a
 native dialog and returns null on cancellation, otherwise GeminiService atomically
 clears the credential/auto-send flag. Replacement uses the same tested single-slot

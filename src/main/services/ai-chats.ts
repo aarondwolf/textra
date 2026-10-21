@@ -79,7 +79,8 @@ export class AIChatStore {
     }
     return path;
   }
-  private async read(scope: string): Promise<AIStoredChat[]> {
+  private async read(scope: string, waitForWrites = true): Promise<AIStoredChat[]> {
+    if (waitForWrites) await this.pending.catch(() => undefined);
     const path = await this.check(scope);
     try {
       const value: unknown = JSON.parse(await readFile(path, 'utf8'));
@@ -98,10 +99,28 @@ export class AIChatStore {
       return invalid();
     }
   }
+  private async write(scope: string, chats: AIStoredChat[]): Promise<void> {
+    const content = JSON.stringify({ version: 1, chats });
+    if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) return invalid();
+    const temporary = join(this.directory, `.chat-${randomUUID()}.tmp`);
+    try {
+      const file = await open(temporary, 'wx', 0o600);
+      try {
+        await file.writeFile(content, 'utf8');
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      const path = await this.check(scope);
+      await rename(temporary, path);
+    } finally {
+      await unlink(temporary).catch(() => undefined);
+    }
+  }
   async list(projectId: unknown): Promise<AIStoredChat[]> {
     const scope = this.scope(projectId);
     await this.pending.catch(() => undefined);
-    return this.read(scope);
+    return this.read(scope, false);
   }
   save(value: unknown): Promise<void> {
     if (!object(value))
@@ -111,28 +130,37 @@ export class AIChatStore {
     const operation = this.pending
       .catch(() => undefined)
       .then(async () => {
-        const existing = await this.read(scope);
+        const existing = await this.read(scope, false);
         const previous = existing.find((item) => item.id === chat.id);
         if (previous && previous.updatedAt > chat.updatedAt) return;
         const chats = [chat, ...existing.filter((item) => item.id !== chat.id)]
           .sort((a, b) => b.updatedAt - a.updatedAt)
           .slice(0, 100);
-        const content = JSON.stringify({ version: 1, chats });
-        if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) return invalid();
-        const temporary = join(this.directory, `.chat-${randomUUID()}.tmp`);
-        try {
-          const file = await open(temporary, 'wx', 0o600);
-          try {
-            await file.writeFile(content, 'utf8');
-            await file.sync();
-          } finally {
-            await file.close();
-          }
-          const path = await this.check(scope);
-          await rename(temporary, path);
-        } finally {
-          await unlink(temporary).catch(() => undefined);
-        }
+        await this.write(scope, chats);
+      });
+    this.pending = operation;
+    return operation;
+  }
+  deleteChat(value: unknown): Promise<boolean> {
+    if (
+      !object(value) ||
+      Object.keys(value).length !== 2 ||
+      !Object.hasOwn(value, 'projectId') ||
+      !Object.hasOwn(value, 'chatId') ||
+      typeof value.chatId !== 'string' ||
+      !/^[A-Za-z0-9-]{1,64}$/.test(value.chatId)
+    )
+      return Promise.reject(new AIError('AI_CHAT_STORAGE', 'Provide a valid workspace chat ID.'));
+    const scope = this.scope(value.projectId);
+    const chatId = value.chatId;
+    const operation = this.pending
+      .catch(() => undefined)
+      .then(async () => {
+        const existing = await this.read(scope, false);
+        const chats = existing.filter((chat) => chat.id !== chatId);
+        if (chats.length === existing.length) return false;
+        await this.write(scope, chats);
+        return true;
       });
     this.pending = operation;
     return operation;

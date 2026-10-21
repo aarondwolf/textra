@@ -15,6 +15,7 @@ const api: TextraAPI = {
   openAIRateLimits: () => ipcRenderer.invoke('textra:ai:rate-limits'),
   listAIChats: (projectId) => ipcRenderer.invoke('textra:ai:chats:list', projectId),
   saveAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:save', request),
+  deleteAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:delete', request),
   onAIResponseChunk: (listener) => {
     const receive = (_event: IpcRendererEvent, value: unknown) => {
       if (

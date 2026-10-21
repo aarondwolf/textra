@@ -345,6 +345,31 @@ void app.whenReady().then(() => {
   handle('textra:ai:rate-limits', 0, () => shell.openExternal(AI_RATE_LIMIT_URL));
   handleRequest<'listAIChats'>('textra:ai:chats:list', (projectId) => aiChats.list(projectId));
   handleRequest<'saveAIChat'>('textra:ai:chats:save', (request) => aiChats.save(request));
+  handleRequest<'deleteAIChat'>('textra:ai:chats:delete', async (request) => {
+    if (
+      !request ||
+      Object.keys(request).length !== 2 ||
+      typeof request.projectId !== 'string' ||
+      typeof request.chatId !== 'string' ||
+      !/^[A-Za-z0-9-]{1,64}$/.test(request.chatId)
+    )
+      throw new AIError('AI_CHAT_STORAGE', 'Provide a valid workspace chat ID.');
+    const chat = (await aiChats.list(request.projectId)).find((item) => item.id === request.chatId);
+    if (!chat) return false;
+    const answer = await dialog.showMessageBox(requireWindow(), {
+      type: 'warning',
+      title: 'Delete saved chat?',
+      message: `Permanently delete “${chat.title}”?`,
+      detail:
+        'This removes only the saved TeXtra chat history. It does not affect your LaTeX files.',
+      buttons: ['Cancel', 'Delete chat'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (answer.response !== 1) return false;
+    return aiChats.deleteChat(request);
+  });
   handle('textra:preferences:get', 0, () => preferences.get());
   void preferences
     .get()

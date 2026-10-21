@@ -34,7 +34,9 @@ from the chosen diagnostic and current buffer (or a normal validated file read),
 shows a draft by default. Chat and Settings share one configuration form. AIChatStore persists
 bounded transcripts in userData by canonical workspace hash; opaque scope registration isolates
 queued saves across project switches. Chat history survives mode switches, and Agent receives
-validated prior conversation for handoff. Drafts and pending proposals are not persisted.
+validated prior conversation for handoff. Saved transcripts can be deleted through a
+workspace-scoped main-process request after native confirmation. Drafts and pending proposals
+are not persisted.
 Gemini chat uses the SDK's streaming API. A narrow response event carries a request ID and
 bounded cumulative text; the renderer accepts only its current request's updates. Successful
 responses enter the conversation once. Interrupted partial text stays visible for review but

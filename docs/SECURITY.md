@@ -30,7 +30,8 @@ Only opaque registered project tokens select a history scope; no renderer-chosen
 Queued saves for a previously registered workspace retain their original scope after switching.
 The latest 100 chats are retained per workspace, 80 turns/128,000 text characters per chat,
 16MiB per history file. History is plaintext private conversation content, not portable settings;
-keys, pending proposals, streaming partials and drafts are not serialized as history metadata.
+each saved chat can be individually deleted from the history menu with native confirmation.
+Keys, pending proposals, streaming partials and drafts are not serialized as history metadata.
 Requests have a 30-second timeout, one attempt, no automatic 429 retry, at most 40 turns,
 64,000 input characters and 4,096 output tokens. Cancellation stops local waiting; it cannot
 guarantee Google stops work on a request it has received. Provider errors never reach logs

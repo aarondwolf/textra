@@ -7,7 +7,11 @@ const api: TextraAPI = {
   removeAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:remove', request),
   refreshAIModels: (request) => ipcRenderer.invoke('textra:ai:models:refresh', request),
   setAIProviderDefault: (request) => ipcRenderer.invoke('textra:ai:provider:default', request),
-  setAIDefaultModel: (request) => ipcRenderer.invoke('textra:ai:default', request),
+  setAIRoleDefault: (request) => ipcRenderer.invoke('textra:ai:role-default', request),
+  setAICompletionSettings: (request) =>
+    ipcRenderer.invoke('textra:ai:completion:settings', request),
+  requestAICompletion: (request) => ipcRenderer.invoke('textra:ai:completion:request', request),
+  cancelAICompletion: (request) => ipcRenderer.invoke('textra:ai:completion:cancel', request),
   setAIAutoSend: (request) => ipcRenderer.invoke('textra:ai:auto-send', request),
   getOllamaStatus: () => ipcRenderer.invoke('textra:ai:ollama:status'),
   startOllama: () => ipcRenderer.invoke('textra:ai:ollama:start'),

@@ -2775,6 +2775,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           fontSize={fontSize}
                           wrap={wrap}
                           readOnly={busy || active.conflict}
+                          aiSuppressed={Boolean(agentProposal)}
                           autoSavePaused={agentProposal !== null}
                           formatToolbarVisible={formatToolbarVisible}
                           bibliographyEntries={bibliographyEntries}

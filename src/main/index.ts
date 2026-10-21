@@ -46,7 +46,7 @@ import { validateRecipeSettings } from '../shared/recipes';
 import { LanguageService } from './services/language';
 import { TexlabManager } from './services/texlab-manager';
 import { TexlabError } from './services/texlab';
-import { AIError, AIService } from './services/ai-service';
+import { AIError, AIService, validateCompletionRequest } from './services/ai-service';
 import { BoundedAgentService } from './services/agent';
 import { AgentWorkspaceService } from './services/agent-workspace';
 import { AI_PROVIDERS, isAIProviderId } from '../shared/ai';
@@ -69,13 +69,42 @@ if (testUserData) {
 
 let mainWindow: BrowserWindow | null = null;
 const preferences = new PreferencesStore(app.getPath('userData'));
-const ai = new AIService(join(app.getAppPath(), '.textra-local'), {
-  available: () =>
-    safeStorage.isEncryptionAvailable() &&
-    (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
-  encrypt: (value) => safeStorage.encryptString(value),
-  decrypt: (value) => safeStorage.decryptString(value),
-});
+const ai = new AIService(
+  join(app.getAppPath(), '.textra-local'),
+  {
+    available: () =>
+      safeStorage.isEncryptionAvailable() &&
+      (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+  },
+  {
+    confirmAutomatic: async (model) => {
+      const info = AI_PROVIDERS[model.provider];
+      const answer = await dialog.showMessageBox(requireWindow(), {
+        type: 'question',
+        title: 'Enable automatic AI suggestions?',
+        message: 'Allow automatic suggestions from ' + info.label + ' / ' + model.model + '?',
+        detail:
+          (info.local
+            ? /cloud/i.test(model.model)
+              ? 'Destination: Ollama Cloud through the local Ollama server.'
+              : 'Destination: local Ollama on this computer.'
+            : 'Destination: ' +
+              info.label +
+              (model.provider === 'openrouter'
+                ? ' and the selected downstream model provider.'
+                : '.')) +
+          ' After typing pauses, TeXtra sends up to 8,000 characters before the cursor, 2,000 after it, and 2,000 characters of metadata from the active file. Suggestions are never inserted automatically.',
+        buttons: ['Cancel', 'Allow automatic suggestions'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      return answer.response === 1;
+    },
+  },
+);
 const projects = new ProjectService(app.getPath('userData'));
 const agent = new BoundedAgentService(ai);
 const agentWorkspace = new AgentWorkspaceService(projects, agent);
@@ -318,7 +347,20 @@ void app.whenReady().then(() => {
   handleRequest<'setAIProviderDefault'>('textra:ai:provider:default', (request) =>
     ai.setProviderDefault(request),
   );
-  handleRequest<'setAIDefaultModel'>('textra:ai:default', (request) => ai.setDefaultModel(request));
+  handleRequest<'setAIRoleDefault'>('textra:ai:role-default', (request) =>
+    ai.setRoleDefault(request),
+  );
+  handleRequest<'setAICompletionSettings'>('textra:ai:completion:settings', (request) =>
+    ai.setCompletionSettings(request),
+  );
+  handleRequest<'requestAICompletion'>('textra:ai:completion:request', async (request) => {
+    validateCompletionRequest(request);
+    await projects.resolvePath({ projectId: request.projectId, path: request.path });
+    return ai.complete(request);
+  });
+  handleRequest<'cancelAICompletion'>('textra:ai:completion:cancel', (request) =>
+    ai.cancelCompletion(request),
+  );
   handleRequest<'setAIAutoSend'>('textra:ai:auto-send', (request) => ai.setAutoSend(request));
   handle('textra:ai:ollama:status', 0, () => ai.ollamaStatus());
   handle('textra:ai:ollama:start', 0, () => ai.startOllama());

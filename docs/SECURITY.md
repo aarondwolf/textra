@@ -22,7 +22,7 @@ Optional AI chat transmits only user-submitted conversations and Problems snippe
 fixed endpoint of the selected model's provider from the main process:
 generativelanguage.googleapis.com, api.openai.com, api.anthropic.com, api.mistral.ai,
 codestral.mistral.ai, api.deepseek.com, openrouter.ai, ollama.com, or the
-loopback Ollama server at 127.0.0.1:11434. Redirects are refused. Only text chat models returned by
+loopback Ollama server at 127.0.0.1:11434. Redirects are refused. Only role-capable text models returned by
 that provider's own model listing are accepted; there is no automatic fallback provider,
 source discovery, or execution. OpenRouter is an explicitly selected
 gateway: it forwards requests to the selected model's hosting provider, honoring
@@ -118,3 +118,17 @@ MiKTeX auto-install/first-line format parsing and shell escape are disabled;
 latexmk uses -norc. PDF XFA is disabled and its worker is bundled locally.
 Portable Node cannot atomically bind every path check to subsequent OS operations;
 revalidation narrows but does not eliminate hostile concurrent TOCTOU mutation.
+
+Inline completion exposes only bounded request/cancel methods, with no commands or tools.
+Main validates the canonical project/file scope, role/model capability and context limits.
+Automatic suggestions start disabled and require native confirmation tied to the exact
+selected model; changing it while enabled requires confirmation again. Local Ollama cloud
+model IDs are identified as cloud destinations. Automatic context is limited to 8,000
+prefix, 2,000 suffix and 2,000 metadata characters; explicit Ctrl+I allows 16,000/4,000/4,000.
+Both use only the active buffer, never other files or Chat history. Suggestions and source
+cache remain memory-only (32 entries, 30 seconds), and dismissed suggestions are not reused.
+Automatic requests time out after 2.5 seconds, Ctrl+I after 15 seconds, with 128/512-token
+and 3/20-line output bounds respectively. Authentication/quota failures suspend automatic
+requests until retry or configuration change. No retries, provider/model fallback, model
+downloads, automatic server start or warming on launch occur. Acceptance rechecks the
+live editor snapshot and is an explicit undoable insertion.

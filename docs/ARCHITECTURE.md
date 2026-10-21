@@ -27,8 +27,8 @@ strict command/argument/path checks. Popup writes use an expected settings snaps
 and atomic publication. Every compile reads current settings. A PDF version counter
 refreshes stable output paths in the viewer. No credentials in portable settings. Optional
 AI chat is not a prerequisite for editing. Main's AIService owns per-provider
-safeStorage-encrypted keys, cached model lists, provider and overall default models, and the
-single in-flight request; ai-providers.ts holds the fixed-endpoint wire adapters (Gemini via
+safeStorage-encrypted keys, cached model lists, provider preferences, role defaults and
+request-kind coordination; ai-providers.ts holds the fixed-endpoint wire adapters (Gemini via
 `@google/genai`, shared OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, Ollama `/api/chat` for
 ollama.com and 127.0.0.1:11434). Preload exposes settings views without keys, provider
 save/remove/refresh/default calls, local Ollama status/start, bounded text conversation,
@@ -48,11 +48,13 @@ is excluded from subsequent requests. Markdown uses the existing React-node prev
 without HTML injection. The chat follows arriving text only while the reader is near the bottom.
 
 Models are provider-qualified `{ provider, model }` refs. Main accepts only models present in
-the provider's cached listing. Both modes share the selected model.
+the provider's cached listing and its role capabilities. Four saved role defaults and
+independent workspace session choices replace the overall default. Config v3 migrates
+v2 atomically without touching encrypted keys, catalogues or conversation storage.
 Model discovery filters text chat capabilities (Mistral completion_chat, Ollama
 /api/show completion, output modalities when supplied), with provider-family
 fallbacks for sparse catalogues. ai-models.ts also filters old cached catalogues
-and repairs defaults without a network request. Ollama metadata requests run in
+and clears unavailable role bindings without a network request or silent rerouting. Ollama metadata requests run in
 batches of four under the existing listing deadline; 404/405 falls back to names.
 CHAT_SYSTEM_PROMPT is shared verbatim by every Chat adapter. Compatible providers
 include a dedicated Codestral profile at codestral.mistral.ai/v1. It has its own
@@ -81,7 +83,20 @@ and context, and rebases only undecided changes into a fresh proposal. Renderer 
 old live buffer before applying and echoes the new snapshot. Rejections remove only their
 changes; Approve all applies the remainder together. Auto-save pauses until review finishes.
 Context changes revoke in-flight work and proposals. AIService serializes settings writes,
-allows one chat or agent request at a time, and owns cancellation and sanitized provider errors.
+coordinates foreground Chat/Agent/manual-completion requests and preempts only automatic
+completion work. Cancellation for completion is request-specific; main enforces model
+capabilities, exact automatic consent, context bounds and timeouts. A canonical project/file
+reference is validated before completion routing. No completion tools are exposed.
+
+SourceEditor installs a dedicated completion coordinator and Monaco inline provider.
+The shared cursor-aware LaTeX scanner preserves literal blocks and tracks unfinished
+environments, comments and math. Context is built only from the active buffer. The
+coordinator owns debounce, rate limiting, stale snapshot rejection, temporary ghost text,
+foreground suppression and a 32-entry/30-second memory-only cache. Tab acceptance checks
+buffer version, cursor, scope, conflict and review state immediately before one undoable
+insertion. Main normalizes fences, exact context echoes, suffix overlap, line endings
+and response bounds. Native Mistral/Codestral FIM and verified local Ollama generate
+receive contiguous prefix/suffix; chat transports share COMPLETION_SYSTEM_PROMPT.
 
 Development uses `electron-vite dev --watch`: React HMR, main restart and preload
 reload. See the [official watch documentation](https://electron-vite.org/guide/hmr-and-hot-reloading)
@@ -96,7 +111,7 @@ settings (project overrides/portable bundle), preferences, external-editor, logg
 Renderer's workspace store protects dirty buffers and delayed reads. Main owns
 native dialogs and validates all privileged requests. Setup links use fixed official
 URLs after user clicks. Source content is transmitted only through explicit optional chat
-submission or the user-enabled Problems auto-send setting.
+submission, Ctrl+I, or explicit user-enabled Problems/automatic-completion settings.
 
 The external-editor service watches only renderer-open canonical project files. Native directory
 watch events are debounced and revision polling remains a 750 ms fallback. It reports changing,

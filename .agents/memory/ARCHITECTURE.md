@@ -1,5 +1,16 @@
 # Architecture memory
 
+AI settings v3 stores roleDefaults plus automatic completion consent. Models carry
+optional chat/completion/transport capabilities; old sparse chat metadata remains
+compatible. Dedicated completion request/cancel IPC validates canonical TeX scope,
+identity and bounds in main, with request-kind scheduling and no tools/fallback.
+SourceEditor delegates to ai-completion.ts; latex-completion.ts scans cursor context.
+The role selection Zustand store is memory-only per workspace, clears unavailable
+overrides, and never changes another role. Monaco inline contribution is prebundled.
+Native FIM uses Mistral/Codestral fixed hosts or verified Ollama suffix templates;
+ordinary chat models share one completion instruction. Source/suggestion cache is
+memory-only (32 entries/30 seconds), separate from persisted conversations.
+
 Codestral is a separate credential profile at codestral.mistral.ai/v1. It reuses
 Chat Completions transport and shared prompts but accepts only Codestral model IDs.
 AI_PROVIDERS.codestral.parent='mistral' renders its own ProviderCard nested inside

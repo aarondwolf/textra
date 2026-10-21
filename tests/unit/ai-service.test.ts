@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
@@ -56,9 +57,7 @@ describe('multi-provider AI settings and requests', () => {
   };
   let service: AIService;
   beforeEach(async () => {
-    const root = join(process.cwd(), 'test-results', 'ai-service');
-    await mkdir(root, { recursive: true });
-    directory = await mkdtemp(join(root, 'case-'));
+    directory = await mkdtemp(join(tmpdir(), 'textra-ai-service-'));
     list = vi.fn<ModelLister>(async ({ provider }) => MODELS[provider]);
     chat = vi.fn<ChatGenerate>(async (_access, _model, request) => {
       request.onText?.('Load the package.');
@@ -78,7 +77,17 @@ describe('multi-provider AI settings and requests', () => {
   it('starts unconfigured with every provider listed', async () => {
     const settings = await service.settings();
     expect(settings.configured).toBe(false);
-    expect(settings.defaultModel).toBeNull();
+    expect(settings.roleDefaults).toEqual({
+      chat: null,
+      agent: null,
+      completion: null,
+      inlineCompletion: null,
+    });
+    expect(settings.completion).toEqual({
+      enabled: false,
+      allowOutsideEnvironments: false,
+      consentedModel: null,
+    });
     expect(settings.providers.map(({ id }) => id)).toEqual([
       'google',
       'openai',
@@ -123,24 +132,24 @@ describe('multi-provider AI settings and requests', () => {
     expect(removed.providers.find(({ id }) => id === 'codestral')!.configured).toBe(false);
   });
 
-  it('filters an old cached catalogue and repairs defaults without networking or deleting keys', async () => {
+  it('filters a cached catalogue and clears missing role defaults without networking or deleting keys', async () => {
     await service.saveProvider({ provider: 'openai', apiKey: 'secret' });
     const filename = join(directory, 'ai.json');
     const raw = JSON.parse(await readFile(filename, 'utf8')) as {
-      defaultModel: { provider: string; model: string };
+      roleDefaults: { chat: { provider: string; model: string } };
       providers: { openai: { models: AIModelInfo[]; defaultModel: string; encryptedKey: string } };
     };
     raw.providers.openai.models.push({ id: 'gpt-image-1', label: 'Image' });
     raw.providers.openai.defaultModel = 'gpt-image-1';
-    raw.defaultModel = { provider: 'openai', model: 'gpt-image-1' };
+    raw.roleDefaults.chat = { provider: 'openai', model: 'gpt-image-1' };
     await writeFile(filename, JSON.stringify(raw));
     list.mockClear();
     const settings = await service.settings();
     expect(settings.providers.find(({ id }) => id === 'openai')!.models).toEqual(MODELS.openai);
-    expect(settings.defaultModel).toEqual({ provider: 'openai', model: 'gpt-5-mini' });
+    expect(settings.roleDefaults.chat).toBeNull();
     expect(list).not.toHaveBeenCalled();
     await expect(
-      service.setDefaultModel({ provider: 'openai', model: 'gpt-image-1' }),
+      service.setRoleDefault({ role: 'chat', model: { provider: 'openai', model: 'gpt-image-1' } }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     await expect(
       service.send({ ...question, model: { provider: 'openai', model: 'gpt-image-1' } }),
@@ -156,7 +165,13 @@ describe('multi-provider AI settings and requests', () => {
       expect.any(AbortSignal),
     );
     expect(settings.configured).toBe(true);
-    expect(settings.defaultModel).toEqual({ provider: 'google', model: 'gemini-3.5-flash-lite' });
+    expect(settings.roleDefaults.chat).toEqual({
+      provider: 'google',
+      model: 'gemini-3.5-flash-lite',
+    });
+    expect(settings.roleDefaults.agent).toEqual(settings.roleDefaults.chat);
+    expect(settings.roleDefaults.inlineCompletion).toEqual(settings.roleDefaults.chat);
+    expect(settings.roleDefaults.completion).toBeNull();
     const google = settings.providers.find(({ id }) => id === 'google')!;
     expect(google.models).toEqual(MODELS.google);
     expect(google.defaultModel).toBe('gemini-3.5-flash-lite');
@@ -165,32 +180,44 @@ describe('multi-provider AI settings and requests', () => {
     expect(JSON.stringify(settings)).not.toContain('google-secret');
   });
 
-  it('keeps the overall default when more providers are added, and lets the user change it', async () => {
+  it('keeps independent role defaults when more providers are added', async () => {
     await service.saveProvider({ provider: 'google', apiKey: 'g' });
     let settings = await service.saveProvider({ provider: 'anthropic', apiKey: 'a' });
-    expect(settings.defaultModel?.provider).toBe('google');
+    expect(settings.roleDefaults.chat?.provider).toBe('google');
     expect(settings.providers.find(({ id }) => id === 'anthropic')!.defaultModel).toBe(
       'claude-haiku-5-5',
     );
-    settings = await service.setDefaultModel({ provider: 'anthropic', model: 'claude-sonnet-5-5' });
-    expect(settings.defaultModel).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5-5' });
+    settings = await service.setRoleDefault({
+      role: 'chat',
+      model: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
+    });
+    expect(settings.roleDefaults.chat).toEqual({
+      provider: 'anthropic',
+      model: 'claude-sonnet-5-5',
+    });
+    expect(settings.roleDefaults.agent).toEqual({
+      provider: 'google',
+      model: 'gemini-3.5-flash-lite',
+    });
+    expect(settings.roleDefaults.inlineCompletion).toEqual(settings.roleDefaults.agent);
     settings = await service.setProviderDefault({ provider: 'google', model: 'gemini-3.8-flash' });
     expect(settings.providers.find(({ id }) => id === 'google')!.defaultModel).toBe(
       'gemini-3.8-flash',
     );
     await expect(
-      service.setDefaultModel({ provider: 'openai', model: 'gpt-5' }),
+      service.setRoleDefault({ role: 'chat', model: { provider: 'openai', model: 'gpt-5' } }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     await expect(
       service.setProviderDefault({ provider: 'google', model: 'unlisted' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 
-  it('falls back to another provider when the default provider is removed', async () => {
+  it('clears affected role defaults when their provider is removed without rerouting', async () => {
     await service.saveProvider({ provider: 'openai', apiKey: 'o' });
     await service.saveProvider({ provider: 'anthropic', apiKey: 'a' });
     const settings = await service.removeProvider({ provider: 'openai' });
-    expect(settings.defaultModel).toEqual({ provider: 'anthropic', model: 'claude-haiku-5-5' });
+    expect(settings.roleDefaults.chat).toBeNull();
+    expect(settings.roleDefaults.agent).toBeNull();
     expect(settings.providers.find(({ id }) => id === 'openai')!.configured).toBe(false);
     expect((await service.removeProvider({ provider: 'anthropic' })).configured).toBe(false);
   });
@@ -278,7 +305,7 @@ describe('multi-provider AI settings and requests', () => {
     const refreshed = await service.refreshModels({ provider: 'openai' });
     const updated = refreshed.providers.find(({ id }) => id === 'openai')!;
     expect(updated).toMatchObject({ error: null, defaultModel: 'gpt-6' });
-    expect(refreshed.defaultModel).toEqual({ provider: 'openai', model: 'gpt-6' });
+    expect(refreshed.roleDefaults.chat).toBeNull();
   });
 
   it('uses local Ollama without a key or OS encryption', async () => {
@@ -291,8 +318,11 @@ describe('multi-provider AI settings and requests', () => {
       code: 'AI_STORAGE',
     });
     const settings = await plain.saveProvider({ provider: 'ollama-local' });
-    expect(settings.defaultModel).toEqual({ provider: 'ollama-local', model: 'llama3.2:latest' });
-    await plain.send({ ...question, model: settings.defaultModel });
+    expect(settings.roleDefaults.chat).toEqual({
+      provider: 'ollama-local',
+      model: 'llama3.2:latest',
+    });
+    await plain.send({ ...question, model: settings.roleDefaults.chat });
     expect(chat.mock.calls[0][0]).toEqual({ provider: 'ollama-local', key: null });
   });
 
@@ -348,12 +378,174 @@ describe('multi-provider AI settings and requests', () => {
 
   it('preserves an invalid or newer settings file', async () => {
     const file = join(directory, 'ai.json');
-    await writeFile(file, JSON.stringify({ version: 3, autoSendProblems: false, providers: {} }));
+    await writeFile(file, JSON.stringify({ version: 4, autoSendProblems: false, providers: {} }));
     await expect(service.settings()).rejects.toMatchObject({ code: 'AI_STORAGE' });
     await expect(service.saveProvider({ provider: 'openai', apiKey: 'o' })).rejects.toMatchObject({
       code: 'AI_STORAGE',
     });
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(4);
+  });
+
+  it('atomically migrates v2 defaults, keys and catalogues without networking', async () => {
+    await service.saveProvider({ provider: 'google', apiKey: 'google-secret' });
+    await service.saveProvider({ provider: 'openai', apiKey: 'openai-secret' });
+    const file = join(directory, 'ai.json');
+    const current = JSON.parse(await readFile(file, 'utf8')) as { providers: unknown };
+    const previous = {
+      version: 2,
+      autoSendProblems: true,
+      defaultModel: { provider: 'openai', model: 'gpt-5' },
+      providers: current.providers,
+    };
+    await writeFile(file, JSON.stringify(previous));
+    list.mockClear();
+    const settings = await service.settings();
+    expect(settings.roleDefaults.chat).toEqual(previous.defaultModel);
+    expect(settings.roleDefaults.agent).toEqual(previous.defaultModel);
+    expect(settings.roleDefaults.inlineCompletion).toEqual({
+      provider: 'google',
+      model: 'gemini-3.5-flash-lite',
+    });
+    expect(settings.roleDefaults.completion).toBeNull();
+    expect(settings.autoSendProblems).toBe(true);
+    expect(settings.completion.enabled).toBe(false);
+    expect(list).not.toHaveBeenCalled();
+    const migrated = JSON.parse(await readFile(file, 'utf8')) as {
+      version: number;
+      providers: unknown;
+    };
+    expect(migrated.version).toBe(3);
+    expect(migrated.providers).toEqual(current.providers);
+    await service.send({ ...question, model: settings.roleDefaults.chat });
+    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'openai', key: 'openai-secret' });
+  });
+
+  it('preserves concurrent user updates while initial settings reads migrate v2', async () => {
+    await service.saveProvider({ provider: 'openai', apiKey: 'retained-secret' });
+    const file = join(directory, 'ai.json');
+    const existing = JSON.parse(await readFile(file, 'utf8')) as { providers: unknown };
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 2,
+        autoSendProblems: false,
+        providers: existing.providers,
+        defaultModel: { provider: 'openai', model: 'gpt-5-mini' },
+      }),
+    );
+    await Promise.all([
+      ...Array.from({ length: 8 }, () => service.settings()),
+      service.setAutoSend({ autoSendProblems: true }),
+      service.setRoleDefault({ role: 'agent', model: { provider: 'openai', model: 'gpt-5' } }),
+    ]);
+    const restarted = new AIService(directory, cipher, { list, chat, ollama });
+    const settings = await restarted.settings();
+    expect(settings.autoSendProblems).toBe(true);
+    expect(settings.roleDefaults.chat).toEqual({ provider: 'openai', model: 'gpt-5-mini' });
+    expect(settings.roleDefaults.agent).toEqual({ provider: 'openai', model: 'gpt-5' });
+    await restarted.send({ ...question, model: settings.roleDefaults.agent });
+    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'openai', key: 'retained-secret' });
     expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(3);
+  });
+
+  it('prefills only an installed local Qwen coder and prefers 3B before 1.5B and 7B', async () => {
+    list.mockResolvedValueOnce([
+      { id: 'qwen2.5-coder:7b', label: '7B' },
+      { id: 'qwen2.5-coder:1.5b', label: '1.5B' },
+      { id: 'qwen2.5-coder:3b', label: '3B' },
+      { id: 'llama3.2:latest', label: 'Llama' },
+    ]);
+    // Preserve a provider default that is not a coder, exercising size preference.
+    await service.saveProvider({ provider: 'ollama-local' });
+    await service.setProviderDefault({ provider: 'ollama-local', model: 'llama3.2:latest' });
+    const file = join(directory, 'ai.json');
+    const raw = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+    raw.version = 2;
+    raw.defaultModel = { provider: 'ollama-local', model: 'llama3.2:latest' };
+    delete raw.roleDefaults;
+    delete raw.completion;
+    await writeFile(file, JSON.stringify(raw));
+    expect((await service.settings()).roleDefaults.completion).toEqual({
+      provider: 'ollama-local',
+      model: 'qwen2.5-coder:3b',
+    });
+    expect(ollama.start).not.toHaveBeenCalled();
+  });
+
+  it('requires main-owned consent and confirms again when the automatic model changes', async () => {
+    const confirm = vi.fn(async () => true);
+    service = new AIService(directory, cipher, { list, chat, ollama, confirmAutomatic: confirm });
+    await service.saveProvider({ provider: 'google', apiKey: 'g' });
+    const first = { provider: 'google', model: 'gemini-3.5-flash-lite' };
+    const second = { provider: 'google', model: 'gemini-3.8-flash' };
+    await service.setRoleDefault({ role: 'completion', model: first });
+    expect(confirm).not.toHaveBeenCalled();
+    const enabled = await service.setCompletionSettings({
+      enabled: true,
+      allowOutsideEnvironments: false,
+    });
+    expect(enabled?.completion).toEqual({
+      enabled: true,
+      allowOutsideEnvironments: false,
+      consentedModel: first,
+    });
+    expect(confirm).toHaveBeenCalledWith(first);
+    const changed = await service.setRoleDefault({ role: 'completion', model: second });
+    expect(confirm).toHaveBeenLastCalledWith(second);
+    expect(changed.completion.consentedModel).toEqual(second);
+    expect(changed.completion.enabled).toBe(true);
+    expect(changed.roleDefaults.chat).toEqual(first);
+    confirm.mockResolvedValueOnce(false);
+    await expect(
+      service.setRoleDefault({ role: 'completion', model: first }),
+    ).rejects.toMatchObject({ code: 'AI_CANCELLED' });
+    expect((await service.settings()).roleDefaults.completion).toEqual(second);
+    await service.removeProvider({ provider: 'google' });
+    expect((await service.settings()).completion).toMatchObject({
+      enabled: false,
+      consentedModel: null,
+    });
+  });
+
+  it('keeps automatic suggestions disabled when enable consent is declined', async () => {
+    service = new AIService(directory, cipher, {
+      list,
+      chat,
+      ollama,
+      confirmAutomatic: async () => false,
+    });
+    await service.saveProvider({ provider: 'google', apiKey: 'g' });
+    await service.setRoleDefault({
+      role: 'completion',
+      model: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+    });
+    expect(
+      await service.setCompletionSettings({ enabled: true, allowOutsideEnvironments: true }),
+    ).toBeNull();
+    expect((await service.settings()).completion.enabled).toBe(false);
+  });
+
+  it('allows FIM-only models for completion but excludes them from Chat and Agent defaults', async () => {
+    list.mockResolvedValueOnce([
+      {
+        id: 'codestral-latest',
+        label: 'Codestral',
+        capabilities: { chat: false, completion: true, transport: 'mistral-fim' },
+      },
+    ]);
+    const saved = await service.saveProvider({ provider: 'codestral', apiKey: 'c' });
+    expect(saved.roleDefaults.chat).toBeNull();
+    expect(saved.roleDefaults.agent).toBeNull();
+    await service.setRoleDefault({
+      role: 'inlineCompletion',
+      model: { provider: 'codestral', model: 'codestral-latest' },
+    });
+    await expect(
+      service.setRoleDefault({
+        role: 'chat',
+        model: { provider: 'codestral', model: 'codestral-latest' },
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 
   it('allows one request at a time and cancels the active one', async () => {

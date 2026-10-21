@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   agentTurn,
+  completionGenerate,
+  COMPLETION_SYSTEM_PROMPT,
   listModels,
   streamChat,
   type AgentItem,
@@ -76,7 +78,7 @@ const chat = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('model listing', () => {
-  it('lists only Codestral chat models from its dedicated service', async () => {
+  it('lists Codestral chat and FIM-only models from its dedicated service', async () => {
     const sent = stubFetch(
       jsonResponse({
         data: [
@@ -89,6 +91,7 @@ describe('model listing', () => {
     );
     expect((await listModels(access('codestral'), signal)).map(({ id }) => id)).toEqual([
       'codestral-2508',
+      'codestral-fim-only',
       'codestral-latest',
     ]);
     expect(sent[0].url).toBe('https://codestral.mistral.ai/v1/models');
@@ -229,7 +232,7 @@ describe('model listing', () => {
       { id: 'llama3.2', label: 'llama3.2' },
     ]);
   });
-  it('lists only Mistral chat completions and DeepSeek text-output models', async () => {
+  it('lists Mistral chat and FIM models and DeepSeek text-output models', async () => {
     const sent = stubFetch(
       jsonResponse({
         data: [
@@ -248,6 +251,11 @@ describe('model listing', () => {
       }),
     );
     expect(await listModels(access('mistral'), signal)).toEqual([
+      {
+        id: 'codestral-latest',
+        label: 'codestral-latest',
+        capabilities: { chat: false, completion: true, transport: 'mistral-fim' },
+      },
       { id: 'mistral-small-latest', label: 'mistral-small-latest' },
     ]);
     expect(await listModels(access('deepseek'), signal)).toEqual([
@@ -606,5 +614,134 @@ describe('agent tool-calling formats', () => {
         { role: 'tool', tool_name: 'read_current_file', content: '{"text":"x"}' },
       ],
     });
+  });
+});
+
+describe('insertion completion adapters', () => {
+  const request = {
+    prefix: 'before\\n',
+    suffix: '\\nfollowing',
+    metadata: 'language=latex',
+    maxTokens: 128,
+    signal,
+    transport: 'chat' as const,
+  };
+  it.each(['mistral', 'codestral'] as const)(
+    'uses %s FIM without wrapping literal context',
+    async (provider) => {
+      const sent = stubFetch(jsonResponse({ choices: [{ message: { content: 'insert' } }] }));
+      expect(
+        await completionGenerate(access(provider, `${provider}-key`), 'codestral-latest', {
+          ...request,
+          transport: 'mistral-fim',
+        }),
+      ).toBe('insert');
+      expect(sent).toHaveLength(1);
+      expect(sent[0].url).toBe(
+        provider === 'mistral'
+          ? 'https://api.mistral.ai/v1/fim/completions'
+          : 'https://codestral.mistral.ai/v1/fim/completions',
+      );
+      expect(sent[0].headers.get('authorization')).toBe(`Bearer ${provider}-key`);
+      expect(sent[0].body).toEqual({
+        model: 'codestral-latest',
+        prompt: request.prefix,
+        suffix: request.suffix,
+        max_tokens: 128,
+        stream: false,
+      });
+    },
+  );
+  it('discovers verified Qwen FIM templates and leaves unverified models on chat', async () => {
+    stubFetch(
+      jsonResponse({ models: [{ name: 'qwen2.5-coder:3b' }, { name: 'custom:latest' }] }),
+      jsonResponse({
+        capabilities: ['completion'],
+        template:
+          '{{ if .Suffix }}<|fim_prefix|>{{ .Prompt }}<|fim_suffix|>{{ .Suffix }}<|fim_middle|>{{ else }}<|im_start|>{{ .Prompt }}{{ end }}',
+      }),
+      jsonResponse({ capabilities: ['completion'], template: '{{ .Prompt }}{{ .Suffix }}' }),
+    );
+    expect(await listModels(access('ollama-local', null), signal)).toEqual([
+      { id: 'custom:latest', label: 'custom' },
+      {
+        id: 'qwen2.5-coder:3b',
+        label: 'qwen2.5-coder:3b',
+        capabilities: { chat: true, completion: true, transport: 'ollama-generate' },
+      },
+    ]);
+  });
+  it('uses native Ollama suffix generation and warms only the requested model', async () => {
+    const sent = stubFetch(
+      streamResponse(['{"response":"hello"}\n', '{"response":" world","done":true}\n']),
+    );
+    expect(
+      await completionGenerate(access('ollama-local', null), 'qwen2.5-coder:3b', {
+        ...request,
+        transport: 'ollama-generate',
+      }),
+    ).toBe('hello world');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe('http://127.0.0.1:11434/api/generate');
+    expect(sent[0].body).toEqual({
+      model: 'qwen2.5-coder:3b',
+      prompt: request.prefix,
+      suffix: request.suffix,
+      stream: true,
+      options: { num_predict: 128 },
+      keep_alive: '5m',
+    });
+  });
+  it.each(AI_PROVIDER_IDS)(
+    'uses identical completion instructions and small budgets on %s chat',
+    async (provider) => {
+      const event =
+        provider === 'google'
+          ? { candidates: [{ content: { role: 'model', parts: [{ text: 'OK' }] } }] }
+          : provider === 'anthropic'
+            ? { type: 'content_block_delta', delta: { type: 'text_delta', text: 'OK' } }
+            : { choices: [{ delta: { content: 'OK' } }] };
+      const sent = stubFetch(
+        new Response(
+          provider.startsWith('ollama-')
+            ? '{"message":{"content":"OK"},"done":true}\n'
+            : `data: ${JSON.stringify(event)}\n\n`,
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+      );
+      expect(await completionGenerate(access(provider), 'fixture-model', request)).toBe('OK');
+      const body = sent[0].body!;
+      const system =
+        provider === 'google'
+          ? (body.systemInstruction as { parts: { text: string }[] }).parts[0].text
+          : provider === 'anthropic'
+            ? body.system
+            : (body.messages as { content: string }[])[0].content;
+      expect(system).toBe(COMPLETION_SYSTEM_PROMPT);
+      if (provider === 'openai') expect(body.max_completion_tokens).toBe(128);
+      if (provider === 'google')
+        expect(body.generationConfig).toMatchObject({ maxOutputTokens: 128 });
+      expect(sent).toHaveLength(1);
+    },
+  );
+  it('never falls back after authentication failure', async () => {
+    const sent = stubFetch(jsonResponse({ error: 'No quota' }, 429));
+    await expect(
+      completionGenerate(access('codestral'), 'codestral-latest', {
+        ...request,
+        transport: 'mistral-fim',
+      }),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(sent).toHaveLength(1);
+  });
+  it('rejects a native transport belonging to another provider before networking', async () => {
+    const sent = stubFetch();
+    await expect(
+      completionGenerate(access('google'), 'gemini-flash', {
+        ...request,
+        transport: 'mistral-fim',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(sent).toHaveLength(0);
   });
 });

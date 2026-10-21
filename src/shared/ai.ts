@@ -21,7 +21,7 @@ export interface AIProviderInfo {
   /** Setup cards can nest a dedicated credential profile inside its vendor card. */
   parent?: AIProviderId;
   links: Partial<Record<AIProviderLink, string>>;
-  /** True when requests never leave this computer. */
+  /** Uses a loopback server; model IDs marked cloud still route to Ollama Cloud. */
   local: boolean;
 }
 export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
@@ -135,6 +135,41 @@ export interface AIModelRef {
 export interface AIModelInfo {
   id: string;
   label: string;
+  capabilities?: { chat: boolean; completion: boolean; transport: AICompletionTransport };
+}
+export type AICompletionTransport = 'chat' | 'mistral-fim' | 'ollama-generate';
+export const AI_ROLES = ['chat', 'agent', 'completion', 'inlineCompletion'] as const;
+export type AIRole = (typeof AI_ROLES)[number];
+export type AICompletionRole = 'completion' | 'inlineCompletion';
+export type AIRoleDefaults = Record<AIRole, AIModelRef | null>;
+export interface AIAutomaticSettings {
+  enabled: boolean;
+  allowOutsideEnvironments: boolean;
+  consentedModel: AIModelRef | null;
+}
+export interface AICompletionRequest {
+  requestId: string;
+  role: AICompletionRole;
+  model: AIModelRef;
+  projectId: string;
+  path: string;
+  revision: string;
+  modelVersion: number;
+  offset: number;
+  prefix: string;
+  suffix: string;
+  metadata: string;
+}
+export interface AICompletionResponse {
+  requestId: string;
+  modelVersion: number;
+  offset: number;
+  text: string;
+}
+export function supportsAIRole(model: AIModelInfo, role: AIRole): boolean {
+  return role === 'chat' || role === 'agent'
+    ? (model.capabilities?.chat ?? true)
+    : (model.capabilities?.completion ?? true);
 }
 export const AI_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
 export function modelKey(ref: AIModelRef): string {

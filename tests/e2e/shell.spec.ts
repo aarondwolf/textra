@@ -58,6 +58,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(cancelledDeletion).toEqual({ result: { ok: true, value: null }, confirmedPrompt: true });
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
       'acceptAIAgentProposal',
+      'cancelAICompletion',
       'cancelAIMessage',
       'cancelBuild',
       'checkTexlab',
@@ -104,6 +105,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'rejectAIAgentProposal',
       'removeAIProvider',
       'renameEntry',
+      'requestAICompletion',
       'revealEntry',
       'reviewAIAgentProposal',
       'runAIAgent',
@@ -112,8 +114,9 @@ test('native shell keeps security boundaries and persists representative UI acti
       'saveFile',
       'sendAIMessage',
       'setAIAutoSend',
-      'setAIDefaultModel',
+      'setAICompletionSettings',
       'setAIProviderDefault',
+      'setAIRoleDefault',
       'setDirty',
       'setPreferences',
       'setProjectConfig',

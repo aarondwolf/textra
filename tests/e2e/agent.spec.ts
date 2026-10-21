@@ -93,7 +93,13 @@ test('native agent stages active-file edits for review, applies undoably, and re
         value: {
           configured: true,
           autoSendProblems: false,
-          defaultModel: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          roleDefaults: {
+            chat: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+            agent: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+            completion: null,
+            inlineCompletion: null,
+          },
+          completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
           providers: ['google', 'openai', 'anthropic', 'ollama-cloud', 'ollama-local'].map(
             (id) => ({
               id,
@@ -297,8 +303,8 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await expect(chat.locator('.ai-agent-notice')).toHaveCount(0, { timeout: 7500 });
     await expect(chat.getByRole('log')).toContainText('Explain this document.');
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    // The chosen model stays selected across Chat and Agent.
-    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
+    // Agent keeps its independent saved default.
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     const agentInput = chat.getByRole('textbox', { name: 'Agent request', exact: true });
     const send = chat.getByRole('button', { name: 'Send message', exact: true });
     const review = page.getByRole('region', { name: 'Review agent changes', exact: true });
@@ -444,7 +450,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     expect(
       state.requests.every(
         (request) =>
-          request.model.provider === 'google' && request.model.model === 'gemini-3.8-flash',
+          request.model.provider === 'google' && request.model.model === 'gemini-3.5-flash-lite',
       ),
     ).toBe(true);
     expect(state.linksOpened).toEqual(['google:limits']);
@@ -452,7 +458,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
     await chat.getByRole('button', { name: 'Agent', exact: true }).click();
-    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.limited = false;
@@ -475,7 +481,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
       return { request: state.requests.at(-1), document: state.document };
     });
     expect(handoff.request?.prompt).toBe('Implement the suggested fix above.');
-    expect(handoff.request?.model).toEqual({ provider: 'google', model: 'gemini-3.8-flash' });
+    expect(handoff.request?.model).toEqual({ provider: 'google', model: 'gemini-3.5-flash-lite' });
     expect(handoff.request?.messages?.at(-1)).toEqual({
       role: 'model',
       text: '**Suggested fix:** Replace Original text. with Revised text. Keep all other source unchanged.',
@@ -518,7 +524,8 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await expect(chat.locator('.ai-agent-notice')).toHaveCount(0);
     await application.close();
     application = await electron.launch({ args: ['.'], env: environment });
-    const restarted = await application.firstWindow();
+    // Windows may still release Chromium profile handles after the first process exits.
+    const restarted = await application.firstWindow({ timeout: 60000 });
     await application.evaluate(({ ipcMain }) => {
       ipcMain.removeHandler('textra:ai:settings');
       ipcMain.handle('textra:ai:settings', () => ({
@@ -526,7 +533,13 @@ test('native agent stages active-file edits for review, applies undoably, and re
         value: {
           configured: true,
           autoSendProblems: false,
-          defaultModel: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          roleDefaults: {
+            chat: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+            agent: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+            completion: null,
+            inlineCompletion: null,
+          },
+          completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
           providers: ['google', 'openai', 'anthropic', 'ollama-cloud', 'ollama-local'].map(
             (id) => ({
               id,
@@ -549,7 +562,13 @@ test('native agent stages active-file edits for review, applies undoably, and re
     });
     await restarted.getByRole('button', { name: 'AI Chat', exact: true }).click();
     const restoredChat = restarted.getByRole('region', { name: 'AI debugging chat', exact: true });
+    await expect(restoredChat.getByRole('button', { name: /^Model: / })).toHaveAccessibleName(
+      'Model: Gemini 3.5 Flash Lite',
+    );
     await restoredChat.getByRole('button', { name: 'Agent', exact: true }).click();
+    await expect(restoredChat.getByRole('button', { name: /^Model: / })).toHaveAccessibleName(
+      'Model: Gemini 3.5 Flash Lite',
+    );
     await expect(restoredChat.locator('.ai-agent-notice')).toHaveCount(0);
   } finally {
     if (application) {

@@ -53,7 +53,8 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       const unconfigured = (): AISettings => ({
         configured: false,
         autoSendProblems: false,
-        defaultModel: null,
+        roleDefaults: { chat: null, agent: null, completion: null, inlineCompletion: null },
+        completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
         providers: providerIds.map((id) => ({
           id,
           configured: false,
@@ -66,7 +67,13 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       const connectGoogle = (settings: AISettings): AISettings => ({
         ...settings,
         configured: true,
-        defaultModel: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+        roleDefaults: {
+          chat: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          agent: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          completion: null,
+          inlineCompletion: null,
+        },
+        completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
         providers: settings.providers.map((provider) =>
           provider.id === 'google'
             ? {
@@ -155,7 +162,12 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
           state.settings = {
             ...state.settings,
             configured: true,
-            defaultModel: { provider: 'codestral', model: 'codestral-latest' },
+            roleDefaults: {
+              chat: null,
+              agent: null,
+              completion: { provider: 'codestral', model: 'codestral-latest' },
+              inlineCompletion: { provider: 'codestral', model: 'codestral-latest' },
+            },
             providers: state.settings.providers.map((provider) =>
               provider.id === 'codestral'
                 ? {
@@ -301,7 +313,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(google).toContainText('3 models');
     await expect(keyInput).toHaveCount(0);
     await expect(
-      aiDialog.getByRole('button', { name: /^Overall default model: Gemini 3.5 Flash Lite/ }),
+      aiDialog.getByRole('button', { name: /^Chat model: Gemini 3.5 Flash Lite/ }),
     ).toBeVisible();
     await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     const composer = chat.getByRole('textbox', { name: 'Message AI', exact: true });
@@ -377,6 +389,11 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
 
+    // Removing a provider clears its temporary role binding. Reconnecting must
+    // not silently revive that choice; the user explicitly chooses again.
+    await model.click();
+    await chat.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
+    await page.keyboard.press('Enter');
     await composer.fill('Why is my LaTeX brace missing?');
     await expect(ask).toBeEnabled();
     await expect(ask).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');

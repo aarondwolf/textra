@@ -39,6 +39,7 @@ export default defineConfig({
         'monaco-editor/editor/editor.api.js',
         'monaco-editor/editor/contrib/find/browser/findController.js',
         'monaco-editor/editor/contrib/suggest/browser/suggestController.js',
+        'monaco-editor/editor/contrib/inlineCompletions/browser/inlineCompletions.contribution.js',
         'monaco-editor/editor/contrib/folding/browser/folding.js',
         'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js',
         'monaco-editor/editor/contrib/comment/browser/comment.js',

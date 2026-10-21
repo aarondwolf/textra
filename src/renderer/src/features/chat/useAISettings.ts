@@ -4,6 +4,8 @@ import type { SaveState } from '../save-status/SaveFooter';
 import {
   AI_PROVIDERS,
   sameModel,
+  supportsAIRole,
+  type AIRole,
   type AIModelInfo,
   type AIModelRef,
   type AIProviderId,
@@ -55,7 +57,11 @@ export interface ModelGroup {
 }
 
 /** Configured providers with models, in provider order. */
-export function modelGroups(settings: AISettings | null, only?: AIProviderId): ModelGroup[] {
+export function modelGroups(
+  settings: AISettings | null,
+  only?: AIProviderId,
+  role?: AIRole,
+): ModelGroup[] {
   if (!settings) return [];
   return settings.providers
     .filter((provider) => provider.configured && provider.models.length)
@@ -64,8 +70,9 @@ export function modelGroups(settings: AISettings | null, only?: AIProviderId): M
       provider: provider.id,
       label: AI_PROVIDERS[provider.id].label,
       defaultModel: provider.defaultModel,
-      models: provider.models,
-    }));
+      models: provider.models.filter((model) => !role || supportsAIRole(model, role)),
+    }))
+    .filter((group) => group.models.length);
 }
 
 export function findModel(settings: AISettings | null, ref: AIModelRef | null) {
@@ -75,8 +82,12 @@ export function findModel(settings: AISettings | null, ref: AIModelRef | null) {
   return provider.models.find((model) => model.id === ref.model) ?? null;
 }
 
-export function isDefaultModel(settings: AISettings | null, ref: AIModelRef) {
-  return sameModel(settings?.defaultModel, ref);
+export function isDefaultModel(
+  settings: AISettings | null,
+  ref: AIModelRef,
+  role: AIRole = 'chat',
+) {
+  return sameModel(settings?.roleDefaults[role], ref);
 }
 
 const AI_SAVE_STATE = 'textra-ai-save-state';
@@ -94,7 +105,13 @@ export async function trackAISave<T>(operation: Promise<Result<T>>): Promise<Res
   try {
     const result = await operation;
     // null means the person cancelled a confirmation; nothing changed.
-    state = !result.ok ? 'error' : result.value === null ? 'idle' : 'saved';
+    state = !result.ok
+      ? result.code === 'AI_CANCELLED'
+        ? 'idle'
+        : 'error'
+      : result.value === null
+        ? 'idle'
+        : 'saved';
     return result;
   } finally {
     inflight--;

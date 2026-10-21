@@ -1,5 +1,12 @@
 # Phase log
 
+- 2026-10-21: Inline completion slice: independent AI role defaults/session
+  selections, atomic v3 migration, automatic consent and environment-aware
+  suggestions, Ctrl+I continuation toolbar, native FIM/chat routes and guarded
+  undoable insertion. 470 unit/integration tests pass serially; native completion,
+  shell and Agent pass. Live provider evidence is partial, as detailed in TESTING.
+  GitHub deferred; no unrelated roadmap gates completed. Launch npm run dev.
+
 - 2026-10-18: Inspected empty directory, initialized Git, wrote product specification,
   operating instructions, architecture/security documents and project memory.
 

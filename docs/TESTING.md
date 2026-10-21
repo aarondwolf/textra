@@ -15,6 +15,18 @@ live Agent test is opt-in with `TEXTRA_LIVE_AI_TEST=1`, uses the saved encrypted
 key and real quota, and should be run only when explicitly needed. Normal tests do not
 send credentials to any provider.
 
+Inline completion has parser, editor-coordinator, settings migration/consent and
+provider contract tests. `tests/e2e/completion.spec.ts` uses real Monaco/project IO
+with explicitly mocked AI IPC: opt-in, quiet prose, Ctrl+I continuation after a
+selection, stale cancellation, equation/literal suggestions, Tab/Escape and undo.
+Run `node tests/manual/ai-completion-live.mjs --run` only for an explicitly requested
+live check against already configured local Qwen, dedicated Codestral and Google.
+It sends synthetic fixture text through the real main service and reports model,
+transport, latency and response bounds without printing keys or source. Optional
+`--provider=ollama-local` limits that check. It never pulls models or changes keys;
+it refreshes configured catalogues. Missing credentials, decryption failures and
+timeouts are live limitations, not mocked successes.
+
 Run Playwright suites serially on Windows: parallel runs can clean shared profiles and
 traces. The managed desktop test environment needs elevated filesystem access for
 junction and MiKTeX registry checks. No installer, cross-platform or TeX check should

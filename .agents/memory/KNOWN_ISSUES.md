@@ -1,5 +1,14 @@
 # Known issues
 
+- 2026-10-21 live completion verification remains partial: installed local
+  qwen2.5-coder:3b has a verified FIM template, but first cold request exceeded the
+  required 15s Ctrl+I deadline. Dedicated Codestral is not configured. The existing
+  Google encrypted key cannot decrypt in the isolated native test profile; retry
+  a live Google check from its intended desktop profile. This does not establish
+  that the credential is invalid in the owner's normal app session. Synthetic/mock
+  contracts and native editor behavior pass separately.
+  Automatic remains disabled unless explicitly enabled with native model consent.
+
 - 2026-10-20 native project-workflow test still expects the previous inline external-change
   banner (line108), while the existing working tree shows the new External change detected
   dialog. Reconcile that test with the owner's in-progress conflict workflow; Gemini work

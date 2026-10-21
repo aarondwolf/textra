@@ -1,5 +1,23 @@
 # Current state
 
+2026-10-21 inline completion implemented: four independent saved AI roles, v3
+atomic config migration preserving keys/catalogues and separate Chat/Agent/Ctrl+I session
+choices. Automatic starts off, requires native consent tied to its exact model,
+and stays inside non-document environments/math unless outside continuation is
+enabled. Shared scanner handles unfinished/custom environments, comments, math,
+minted/lstlisting languages and literal contents. Ctrl+I works in editable TeX prose,
+continues after selections, and exposes an anchored model/regen/accept/dismiss bar.
+Both modes show ghost text and accept through one guarded undoable insertion.
+Main validates scope, capabilities, consent, bounds and request identity; native
+Codestral/Mistral FIM, verified local Qwen generate and shared chat completion
+routes never fall back. Foreground work preempts automatic only; cancellation is
+request-specific, including cancellation before canonical validation completes.
+Missing models clear role bindings; removed temporary choices never silently revive.
+470/470 unit/integration tests pass serially. See TESTING.md for native/live evidence.
+Live first probe: Qwen3B timed out at 15s, Codestral unconfigured, Google saved key
+cannot decrypt in the test OS session. No keys changed or models downloaded.
+Launch npm run dev. GitHub and all unrelated roadmap phase gates remain deferred/open.
+
 2026-10-21 Codestral: dedicated nested setup card inside Mistral, backed by its
 own encrypted codestral provider profile at codestral.mistral.ai/v1. Catalogue
 parent metadata drives nesting; child form/default/refresh/remove/draft saves

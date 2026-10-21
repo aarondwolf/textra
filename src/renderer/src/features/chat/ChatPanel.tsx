@@ -13,12 +13,12 @@ import {
   type AIAgentContext,
   type AIEditProposal,
   type AIMode,
-  type AIModelRef,
   type AIStoredChat,
 } from '../../../../shared/ai';
 import { AISettingsDialog } from './AISettingsDialog';
 import { ModelPicker } from './ModelPicker';
-import { findModel, useAISettings } from './useAISettings';
+import { useAISettings } from './useAISettings';
+import { getAIRoleSelection, useAIRoleSelection } from '../../state/ai-role-selections';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { ArrowUp, Check, Copy, Square, History, Trash2 } from '../../icons';
 import './chat.css';
@@ -171,7 +171,11 @@ export function ChatPanel({
   const [showSettings, setShowSettings] = useState(false);
   const [partialResponse, setPartialResponse] = useState('');
   const [mode, setMode] = useState<AIMode>('chat');
-  const [model, setModel] = useState<AIModelRef | null>(null);
+  const {
+    model,
+    available: modelAvailable,
+    selectModel: setModel,
+  } = useAIRoleSelection(resetKey, mode, settings);
   const [rateLimited, setRateLimited] = useState(false);
   const [agentNoticePhase, setAgentNoticePhase] = useState<'hidden' | 'visible' | 'fading'>(
     'hidden',
@@ -254,13 +258,6 @@ export function ChatPanel({
     );
     return () => window.clearTimeout(timer);
   }, [agentNoticePhase]);
-
-  // Follow the saved default until the user picks a model, and recover if a model disappears.
-  const modelAvailable = Boolean(findModel(settings, model));
-  useEffect(() => {
-    if (!settings) return;
-    if (!model || !modelAvailable) setModel(settings.defaultModel);
-  }, [settings, model, modelAvailable]);
 
   const persist = useCallback(async (projectId: string, chat: AIStoredChat) => {
     if (!chat.messages.length) return;
@@ -502,12 +499,17 @@ export function ChatPanel({
   const send = useCallback(
     async (conversation: AIMessage[], override?: { mode: AIMode; preserveDraft?: boolean }) => {
       const requestMode = override?.mode ?? mode;
-      const requestModel = model;
+      const selection = getAIRoleSelection(resetKey, requestMode, settings);
+      const requestModel = selection.model;
       if (sending.current || reviewActive || historyBusy || sessionProject !== liveProject.current)
         return;
-      if (!requestModel) {
+      if (!requestModel || !selection.available) {
         if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
-        setError('Choose a model first. Open AI settings to connect a provider.');
+        setError(
+          requestModel
+            ? 'The selected model is unavailable. Choose another model.'
+            : 'Choose a model first. Open AI settings to connect a provider.',
+        );
         return;
       }
       if (requestMode === 'agent' && !agentContext) {
@@ -600,7 +602,16 @@ export function ChatPanel({
         }
       }
     },
-    [mode, model, agentContext, onReviewProposal, reviewActive, historyBusy, sessionProject],
+    [
+      mode,
+      resetKey,
+      settings,
+      agentContext,
+      onReviewProposal,
+      reviewActive,
+      historyBusy,
+      sessionProject,
+    ],
   );
 
   function implementSuggestedFix() {
@@ -843,7 +854,9 @@ export function ChatPanel({
           {mode === 'chat' && messages.length === 0 && (
             <p className="ai-chat-privacy">
               {model && AI_PROVIDERS[model.provider].local
-                ? 'Messages stay on this computer with local Ollama.'
+                ? /cloud/i.test(model.model)
+                  ? 'Messages go to Ollama Cloud through local Ollama.'
+                  : 'Messages stay on this computer with local Ollama.'
                 : `Messages and selected snippets are sent to ${model ? AI_PROVIDERS[model.provider].label : 'the provider'}.`}{' '}
               No file access or editing tools. Check suggestions before applying them.
             </p>
@@ -958,6 +971,13 @@ export function ChatPanel({
             </div>
           )}
           {reviewControls}
+          {!modelAvailable && (
+            <p className="ai-agent-context-hint" role="status">
+              {model
+                ? 'The selected model is unavailable. Choose another model.'
+                : `Choose a ${mode === 'agent' ? 'Agent' : 'Chat'} model to continue.`}
+            </p>
+          )}
           {mode === 'agent' && !agentContext && (
             <p id="ai-agent-context-hint" className="ai-agent-context-hint">
               Open an active .tex file to use Agent.
@@ -969,6 +989,7 @@ export function ChatPanel({
               event.preventDefault();
               if (
                 !input.trim() ||
+                !modelAvailable ||
                 sending.current ||
                 reviewActive ||
                 historyBusy ||
@@ -1012,6 +1033,7 @@ export function ChatPanel({
               <div className="ai-chat-controls">
                 <ModelPicker
                   settings={settings}
+                  role={mode}
                   value={model}
                   onChange={setModel}
                   variant="compact"
@@ -1057,6 +1079,7 @@ export function ChatPanel({
                   data-active={Boolean(input.trim())}
                   disabled={
                     !input.trim() ||
+                    !modelAvailable ||
                     reviewActive ||
                     historyBusy ||
                     (mode === 'agent' && !agentContext)

@@ -1,6 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { AISettings } from '../../../../shared/api';
-import { AI_PROVIDERS, sameModel, type AIModelRef, type AIProviderId } from '../../../../shared/ai';
+import {
+  AI_PROVIDERS,
+  sameModel,
+  supportsAIRole,
+  type AIRole,
+  type AIModelRef,
+  type AIProviderId,
+} from '../../../../shared/ai';
 import { Check, ChevronDown, Search, Star } from '../../icons';
 import { findModel, modelGroups } from './useAISettings';
 import './model-picker.css';
@@ -23,6 +30,7 @@ export function ModelPicker({
   value,
   onChange,
   only,
+  role,
   placement = 'down',
   variant = 'field',
   disabled = false,
@@ -34,6 +42,7 @@ export function ModelPicker({
   onChange: (ref: AIModelRef) => void;
   /** Restrict the list to one provider (used for per-provider defaults). */
   only?: AIProviderId;
+  role?: AIRole;
   placement?: 'up' | 'down';
   variant?: 'field' | 'compact';
   disabled?: boolean;
@@ -47,7 +56,7 @@ export function ModelPicker({
   const button = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const groups = useMemo(() => modelGroups(settings, only), [settings, only]);
+  const groups = useMemo(() => modelGroups(settings, only, role), [settings, only, role]);
   const filtered = useMemo(
     () =>
       groups
@@ -67,7 +76,9 @@ export function ModelPicker({
       ),
     [filtered],
   );
-  const current = findModel(settings, value);
+  const found = findModel(settings, value);
+  const current = found && (!role || supportsAIRole(found, role)) ? found : null;
+  const display = current?.label ?? (value ? `${value.model} (unavailable)` : placeholder);
   const optionId = (index: number) => `${listId}-option-${index}`;
 
   useEffect(() => {
@@ -137,7 +148,7 @@ export function ModelPicker({
         disabled={disabled || !groups.length}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`${label}: ${current?.label ?? placeholder}`}
+        aria-label={`${label}: ${display}`}
         title={
           current && value
             ? `${current.label} (${AI_PROVIDERS[value.provider].label})`
@@ -152,7 +163,7 @@ export function ModelPicker({
         }}
       >
         <span className="model-picker-value">
-          <span className="model-picker-name">{current?.label ?? placeholder}</span>
+          <span className="model-picker-name">{display}</span>
           {variant === 'field' && value && current && !only && (
             <small>{AI_PROVIDERS[value.provider].label}</small>
           )}
@@ -207,10 +218,10 @@ export function ModelPicker({
                         <span>{model.label}</span>
                         {model.label !== model.id && <small>{model.id}</small>}
                       </span>
-                      {sameModel(settings?.defaultModel, ref) && (
-                        <Star size={11} weight="fill" aria-label="Overall default" />
+                      {role && sameModel(settings?.roleDefaults[role], ref) && (
+                        <Star size={11} weight="fill" aria-label="Role default" />
                       )}
-                      {!sameModel(settings?.defaultModel, ref) &&
+                      {(!role || !sameModel(settings?.roleDefaults[role], ref)) &&
                         group.defaultModel === model.id &&
                         !only && <small className="model-picker-tag">default</small>}
                       {selected && <Check size={11} aria-hidden="true" />}

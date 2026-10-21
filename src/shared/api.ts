@@ -12,6 +12,11 @@ import type {
   AIStoredChat,
   AIAgentReviewRequest,
   AIAgentReviewResult,
+  AIRole,
+  AIRoleDefaults,
+  AIAutomaticSettings,
+  AICompletionRequest,
+  AICompletionResponse,
 } from './ai';
 export const PRODUCT_NAME = 'TeXtra';
 export type Theme = 'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
@@ -318,10 +323,11 @@ export interface AIProviderSettings {
   error: string | null;
 }
 export interface AISettings {
-  /** At least one provider has models and an overall default model exists. */
+  /** A Chat or Agent role has a configured default model. */
   configured: boolean;
   autoSendProblems: boolean;
-  defaultModel: AIModelRef | null;
+  roleDefaults: AIRoleDefaults;
+  completion: AIAutomaticSettings;
   providers: AIProviderSettings[];
 }
 export interface OllamaLocalStatus {
@@ -350,7 +356,16 @@ export interface TextraAPI {
     provider: AIProviderId;
     model: string;
   }): Promise<Result<AISettings>>;
-  setAIDefaultModel(request: AIModelRef): Promise<Result<AISettings>>;
+  setAIRoleDefault(request: {
+    role: AIRole;
+    model: AIModelRef | null;
+  }): Promise<Result<AISettings>>;
+  setAICompletionSettings(request: {
+    enabled: boolean;
+    allowOutsideEnvironments: boolean;
+  }): Promise<Result<AISettings | null>>;
+  requestAICompletion(request: AICompletionRequest): Promise<Result<AICompletionResponse>>;
+  cancelAICompletion(request: { requestId: string }): Promise<Result<void>>;
   setAIAutoSend(request: { autoSendProblems: boolean }): Promise<Result<AISettings>>;
   getOllamaStatus(): Promise<Result<OllamaLocalStatus>>;
   startOllama(): Promise<Result<OllamaLocalStatus>>;

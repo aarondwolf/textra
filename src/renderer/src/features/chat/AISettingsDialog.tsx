@@ -6,7 +6,13 @@ import type {
   OllamaLocalStatus,
   Result,
 } from '../../../../shared/api';
-import { AI_PROVIDERS, type AIProviderId, type AIProviderLink } from '../../../../shared/ai';
+import {
+  AI_PROVIDERS,
+  AI_ROLES,
+  type AIRole,
+  type AIProviderId,
+  type AIProviderLink,
+} from '../../../../shared/ai';
 import { Play, RefreshCw, X } from '../../icons';
 import { ModelPicker } from './ModelPicker';
 import {
@@ -18,6 +24,13 @@ import {
 } from './useAISettings';
 import { SaveFooter } from '../save-status/SaveFooter';
 import './ai-settings.css';
+
+const ROLE_LABELS: Record<AIRole, string> = {
+  chat: 'Chat',
+  agent: 'Agent',
+  completion: 'Automatic completion',
+  inlineCompletion: 'Inline completion (Ctrl+I)',
+};
 
 function openLink(provider: AIProviderId, link: AIProviderLink, onError: (text: string) => void) {
   void window.textra
@@ -179,7 +192,7 @@ function ProviderCard({
               Download Ollama
             </button>
           )}
-          <small>Run models on this computer.</small>
+          <small>Run models through Ollama.</small>
         </div>
       )}
       {local && running && !provider.configured && (
@@ -192,7 +205,7 @@ function ProviderCard({
           >
             {busy === 'save' ? 'Loading models…' : 'Use local Ollama'}
           </button>
-          <small>Requests stay on this computer.</small>
+          <small>Use your Ollama models.</small>
         </div>
       )}
 
@@ -338,8 +351,16 @@ export function AISettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { settings, error, refresh } = useAISettings(open);
+  const completionModel = settings?.roleDefaults.completion;
+  const completionDestination = completionModel
+    ? completionModel.provider === 'ollama-local' &&
+      /(?:[:/-].*cloud|cloud$)/i.test(completionModel.model)
+      ? 'Ollama Cloud via Local Ollama'
+      : AI_PROVIDERS[completionModel.provider].label
+    : null;
   const [ollama, setOllama] = useState<OllamaLocalStatus | null>(null);
   const [message, setMessage] = useState('');
+  const [updating, setUpdating] = useState(false);
   const saveState = useAISaveState();
   const drafts = useRef(new Map<AIProviderId, () => Promise<boolean>>());
   const registerDraft = useCallback(
@@ -370,14 +391,20 @@ export function AISettingsDialog({
     return () => window.clearInterval(timer);
   }, [open, checkOllama]);
 
-  async function apply(action: () => Promise<Result<AISettings>>) {
+  async function apply(action: () => Promise<Result<AISettings | null>>) {
+    if (updating) return;
+    setUpdating(true);
     setMessage('');
     try {
       const result = await trackAISave(action());
-      if (result.ok) publishAISettings(result.value);
+      if (result.ok && result.value) publishAISettings(result.value);
+      else if (result.ok) return;
+      else if (result.code === 'AI_CANCELLED') return;
       else setMessage(result.error);
     } catch {
       setMessage('Could not update AI settings. Please try again.');
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -407,22 +434,88 @@ export function AISettingsDialog({
             {!settings && !error && <p role="status">Loading AI settings…</p>}
             {settings && (
               <>
-                <section className="ai-settings-default" aria-label="Default model">
-                  <div>
-                    <h3>Default model</h3>
-                    <p>Used for Chat and Agent. Only text chat models are listed.</p>
-                  </div>
-                  <ModelPicker
-                    settings={settings}
-                    label="Overall default model"
-                    placeholder={
-                      settings.providers.some((provider) => provider.configured)
-                        ? 'Choose a model'
-                        : 'Connect a provider below'
-                    }
-                    value={settings.defaultModel}
-                    onChange={(ref) => void apply(() => window.textra.setAIDefaultModel(ref))}
-                  />
+                <section className="ai-role-defaults" aria-label="Default models">
+                  <h3>Default models</h3>
+                  <p className="ai-settings-note">
+                    Choose independently for each role. Chat and Agent choices in the workspace last
+                    until restart.
+                  </p>
+                  {AI_ROLES.map((role) => (
+                    <div className="ai-settings-default" key={role}>
+                      <span>{ROLE_LABELS[role]}</span>
+                      <div className="ai-role-model">
+                        <ModelPicker
+                          settings={settings}
+                          role={role}
+                          label={`${ROLE_LABELS[role]} model`}
+                          value={settings.roleDefaults[role]}
+                          disabled={updating}
+                          placeholder="Not configured"
+                          onChange={(model) =>
+                            void apply(() => window.textra.setAIRoleDefault({ role, model }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Clear ${ROLE_LABELS[role]} model`}
+                          disabled={updating || !settings.roleDefaults[role]}
+                          onClick={() =>
+                            void apply(() => window.textra.setAIRoleDefault({ role, model: null }))
+                          }
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+                <section className="ai-completion-settings" aria-label="Automatic completion">
+                  {completionDestination && (
+                    <p className="ai-settings-note">
+                      Automatic suggestions use {completionDestination}.
+                    </p>
+                  )}
+                  <label className="ai-auto-send">
+                    <input
+                      type="checkbox"
+                      checked={settings.completion.enabled}
+                      disabled={updating || !settings.roleDefaults.completion}
+                      onChange={(event) =>
+                        void apply(() =>
+                          window.textra.setAICompletionSettings({
+                            enabled: event.target.checked,
+                            allowOutsideEnvironments: settings.completion.allowOutsideEnvironments,
+                          }),
+                        )
+                      }
+                    />
+                    <span>
+                      Enable automatic completion
+                      <small>
+                        Suggest text as you type. Enabling asks permission to share nearby source
+                        with the selected model.
+                      </small>
+                    </span>
+                  </label>
+                  <label className="ai-auto-send">
+                    <input
+                      type="checkbox"
+                      checked={settings.completion.allowOutsideEnvironments}
+                      disabled={updating}
+                      onChange={(event) =>
+                        void apply(() =>
+                          window.textra.setAICompletionSettings({
+                            enabled: settings.completion.enabled,
+                            allowOutsideEnvironments: event.target.checked,
+                          }),
+                        )
+                      }
+                    />
+                    <span>
+                      Allow automatic completion outside environments
+                      <small>Off by default. Ctrl+I requests inline completion manually.</small>
+                    </span>
+                  </label>
                 </section>
                 <h3>Providers</h3>
                 <div className="ai-provider-grid">
@@ -459,7 +552,7 @@ export function AISettingsDialog({
                 </label>
                 <p className="ai-settings-note">
                   Keys are encrypted on this computer. Sent messages and source go to your chosen
-                  provider; Local Ollama stays on this computer.
+                  provider. Local-only models stay on this computer.
                 </p>
                 {message && (
                   <p role="alert" className="ai-error">

@@ -1,0 +1,32 @@
+.source-editor-shell {
+  position: relative;
+}
+.ai-completion-toolbar {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface, var(--bg));
+  box-shadow: 0 3px 12px #0003;
+  font-size: 11px;
+}
+.ai-completion-toolbar > span {
+  max-width: 240px;
+}
+.ai-completion-toolbar > button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.ai-completion-toolbar > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

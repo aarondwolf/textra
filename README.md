@@ -113,14 +113,16 @@ normal Mistral key remain selectable through the general Mistral connection.
 encrypted key with the model list. **Local Ollama** pings `127.0.0.1:11434`, shows whether it
 is running, offers **Start Ollama** (runs the installed `ollama serve`) or a download link, and
 needs no key. Each connected card has its own default model, **Refresh**, **Replace key** and
-**Remove**; the top of the dialog sets the overall default model used for new chats and Agent.
+**Remove**. The four selectors above the cards save independent defaults for Chat, Agent,
+Automatic Completion and Inline Completion (Ctrl+I). Chat, Agent and Ctrl+I also have
+independent temporary workspace selections, reset to saved defaults after restarting.
+Removing a provider or losing a model clears affected bindings and asks for a choice.
 The composer's model button opens a searchable list grouped by provider (type to filter by
-model name, id or provider; arrows and Enter choose). Lists are limited to text chat
-models: capability metadata is used where available, with model-family filtering
+model name, id or provider; arrows and Enter choose). Chat and Agent list text chat
+models; completion also lists native fill-in-the-middle (FIM) models. Capability metadata is used where available, with model-family filtering
 for providers that omit it. Vision input models that produce text remain available;
 image/audio generation, embeddings and other specialist endpoints are excluded.
-Refresh models updates capability checks. The chosen model stays selected across
-Chat and Agent. Requests are sent in each provider's own format: Gemini generateContent,
+Refresh models updates capability checks. Changing one role never changes another. Requests are sent in each provider's own format: Gemini generateContent,
 OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, and Ollama's native `/api/chat`.
 Every provider receives the same Chat system instructions; routing changes only
 the endpoint and request format.
@@ -133,7 +135,7 @@ entries are excluded so you choose an explicit model.
 Settings can enable automatic
 Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five
 source lines above and below for review. Sending shares that conversation/snippet with
-the selected model's provider (nothing leaves the computer with Local Ollama). Chat has no file or command tools. Agent sends only the active `.tex` buffer
+the selected model's provider (local-only Ollama models stay on the computer; Ollama cloud models use Ollama Cloud). Chat has no file or command tools. Agent sends only the active `.tex` buffer
 after an explicit request and can stage precise insertions/replacements in that file.
 It cannot browse other files, delete files, or run commands. Every proposed edit opens
 an inline read-only diff in the editor. **Approve** immediately applies that change to the
@@ -160,6 +162,35 @@ Responses stream as full-width Markdown with a copy action below; only your mess
 bubbles. The compact composer has two text rows, no resize handle, a model menu, and a circular
 send arrow (a stop control during streaming). The introductory
 guidance disappears once a conversation starts. The chat tab sits with the main rail views.
+
+**Inline AI completion** is insertion-only in editable `.tex` buffers. **Ctrl+I** immediately
+requests a continuation anywhere, including prose, using its own selected model. A selection
+collapses to its end without replacing text. An anchored toolbar offers a model picker,
+Regenerate, Accept and Dismiss. **Tab** or Accept inserts ghost text as one undoable edit;
+**Escape** dismisses it. Ordinary TexLab completion, Ctrl+Space, snippets and indentation
+keep their normal behavior when no AI suggestion can be accepted.
+
+Automatic suggestions start **off**. Enable them in AI settings after choosing a model
+and confirming its destination and bounded context sharing. Changing that model while
+enabled asks again. By default they run inside non-document environments and math,
+including custom environments, proofs and literal code blocks. Comments, comment
+environments and inline \verb are excluded. **Allow suggestions outside environments**
+separately permits prose and preamble continuation. Declared minted/lstlisting languages
+are preserved; unknown languages and verbatim receive literal-text continuation.
+
+Completion sends only bounded context from the active buffer: automatic requests use
+8,000 prefix / 2,000 suffix / 2,000 metadata characters; Ctrl+I uses 16,000 / 4,000 / 4,000.
+No Chat history or other project files are included. Automatic suggestions target 1–3 lines
+after a 750 ms pause, at most one start every two seconds, and time out after 2.5 seconds.
+Ctrl+I allows up to 20 lines and 15 seconds. Typing, navigation, model changes and review
+invalidate pending suggestions. Suggestions never apply themselves.
+
+Local Qwen coder models with verified FIM templates use Ollama's native generate API;
+Codestral uses native FIM through its selected Mistral or dedicated Codestral connection.
+Other text models use the same completion instructions through their normal chat route.
+There is no fallback or automatic retry. Ollama is kept warm for five minutes after real
+completion requests; opening TeXtra does not start or warm it. Automatic failures stay
+quiet and authentication/quota errors pause suggestions until retry or configuration change.
 
 MVP AI settings live in git-ignored `.textra-local/ai.json` inside this application checkout,
 with each key encrypted by Electron `safeStorage` for your OS account. No plaintext fallback

@@ -1,5 +1,34 @@
 # Test evidence
 
+2026-10-21 inline completion: full Windows unit/integration suite passes 470/470
+(37 files, 94.76s) using npm test -- --maxWorkers=1. Parallel runs passed all
+completion tests but intermittently hit existing real-TeX deadlines and a
+same-second conflict-copy timestamp expectation; isolated affected checks pass.
+Final focused coordinator/role/service tests pass 23/23. Typecheck and lint pass.
+Production build passes; Dropbox intermittently locks out/renderer/assets during
+cleanup, so final rebuild uses electron-vite build({build:{emptyOutDir:false}})
+without changing committed configuration. Global Prettier flags only untouched
+docs/ROADMAP.md and sandbox/issues.md; changed files and git diff checks pass.
+Native completion passes (53.0s, then 37.5s): real Monaco/files and mocked AI IPC,
+off-by-default and quiet ordinary prose, manual prose/selection continuation,
+late-response cancellation, automatic equation/literal-language completion,
+Tab/Escape and one-step undo. Reviewed both manual/literal ghost screenshots.
+Native shell passes (49.0s); Agent workflow and restart pass (1.4m) after allowing
+60s for Windows profile/window startup. Chat reselects explicitly after provider
+removal; reconnecting cannot silently revive its old temporary model. Chat passes
+in isolation (34.0s). One combined run hit an intermittent initial rail SVG check;
+unchanged isolated rerun passes. Native suites ran serially, never concurrently.
+Live helper uses real main/HTTP with synthetic fixture source only: local
+qwen2.5-coder:3b discovered verified ollama-generate transport, but its real
+requests time out at the enforced 15s limit (15035ms/15058ms), including an
+isolated retry. A direct synthetic 16-token generate probe succeeds in 5726ms
+(123ms model load), confirming the local route responds but not demonstrating
+end-to-end completion within the feature's deadline. Dedicated Codestral is
+unconfigured; Google catalogue refresh cannot decrypt the saved key in this OS
+test session. These are not live passes. No key replacements, downloads or model
+substitutions performed. Live cleanup initially hit a Chromium shader-cache lock;
+helper now retries temporary cleanup. Launch npm run dev. No phase gates advanced.
+
 2026-10-21 nested Codestral: full Windows suite 421/421 passes (33 files, 31.56s)
 with normal permissions. New fixtures cover separate Mistral/Codestral credentials
 and removal, Codestral-only dedicated catalogue, explicit non-chat exclusion,

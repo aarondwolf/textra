@@ -1,5 +1,17 @@
 # Decisions
 
+- 2026-10-21 completion: AIRole chat/agent/completion/inlineCompletion means Chat,
+  Agent, automatic and Ctrl+I respectively. v3 replaces the overall model binding;
+  v2's model seeds Chat/Agent, configured Google seeds Ctrl+I, and an existing local
+  Qwen coder preference (otherwise Qwen2.5-Coder3B/1.5B/7B) seeds automatic. No pulls
+  or alternate-provider substitution. Session role choices reset on restart and
+  unavailable overrides become explicit null choices. Native model-bound consent
+  protects automatic sharing; source and suggestions are never persisted. Main
+  owns routing and deadlines; renderer owns debounce/rate limiting, memory cache,
+  TexLab/snippet coexistence and stale editor checks. FIM-only models are discovery
+  results but never Chat/Agent choices. Inline-completion contribution is imported
+  and prebundled with Monaco. GitHub remains deferred.
+
 - 2026-10-21 owner defers GitHub and requests Codestral nested in Mistral. Dedicated
   codestral credential profile uses codestral.mistral.ai/v1 with independent key,
   listing/default/removal and shared Chat/Agent instructions. Keep normal Mistral

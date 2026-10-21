@@ -3,7 +3,8 @@
 ## Mission and priorities
 
 Build a local-first LaTeX desktop IDE. Prioritize correctness, data preservation,
-security, and fast development over demos. `docs/FEATURE_SPEC.md` is the product specification.
+security, and fast development over demos. README and the focused guides in `docs/`
+describe the current product; `docs/ROADMAP.md` tracks unfinished work only.
 
 ## First actions in every session
 

@@ -14,8 +14,9 @@ Native Chat and Agent verify menus/defaults, handoff context, disabled non-.tex 
 notice fading/profile restart and sequential review; shell smoke passes. Live Gemini
 3.5 Flash Lite staged both lipsum edits and passed sequential approvals with unchanged
 disk after the column-feedback fix. Earlier failed live attempts are superseded by
-this passing rerun. Launch npm run dev. Existing mixed working changes are preserved
-and uncommitted; remaining roadmap gates unchanged.
+this passing rerun. Commit 9be0142 records the full working tree. Documentation cleanup
+is now removing the obsolete master prompt and reducing duplicate roadmap/test history.
+Launch npm run dev; remaining roadmap gates unchanged.
 
 2026-10-20 Sequential Agent fix complete: multi-part editing now permits six model
 calls/twelve text tools under the unchanged 60-second deadline. Instructions require

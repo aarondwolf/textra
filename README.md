@@ -169,8 +169,7 @@ Run all checks before a change is considered complete.
   sync locks. If output cleanup reports EBUSY, close the running app before rebuilding.
 
 Source content stays local. TeX input is powerful: compile trusted projects only.
-See [security](docs/SECURITY.md), [architecture](docs/ARCHITECTURE.md),
-[testing](docs/TESTING.md), [roadmap](docs/ROADMAP.md), and the complete
-[feature specification](docs/FEATURE_SPEC.md).
+See the [security](docs/SECURITY.md), [architecture](docs/ARCHITECTURE.md),
+[testing](docs/TESTING.md), and [unfinished work](docs/ROADMAP.md) guides.
 
 License: **pending owner decision; no open-source license granted yet.**

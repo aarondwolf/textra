@@ -1,53 +1,26 @@
-# Execution roadmap
+# Roadmap
 
-Each phase depends on the preceding gate. Do not describe a partial gate as complete.
+This file tracks unfinished work only. Current product behavior is described in the
+README and focused guides; test evidence and phase history live in `.agents/memory/`.
+Do not mark a gate complete until its acceptance checks pass.
 
-| Milestone      | Scope                                                                                                                                               | Acceptance / verification                                                      | Status               |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------- |
-| 0 Foundation   | Electron/Vite, typed IPC, secure shell, themes, palette, panels, memory                                                                             | dev native window + HMR; format, typecheck, lint, unit, build, Electron smoke  | Complete             |
-| 1a Files       | Project selection, safe file service, Monaco, tabs, conflicts                                                                                       | Traversal/symlink rejection, atomic save, dirty and external edit preservation | Core passed          |
-| 1b Compile     | Discovery, bounded cancellable compiler, diagnostics                                                                                                | Real minimal/multi-file TeX and failed/cancelled builds                        | Fixed presets passed |
-| 1c Preview     | PDF.js, navigation, search, SyncTeX                                                                                                                 | Real PDF rendering and source mapping                                          | Core passed          |
-| 1d Workflow    | Project CRUD, settings, onboarding, pipelines                                                                                                       | Full phase 1 workflow and missing-tool fallbacks                               | Implemented; verify  |
-| 2 Writing      | Snippets, math, LSP/lint, outline, optional AI                                                                                                      | Offline insertions/undo, diagnostics and explicit AI consent                   | Implemented; verify  |
-| 3 Research     | TikZ, fragments, tables, BibTeX, Git/history, Beamer, environment content templates, PDF presentation controls, reduced-motion-aware UI transitions | Real previews, round-trip tests, no unrelated Git changes                      | Planned              |
-| 4 Distribution | Templates, importer, accessibility, migrations, installers, TeX install help                                                                        | Security review, Windows install/uninstall, release matrix                     | Planned              |
+| Gate | Remaining work | Status |
+| --- | --- | --- |
+| Phase 1: cross-platform verification | Run the editor, compile, PDF, SyncTeX, crop and rotation matrix on macOS/Linux. | Open |
+| Phase 2: verification | Complete the native interaction and platform test matrix in [Testing](TESTING.md). | Open |
+| Phase 3: research tools | Decide and implement bibliography workflows, Git/history, Beamer, presentation controls and remaining writing views. | Planned |
+| Phase 4: release | Accessibility review, migrations, installers, TeX setup help and Windows install/uninstall release matrix. | Planned |
 
-Common gate: `npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.
-Owner-requested AI slice (2026-10-20): optional Gemini 3.5 Flash Lite debugging chat,
-key onboarding/settings, and Problems drafts with opt-in auto-send are implemented.
-The owner subsequently authorized a bounded active-.tex Agent slice: Gemma 4 26B/31B,
-review-before-apply diffs and undoable buffer edits. Chat also permits Gemini 3.1 Flash Lite.
-This is not a general workspace agent; no other files, deletion, shell or background work.
-This does not close the remaining earlier phase gates. Repository-local encrypted
-settings must migrate to global app data before public release (SECURITY.md).
-Use PowerShell commands individually if the shell does not support `&&`.
-Record blockers and exact next actions in memory; continue independent tasks when external software is unavailable.
+### Deferred interface work
 
-Phase 1 status (2026-10-19): the planned Phase 1 scope is implemented. TeX installation
-help (winget/brew/package-manager flows and opening the distribution manager) moved to
-Phase 4 by owner decision. `% !TEX root` redirection is dropped; Compile always builds
-the active tab. The owner has manually verified XeLaTeX and LuaLaTeX compilation.
-Remaining follow-up verification is macOS/Linux and crop/rotation SyncTeX fixtures.
-Editable ordered
-recipes, canonical project JSON, the recipe builder, context menus, collapsible folders,
-reveal-active, persisted font/wrap, custom executable paths and PDF match highlights
-now exist. PDF-beside-source output is configurable through recipes. The user's active-document
-Compile rule supersedes automatic TEX-root redirection. See RECIPES.md for supported
-commands/placeholders and separate-auxiliary-directory limitations.
+- Evaluate replacing the activity rail with a labelled sidebar switcher.
+- Highlight the outline section containing the editor cursor.
 
-Deferred UI ideas (pinned by owner, 2026-10-18): replace the left activity rail with a
-labelled segmented control at the top of the sidebar (for example Files | Document |
-Cites) so the sidebar stops resembling an editor activity bar. Not started. Further views
-(bibliography entries, review/history) would slot into the same switcher. Also pending:
-highlight the outline heading that contains the editor cursor.
+### Release requirement
 
-Phase 2 status (2026-10-19): the requested offline implementation is complete: writing analysis,
-cross-reference suggestions and diagnostics, ChkTeX and latexindent seams, unified Problems
-actions, TexLab, the formatting toolbar, and Compile rail recipe controls. The owner deferred
-AI work, custom snippet libraries, and equation-helper work to Phase 3. TexLab 5.26.0 is bundled
-for Windows x64 and enabled by default. Its main-process LSP bridge provides completion,
-diagnostics, hover, definition/references, document symbols, folding and inlay hints, while
-TeXtra retains deterministic local fallbacks when TexLab is disabled or unavailable. The Phase 2
-gate remains pending native interaction verification and the test matrix described in TESTING.md.
-Other platform bundles and installer packaging remain Phase 4 work.
+Before public release, migrate the encrypted AI key from repository-local MVP storage
+to app user data and an OS-level storage layer. See [Security](SECURITY.md).
+
+Run the full gate with `npm run format:check`, `npm run typecheck`, `npm run lint`,
+`npm test`, `npm run build`, and `npm run test:e2e`. Record exact evidence and blockers
+in `.agents/memory/TESTING.md`.

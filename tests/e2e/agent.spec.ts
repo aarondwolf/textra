@@ -21,7 +21,7 @@ interface AgentTestState {
   hold: boolean;
   holdReview: boolean;
   limited: boolean;
-  rateLimitsOpened: boolean;
+  linksOpened: string[];
   release: (() => void) | null;
   releaseReview: (() => void) | null;
 }
@@ -71,7 +71,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
         hold: false,
         holdReview: false,
         limited: false,
-        rateLimitsOpened: false,
+        linksOpened: [],
         release: null,
         releaseReview: null,
       };
@@ -80,7 +80,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
         'textra:ai:settings',
         'textra:ai:send',
         'textra:ai:cancel',
-        'textra:ai:rate-limits',
+        'textra:ai:link',
         'textra:agent:document',
         'textra:agent:run',
         'textra:agent:accept',
@@ -90,21 +90,45 @@ test('native agent stages active-file edits for review, applies undoably, and re
         ipcMain.removeHandler(channel);
       ipcMain.handle('textra:ai:settings', () => ({
         ok: true,
-        value: { configured: true, autoSendProblems: false },
+        value: {
+          configured: true,
+          autoSendProblems: false,
+          defaultModel: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          providers: ['google', 'openai', 'anthropic', 'ollama-cloud', 'ollama-local'].map(
+            (id) => ({
+              id,
+              configured: id === 'google',
+              defaultModel: id === 'google' ? 'gemini-3.5-flash-lite' : null,
+              models:
+                id === 'google'
+                  ? [
+                      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+                      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+                      { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B' },
+                    ]
+                  : [],
+              modelsFetchedAt: 1,
+              error: null,
+            }),
+          ),
+        },
       }));
-      ipcMain.handle('textra:ai:send', (_event, request: { model: string }) => {
-        state.chatModels.push(request.model);
-        return {
-          ok: true,
-          value:
-            state.chatModels.length === 1
-              ? 'Chat answer only; no edits proposed.'
-              : '**Suggested fix:** Replace Original text. with Revised text. Keep all other source unchanged.',
-        };
-      });
+      ipcMain.handle(
+        'textra:ai:send',
+        (_event, request: { model: { provider: string; model: string } }) => {
+          state.chatModels.push(`${request.model.provider}:${request.model.model}`);
+          return {
+            ok: true,
+            value:
+              state.chatModels.length === 1
+                ? 'Chat answer only; no edits proposed.'
+                : '**Suggested fix:** Replace Original text. with Revised text. Keep all other source unchanged.',
+          };
+        },
+      );
       ipcMain.handle('textra:ai:cancel', () => ({ ok: true, value: undefined }));
-      ipcMain.handle('textra:ai:rate-limits', () => {
-        state.rateLimitsOpened = true;
+      ipcMain.handle('textra:ai:link', (_event, request: { provider: string; link: string }) => {
+        state.linksOpened.push(`${request.provider}:${request.link}`);
         return { ok: true, value: undefined };
       });
       ipcMain.handle('textra:agent:document', (_event, document: AIAgentDocument | null) => {
@@ -249,24 +273,19 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
     const chat = page.getByRole('region', { name: 'AI debugging chat', exact: true });
-    const modelButton = chat.getByRole('button', { name: 'Model', exact: true });
-    const models = chat.getByRole('menu', { name: 'AI model', exact: true });
+    const modelButton = chat.getByRole('button', { name: /^Model: / });
+    const models = chat.getByRole('listbox', { name: 'Model', exact: true });
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     await modelButton.click();
-    await expect(
-      models.getByRole('menuitemradio', { name: 'Gemini 3.5 Flash Lite', exact: true }),
-    ).toHaveAttribute('aria-checked', 'true');
-    await expect(models.getByRole('menuitemradio')).toHaveText([
-      'Gemini 3.5 Flash Lite',
-      'Gemini 3.1 Flash Lite',
-      'Gemini 3.8 Flash',
-      'Gemini 3.6 Flash',
-      'Gemini 3 Flash (Preview)',
-      'Gemma 4 26B',
-      'Gemma 4 31B',
-    ]);
-    await models.getByRole('menuitemradio', { name: 'Gemini 3.1 Flash Lite', exact: true }).click();
+    await expect(models.getByRole('option', { name: /Gemini 3.5 Flash Lite/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(models.getByRole('option')).toHaveCount(3);
+    await models.getByRole('option', { name: /Gemini 3.8 Flash/ }).click();
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
     await chat
-      .getByRole('textbox', { name: 'Message Gemini', exact: true })
+      .getByRole('textbox', { name: 'Message AI', exact: true })
       .fill('Explain this document.');
     await chat.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
@@ -278,12 +297,8 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await expect(chat.locator('.ai-agent-notice')).toHaveCount(0, { timeout: 7500 });
     await expect(chat.getByRole('log')).toContainText('Explain this document.');
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    await modelButton.click();
-    await expect(
-      models.getByRole('menuitemradio', { name: 'Gemini 3.5 Flash Lite', exact: true }),
-    ).toHaveAttribute('aria-checked', 'true');
-    await expect(models.getByRole('menuitemradio')).toHaveCount(7);
-    await page.keyboard.press('Escape');
+    // The chosen model stays selected across Chat and Agent.
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
     const agentInput = chat.getByRole('textbox', { name: 'Agent request', exact: true });
     const send = chat.getByRole('button', { name: 'Send message', exact: true });
     const review = page.getByRole('region', { name: 'Review agent changes', exact: true });
@@ -411,44 +426,40 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await agentInput.fill('Exercise the provider rate limit.');
     await send.click();
     await expect(chat.getByRole('alert')).toContainText('rate or Agent budget limit');
-    await chat.getByRole('button', { name: 'View rate limits in AI Studio', exact: true }).click();
+    await chat.getByRole('button', { name: 'View Google Gemini limits', exact: true }).click();
     const state = await application.evaluate(() => {
       const state = (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest;
       return {
         requests: state.requests,
         chatModels: state.chatModels,
-        rateLimitsOpened: state.rateLimitsOpened,
+        linksOpened: state.linksOpened,
       };
     });
-    expect(state.chatModels).toEqual(['gemini-3.1-flash-lite']);
+    expect(state.chatModels).toEqual(['google:gemini-3.8-flash']);
     expect(state.requests).toHaveLength(6);
     expect(state.requests[0].messages).toEqual([
       { role: 'user', text: 'Explain this document.' },
       { role: 'model', text: 'Chat answer only; no edits proposed.' },
     ]);
-    expect(state.requests.every((request) => request.model === 'gemini-3.5-flash-lite')).toBe(true);
-    expect(state.rateLimitsOpened).toBe(true);
+    expect(
+      state.requests.every(
+        (request) =>
+          request.model.provider === 'google' && request.model.model === 'gemini-3.8-flash',
+      ),
+    ).toBe(true);
+    expect(state.linksOpened).toEqual(['google:limits']);
     await chat.getByRole('button', { name: 'Chat', exact: true }).click();
-    await modelButton.click();
-    await expect(
-      models.getByRole('menuitemradio', { name: 'Gemini 3.5 Flash Lite', exact: true }),
-    ).toHaveAttribute('aria-checked', 'true');
-    await expect(models.getByRole('menuitemradio')).toHaveCount(7);
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    await page.keyboard.press('Escape');
     await chat.getByRole('button', { name: 'Agent', exact: true }).click();
-    await modelButton.click();
-    await expect(
-      models.getByRole('menuitemradio', { name: 'Gemini 3.5 Flash Lite', exact: true }),
-    ).toHaveAttribute('aria-checked', 'true');
+    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
     await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    await page.keyboard.press('Escape');
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.limited = false;
     });
     await chat.getByRole('button', { name: 'Chat', exact: true }).click();
     await chat
-      .getByRole('textbox', { name: 'Message Gemini', exact: true })
+      .getByRole('textbox', { name: 'Message AI', exact: true })
       .fill('Suggest a concrete correction.');
     await send.click();
     const implement = chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true });
@@ -464,7 +475,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
       return { request: state.requests.at(-1), document: state.document };
     });
     expect(handoff.request?.prompt).toBe('Implement the suggested fix above.');
-    expect(handoff.request?.model).toBe('gemini-3.5-flash-lite');
+    expect(handoff.request?.model).toEqual({ provider: 'google', model: 'gemini-3.8-flash' });
     expect(handoff.request?.messages?.at(-1)).toEqual({
       role: 'model',
       text: '**Suggested fix:** Replace Original text. with Revised text. Keep all other source unchanged.',
@@ -512,7 +523,28 @@ test('native agent stages active-file edits for review, applies undoably, and re
       ipcMain.removeHandler('textra:ai:settings');
       ipcMain.handle('textra:ai:settings', () => ({
         ok: true,
-        value: { configured: true, autoSendProblems: false },
+        value: {
+          configured: true,
+          autoSendProblems: false,
+          defaultModel: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          providers: ['google', 'openai', 'anthropic', 'ollama-cloud', 'ollama-local'].map(
+            (id) => ({
+              id,
+              configured: id === 'google',
+              defaultModel: id === 'google' ? 'gemini-3.5-flash-lite' : null,
+              models:
+                id === 'google'
+                  ? [
+                      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+                      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+                      { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B' },
+                    ]
+                  : [],
+              modelsFetchedAt: 1,
+              error: null,
+            }),
+          ),
+        },
       }));
     });
     await restarted.getByRole('button', { name: 'AI Chat', exact: true }).click();

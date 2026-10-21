@@ -2,7 +2,8 @@
 
 A modern, local-first LaTeX desktop IDE. Your documents stay ordinary files on
 your computer. Editing and local compilation never require an account; AI is
-optional. Gemini debugging chat is available with your own Google AI Studio key.
+optional. AI chat works with your own Google, OpenAI, Anthropic or Ollama Cloud key, or
+with a local Ollama server.
 
 ![Native TeXtra editing and PDF preview](docs/screenshot.png)
 
@@ -95,21 +96,28 @@ recipe choices and tool definitions live in `.textra/settings.json`, created whe
 opening a project. Legacy `project.json` is migrated without deletion. Open folders with
 the folder icon in the explorer. Import/export accepts only versioned theme/layout/recipe
 settings; unknown schemas and corrupt files are preserved. Recent folders, keys and
-tool paths are excluded. Offline operation is the default.
+tool paths are excluded. Offline operation is the default. Settings save automatically; the
+footer of Settings and AI settings shows Saving… and All changes saved, and **Save settings**
+waits for pending writes (and submits a typed but unsaved API key) before closing.
 
-The **AI Chat** rail tab opens a conversational debugger using Gemini 3.5 Flash Lite by default.
-Both **Chat** and **Agent** default to Gemini 3.5 Flash Lite. Both model menus offer
-all configured Google models: Gemini 3.5/3.1 Flash Lite, Gemini 3.8/3.6 Flash,
-Gemini 3 Flash (Preview), and Gemma 4 26B/31B.
-First use offers a Google AI Studio link and a password field; **Save & Test Key** verifies
-the key before saving; key formats are validated by Google without a required prefix.
+The **AI Chat** rail tab opens a conversational debugger. Until a provider is connected it
+shows a single **Configure AI** button that opens the **AI settings** dialog (also reachable
+from the chat header **Settings** button and **Settings → AI Chat**). The dialog has one card
+per provider: **Google Gemini**, **OpenAI**, **Anthropic**, **Ollama Cloud** and **Local Ollama**.
+**Save & load models** tests a key by listing that provider's models, then saves the
+encrypted key with the model list. **Local Ollama** pings `127.0.0.1:11434`, shows whether it
+is running, offers **Start Ollama** (runs the installed `ollama serve`) or a download link, and
+needs no key. Each connected card has its own default model, **Refresh**, **Replace key** and
+**Remove**; the top of the dialog sets the overall default model used for new chats and Agent.
+The composer's model button opens a searchable list grouped by provider (type to filter by
+model name, id or provider; arrows and Enter choose). The chosen model stays selected across
+Chat and Agent. Requests are sent in each provider's own format: Gemini generateContent,
+OpenAI Chat Completions, Anthropic Messages, and Ollama's native `/api/chat`.
 **New chat** clears prior conversation context and retries while preserving unsent draft text.
-**Settings → AI Chat** stores one key at a time. Use **Replace key** to test a replacement
-before overwriting the saved key, or **Delete key** to remove it after confirmation.
-Deleting also turns off automatic Problems prompts. Settings can enable automatic
+Settings can enable automatic
 Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five
 source lines above and below for review. Sending shares that conversation/snippet with
-Google. Chat has no file or command tools. Agent sends only the active `.tex` buffer
+the selected model's provider (nothing leaves the computer with Local Ollama). Chat has no file or command tools. Agent sends only the active `.tex` buffer
 after an explicit request and can stage precise insertions/replacements in that file.
 It cannot browse other files, delete files, or run commands. Every proposed edit opens
 an inline read-only diff in the editor. **Approve** immediately applies that change to the
@@ -130,19 +138,19 @@ History keeps the latest 100 chats per canonical workspace in local app data (`a
 with at most 80 messages/128,000 characters per stored transcript. History contains plaintext
 conversation text, never API credentials or pending edits; it is excluded from settings exports.
 Unsent drafts remain in memory. **Ctrl+Enter** sends; Enter inserts a newline. Cancel stops waiting
-locally; Google may still process a request already sent.
+locally; a provider may still process a request already sent.
 Responses stream as full-width Markdown with a copy action below; only your messages use
 bubbles. The compact composer has two text rows, no resize handle, a model menu, and a circular
 send arrow (a stop control during streaming). The introductory
 guidance disappears once a conversation starts. The chat tab sits with the main rail views.
 
 MVP AI settings live in git-ignored `.textra-local/ai.json` inside this application checkout,
-with the key encrypted by Electron `safeStorage` for your OS account. No plaintext fallback
+with each key encrypted by Electron `safeStorage` for your OS account. No plaintext fallback
 is allowed. Do not distribute this local directory or put it under source control. Before
 public release, migrate it to global app data; see [security](docs/SECURITY.md).
-Google's free tier availability and limits depend on account/region; TeXtra adds no fee.
-Quota notices suggest switching to another allowed model or trying again later, with
-a link to [your Google AI Studio usage](https://aistudio.google.com/rate-limit).
+Provider pricing, free tiers and limits depend on your account; TeXtra adds no fee.
+Quota notices suggest switching models or trying again later, with a link to that
+provider's usage page.
 
 Recipes default to `build/textra/<relative document>/` and retain the last successful
 PDF through failures. Custom output folders are never automatically pruned. The

@@ -84,5 +84,7 @@ export {
   Warning,
   WarningCircle,
   Scroll,
+  Key,
+  Star,
   X,
 } from '@phosphor-icons/react';

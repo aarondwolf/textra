@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AIAgentDocument, AIAgentRequest } from '../../src/shared/ai';
 import { AgentWorkspaceService } from '../../src/main/services/agent-workspace';
 import { BoundedAgentService, type AgentGenerate } from '../../src/main/services/agent';
-import { GeminiService, type KeyCipher } from '../../src/main/services/gemini';
+import { AIService, type KeyCipher } from '../../src/main/services/ai-service';
+import { fromGoogleContent } from '../../src/main/services/ai-providers';
 import { ProjectService } from '../../src/main/services/projects';
 import { agentEditHunks } from '../../src/shared/ai-edits';
 
@@ -32,7 +33,7 @@ describe('canonical active-file agent workspace boundary', () => {
   let provider: ReturnType<typeof vi.fn<AgentGenerate>>;
   const request = (contextId: string): AIAgentRequest => ({
     contextId,
-    model: 'gemma-4-26b-a4b-it',
+    model: { provider: 'google', model: 'gemma-4-26b-a4b-it' },
     prompt: 'Fix the greeting.',
     requestId: 'workspace-request',
   });
@@ -47,11 +48,13 @@ describe('canonical active-file agent workspace boundary', () => {
     projects = new ProjectService(join(directory, 'settings'));
     const project = await projects.openRoot(root);
     document = await projects.readFile({ projectId: project.id, path: 'main.tex' });
-    const gemini = new GeminiService(join(directory, 'ai'), cipher, async () => 'OK');
-    await gemini.saveKey({ apiKey: 'fixture-key' });
+    const gemini = new AIService(join(directory, 'ai'), cipher, {
+      list: async () => [{ id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B' }],
+    });
+    await gemini.saveProvider({ provider: 'google', apiKey: 'fixture-key' });
     provider = vi
       .fn<AgentGenerate>()
-      .mockResolvedValue({ role: 'model', parts: [{ text: 'Done.' }] });
+      .mockResolvedValue(fromGoogleContent({ role: 'model', parts: [{ text: 'Done.' }] }));
     agent = new BoundedAgentService(gemini, provider);
     workspace = new AgentWorkspaceService(projects, agent);
   });
@@ -110,14 +113,18 @@ describe('canonical active-file agent workspace boundary', () => {
   });
   it('reuses the same snapshot context and retains its pending proposal', async () => {
     provider
-      .mockResolvedValueOnce({
-        role: 'model',
-        parts: [{ functionCall: { name: 'read_current_file', args: {} } }],
-      })
-      .mockResolvedValueOnce({
-        role: 'model',
-        parts: [{ functionCall: { name: 'insert_text', args: { offset: 12, text: '\n' } } }],
-      });
+      .mockResolvedValueOnce(
+        fromGoogleContent({
+          role: 'model',
+          parts: [{ functionCall: { name: 'read_current_file', args: {} } }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        fromGoogleContent({
+          role: 'model',
+          parts: [{ functionCall: { name: 'insert_text', args: { offset: 12, text: '\n' } } }],
+        }),
+      );
     const resolve = vi.spyOn(projects, 'resolvePath');
     const context = (await workspace.sync(document))!;
     const result = await workspace.run(request(context.contextId));
@@ -228,14 +235,16 @@ describe('canonical active-file agent workspace boundary', () => {
       const content = 'one\nunchanged\ntwo\n';
       await writeFile(join(root, 'main.tex'), content);
       document = await projects.readFile({ projectId: document.projectId, path: document.path });
-      provider.mockResolvedValueOnce({
-        role: 'model',
-        parts: [
-          { functionCall: { name: 'read_current_file' } },
-          { functionCall: { name: 'replace_range', args: { expected: 'one', text: 'ONE' } } },
-          { functionCall: { name: 'replace_range', args: { expected: 'two', text: 'TWO' } } },
-        ],
-      });
+      provider.mockResolvedValueOnce(
+        fromGoogleContent({
+          role: 'model',
+          parts: [
+            { functionCall: { name: 'read_current_file' } },
+            { functionCall: { name: 'replace_range', args: { expected: 'one', text: 'ONE' } } },
+            { functionCall: { name: 'replace_range', args: { expected: 'two', text: 'TWO' } } },
+          ],
+        }),
+      );
       const context = (await workspace.sync(document))!;
       const proposal = (await workspace.run(request(context.contextId))).proposal!;
       const initialIds = agentEditHunks(proposal.content, proposal.modified).map(({ id }) => id);
@@ -286,14 +295,16 @@ describe('canonical active-file agent workspace boundary', () => {
     const content = 'one\nunchanged\ntwo\n';
     await writeFile(join(root, 'main.tex'), content);
     document = await projects.readFile({ projectId: document.projectId, path: document.path });
-    provider.mockResolvedValueOnce({
-      role: 'model',
-      parts: [
-        { functionCall: { name: 'read_current_file' } },
-        { functionCall: { name: 'replace_range', args: { expected: 'one', text: 'ONE' } } },
-        { functionCall: { name: 'replace_range', args: { expected: 'two', text: 'TWO' } } },
-      ],
-    });
+    provider.mockResolvedValueOnce(
+      fromGoogleContent({
+        role: 'model',
+        parts: [
+          { functionCall: { name: 'read_current_file' } },
+          { functionCall: { name: 'replace_range', args: { expected: 'one', text: 'ONE' } } },
+          { functionCall: { name: 'replace_range', args: { expected: 'two', text: 'TWO' } } },
+        ],
+      }),
+    );
     const context = (await workspace.sync(document))!;
     const proposal = (await workspace.run(request(context.contextId))).proposal!;
     const firstId = agentEditHunks(proposal.content, proposal.modified)[0].id;

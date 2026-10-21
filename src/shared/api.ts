@@ -1,6 +1,9 @@
 import type { RecipeSettings } from './recipes';
 import type {
-  AIChatModel,
+  AIModelInfo,
+  AIModelRef,
+  AIProviderId,
+  AIProviderLink,
   AIAgentDocument,
   AIAgentContext,
   AIAgentRequest,
@@ -302,9 +305,30 @@ export interface SourceLocation {
   line: number;
   column: number;
 }
+export interface AIProviderSettings {
+  id: AIProviderId;
+  /** A key is saved, or local Ollama has been enabled. */
+  configured: boolean;
+  /** This provider's preferred model, used when it is chosen without a specific model. */
+  defaultModel: string | null;
+  /** Models returned by the provider's own model listing, cached locally. */
+  models: AIModelInfo[];
+  modelsFetchedAt: number | null;
+  /** Last model-listing failure, safe to display. */
+  error: string | null;
+}
 export interface AISettings {
+  /** At least one provider has models and an overall default model exists. */
   configured: boolean;
   autoSendProblems: boolean;
+  defaultModel: AIModelRef | null;
+  providers: AIProviderSettings[];
+}
+export interface OllamaLocalStatus {
+  running: boolean;
+  version: string | null;
+  /** An Ollama executable was found, so TeXtra can try to start it. */
+  installed: boolean;
 }
 export interface AIMessage {
   role: 'user' | 'model';
@@ -317,14 +341,23 @@ export interface AIResponseChunk {
 }
 export interface TextraAPI {
   getAISettings(): Promise<Result<AISettings>>;
-  saveAIKey(request: { apiKey: string }): Promise<Result<AISettings>>;
-  /** Confirms locally before clearing the single saved credential; null means cancelled. */
-  deleteAIKey(): Promise<Result<AISettings | null>>;
+  /** Tests a key (or local server) by listing models, then saves it with those models. */
+  saveAIProvider(request: { provider: AIProviderId; apiKey?: string }): Promise<Result<AISettings>>;
+  /** Confirms locally before removing a provider; null means cancelled. */
+  removeAIProvider(request: { provider: AIProviderId }): Promise<Result<AISettings | null>>;
+  refreshAIModels(request: { provider: AIProviderId }): Promise<Result<AISettings>>;
+  setAIProviderDefault(request: {
+    provider: AIProviderId;
+    model: string;
+  }): Promise<Result<AISettings>>;
+  setAIDefaultModel(request: AIModelRef): Promise<Result<AISettings>>;
   setAIAutoSend(request: { autoSendProblems: boolean }): Promise<Result<AISettings>>;
+  getOllamaStatus(): Promise<Result<OllamaLocalStatus>>;
+  startOllama(): Promise<Result<OllamaLocalStatus>>;
   sendAIMessage(request: {
     messages: AIMessage[];
     requestId?: string;
-    model?: AIChatModel;
+    model: AIModelRef;
   }): Promise<Result<string>>;
   syncAIAgentDocument(document: AIAgentDocument | null): Promise<Result<AIAgentContext | null>>;
   runAIAgent(request: AIAgentRequest): Promise<Result<AIAgentResult>>;
@@ -335,13 +368,15 @@ export interface TextraAPI {
   }): Promise<Result<AIEditProposal>>;
   rejectAIAgentProposal(id: string): Promise<Result<void>>;
   reviewAIAgentProposal(request: AIAgentReviewRequest): Promise<Result<AIAgentReviewResult>>;
-  openAIRateLimits(): Promise<Result<void>>;
+  openAIProviderLink(request: {
+    provider: AIProviderId;
+    link: AIProviderLink;
+  }): Promise<Result<void>>;
   listAIChats(projectId: string): Promise<Result<AIStoredChat[]>>;
   saveAIChat(request: { projectId: string; chat: AIStoredChat }): Promise<Result<void>>;
   deleteAIChat(request: { projectId: string; chatId: string }): Promise<Result<boolean>>;
   onAIResponseChunk(listener: (chunk: AIResponseChunk) => void): () => void;
   cancelAIMessage(): Promise<Result<void>>;
-  openAIStudio(): Promise<Result<void>>;
   getAppInfo(): Promise<Result<AppInfo>>;
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;

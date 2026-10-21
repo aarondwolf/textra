@@ -18,11 +18,13 @@ TeX is executable input. Compilers run only after user action, with shell escape
 disabled, a timeout and cancellation. This is not an OS-level TeX sandbox: open
 and compile trusted projects only. External installation is not automatic.
 
-Optional Gemini chat transmits only user-submitted conversations and Problems snippets
-to Google's fixed Gemini API endpoint through main-process `@google/genai`.
-Both modes permit only the shared Google model allowlist (Gemini 3.5/3.1 Lite,
-3.8/3.6/3 Preview, Gemma 4 26B/31B), defaulting to Gemini 3.5 Flash Lite; there is no automatic
-fallback provider, source discovery, or execution. Problems drafts include up to five lines either side of the selected
+Optional AI chat transmits only user-submitted conversations and Problems snippets to the
+fixed endpoint of the selected model's provider from the main process:
+generativelanguage.googleapis.com, api.openai.com, api.anthropic.com, ollama.com, or the
+loopback Ollama server at 127.0.0.1:11434. Redirects are refused. Only models returned by
+that provider's own model listing are accepted; there is no automatic fallback provider,
+source discovery, or execution. Starting local Ollama runs only a found `ollama` executable
+with the fixed argument `serve` (no shell). Problems drafts include up to five lines either side of the selected
 line (600 characters per source line); sending is manual unless the person enables the
 explicit auto-send setting. Conversations are stored locally by canonical workspace hash
 under userData/ai-chats, with atomic writes, size/schema validation and symlink rejection.
@@ -32,10 +34,11 @@ The latest 100 chats are retained per workspace, 80 turns/128,000 text character
 16MiB per history file. History is plaintext private conversation content, not portable settings;
 each saved chat can be individually deleted from the history menu with native confirmation.
 Keys, pending proposals, streaming partials and drafts are not serialized as history metadata.
-Requests have a 30-second timeout, one attempt, no automatic 429 retry, at most 40 turns,
+Requests have a 90-second timeout (180 seconds for local Ollama), one attempt, no automatic 429 retry, at most 40 turns,
 64,000 input characters and 4,096 output tokens. Cancellation stops local waiting; it cannot
-guarantee Google stops work on a request it has received. Provider errors never reach logs
-or the renderer verbatim. AI Studio opens through a fixed-URL main handler.
+guarantee a provider stops work on a request it has received. Provider errors never reach logs;
+the renderer gets a mapped message with at most 240 characters of provider detail, with the
+key redacted. Provider key and usage pages open through a fixed-URL main handler.
 Streaming updates use a fixed IPC event with validated request IDs and at most 32,000 text
 characters. Preload validates event shape and the chat ignores stale requests. Cancelled or
 failed partial replies do not become completed conversation turns. Markdown is rendered as
@@ -75,13 +78,13 @@ it cannot initiate requests or approve edits without a click.
 
 MVP keys use Electron `safeStorage` encryption in git-ignored repository-local
 `.textra-local/ai.json`, with atomic writes, version validation and symlink rejection.
-Encryption must be available; Linux's `basic_text` backend is rejected. Test calls must
-succeed before replacement; failed tests preserve the previous configuration. Settings
-IPC returns only configured/auto-send flags, never the key/ciphertext. AI settings
-hold no key collection: replacement atomically overwrites the single credential after testing.
-Deletion requires native confirmation, clears the encrypted credential and auto-send flag,
-and works without decrypting it. It removes only TeXtra's local copy; Google key revocation
-remains a separate action in AI Studio. Concurrent active Gemini operations block deletion.
+Encryption must be available for key providers; Linux's `basic_text` backend is rejected.
+Local Ollama stores no key. A key is saved only after the provider's model listing succeeds;
+failed tests preserve the previous configuration. Settings IPC returns configured flags,
+model lists and defaults, never keys or ciphertext. Version 1 single-key files migrate to the
+Google provider. Removing a provider requires native confirmation and works without decrypting.
+It removes only TeXtra's local copy; key revocation remains a separate action with the
+provider. An active AI request blocks removal.
 Portable settings exports exclude this file. Repository-local storage may be synced/backed up with the
 checkout; encrypted keys remain bound to the OS account's storage backend.
 

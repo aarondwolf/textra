@@ -46,10 +46,10 @@ import { validateRecipeSettings } from '../shared/recipes';
 import { LanguageService } from './services/language';
 import { TexlabManager } from './services/texlab-manager';
 import { TexlabError } from './services/texlab';
-import { AIError, GeminiService } from './services/gemini';
+import { AIError, AIService } from './services/ai-service';
 import { BoundedAgentService } from './services/agent';
 import { AgentWorkspaceService } from './services/agent-workspace';
-import { AI_RATE_LIMIT_URL } from '../shared/ai';
+import { AI_PROVIDERS, isAIProviderId } from '../shared/ai';
 import { AIChatStore } from './services/ai-chats';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -69,7 +69,7 @@ if (testUserData) {
 
 let mainWindow: BrowserWindow | null = null;
 const preferences = new PreferencesStore(app.getPath('userData'));
-const gemini = new GeminiService(join(app.getAppPath(), '.textra-local'), {
+const ai = new AIService(join(app.getAppPath(), '.textra-local'), {
   available: () =>
     safeStorage.isEncryptionAvailable() &&
     (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
@@ -77,7 +77,7 @@ const gemini = new GeminiService(join(app.getAppPath(), '.textra-local'), {
   decrypt: (value) => safeStorage.decryptString(value),
 });
 const projects = new ProjectService(app.getPath('userData'));
-const agent = new BoundedAgentService(gemini);
+const agent = new BoundedAgentService(ai);
 const agentWorkspace = new AgentWorkspaceService(projects, agent);
 const aiChats = new AIChatStore(join(app.getPath('userData'), 'ai-chats'), (id) =>
   projects.getRoot(id),
@@ -290,23 +290,38 @@ void app.whenReady().then(() => {
     version: app.getVersion(),
     platform: process.platform,
   }));
-  handle('textra:ai:settings', 0, () => gemini.settings());
-  handleRequest<'saveAIKey'>('textra:ai:key', (request) => gemini.saveKey(request));
-  handle('textra:ai:delete', 0, async () => {
+  handle('textra:ai:settings', 0, () => ai.settings());
+  handleRequest<'saveAIProvider'>('textra:ai:provider:save', (request) => ai.saveProvider(request));
+  handleRequest<'removeAIProvider'>('textra:ai:provider:remove', async (request) => {
+    const provider = request && isAIProviderId(request.provider) ? request.provider : null;
+    if (!provider) throw new AIError('INVALID_ARGUMENT', 'Choose a supported AI provider.');
+    const info = AI_PROVIDERS[provider];
     const answer = await dialog.showMessageBox(requireWindow(), {
       type: 'question',
-      title: 'Delete saved API key?',
-      message: 'Remove the saved Gemini API key from TeXtra?',
-      detail:
-        'Chat will need a key again. This removes the local copy; it does not revoke the key in Google AI Studio.',
-      buttons: ['Cancel', 'Delete key'],
+      title: `Remove ${info.label}?`,
+      message: info.needsKey
+        ? `Remove the saved ${info.label} API key from TeXtra?`
+        : `Stop using ${info.label} in TeXtra?`,
+      detail: info.needsKey
+        ? 'Its models leave the model list. This removes the local copy; it does not revoke the key with the provider.'
+        : 'Its models leave the model list. Ollama itself and your downloaded models are not affected.',
+      buttons: ['Cancel', 'Remove'],
       defaultId: 0,
       cancelId: 0,
       noLink: true,
     });
-    return answer.response === 1 ? gemini.deleteKey() : null;
+    return answer.response === 1 ? ai.removeProvider(request) : null;
   });
-  handleRequest<'setAIAutoSend'>('textra:ai:auto-send', (request) => gemini.setAutoSend(request));
+  handleRequest<'refreshAIModels'>('textra:ai:models:refresh', (request) =>
+    ai.refreshModels(request),
+  );
+  handleRequest<'setAIProviderDefault'>('textra:ai:provider:default', (request) =>
+    ai.setProviderDefault(request),
+  );
+  handleRequest<'setAIDefaultModel'>('textra:ai:default', (request) => ai.setDefaultModel(request));
+  handleRequest<'setAIAutoSend'>('textra:ai:auto-send', (request) => ai.setAutoSend(request));
+  handle('textra:ai:ollama:status', 0, () => ai.ollamaStatus());
+  handle('textra:ai:ollama:start', 0, () => ai.startOllama());
   handleRequest<'sendAIMessage'>('textra:ai:send', (request) => {
     const requestId = request?.requestId;
     if (
@@ -315,7 +330,7 @@ void app.whenReady().then(() => {
     )
       throw new AIError('INVALID_ARGUMENT', 'Provide a valid chat request identifier.');
     const receiver = requireWindow().webContents;
-    return gemini.send(
+    return ai.send(
       request,
       requestId
         ? (text) => {
@@ -339,10 +354,16 @@ void app.whenReady().then(() => {
   );
   handle('textra:ai:cancel', 0, () => {
     agent.cancel();
-    gemini.cancel();
+    ai.cancel();
   });
-  handle('textra:ai:studio', 0, () => shell.openExternal('https://aistudio.google.com/'));
-  handle('textra:ai:rate-limits', 0, () => shell.openExternal(AI_RATE_LIMIT_URL));
+  handleRequest<'openAIProviderLink'>('textra:ai:link', (request) => {
+    const url =
+      request && isAIProviderId(request.provider) && typeof request.link === 'string'
+        ? AI_PROVIDERS[request.provider].links[request.link]
+        : undefined;
+    if (!url) throw new AIError('INVALID_ARGUMENT', 'That provider link is not available.');
+    return shell.openExternal(url);
+  });
   handleRequest<'listAIChats'>('textra:ai:chats:list', (projectId) => aiChats.list(projectId));
   handleRequest<'saveAIChat'>('textra:ai:chats:save', (request) => aiChats.save(request));
   handleRequest<'deleteAIChat'>('textra:ai:chats:delete', async (request) => {
@@ -700,7 +721,7 @@ app.on('window-all-closed', () => {
 });
 app.on('will-quit', () => {
   agent.cancel();
-  gemini.cancel();
+  ai.cancel();
   externalEditor.clear();
   void builds.cancel();
   void texlab.stop();

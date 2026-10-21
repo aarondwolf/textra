@@ -10,10 +10,10 @@ restores probe files.
 
 Unit tests cover validation and parsers. Service tests use temporary directories for
 real filesystem operations. Electron Playwright tests launch the built app; distinguish
-mocked provider calls and fixture builds from live Google or TeX integrations. The
-live Gemini Agent test is opt-in with `TEXTRA_LIVE_AI_TEST=1`, uses the saved encrypted
+mocked provider calls and fixture builds from live AI provider or TeX integrations. The
+live Agent test is opt-in with `TEXTRA_LIVE_AI_TEST=1`, uses the saved encrypted Google
 key and real quota, and should be run only when explicitly needed. Normal tests do not
-send credentials to Google.
+send credentials to any provider.
 
 Run Playwright suites serially on Windows: parallel runs can clean shared profiles and
 traces. The managed desktop test environment needs elevated filesystem access for

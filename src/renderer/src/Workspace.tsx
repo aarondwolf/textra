@@ -1869,7 +1869,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button
             className="icon-button activity-view"
             aria-label="AI Chat"
-            title="AI Chat — Gemini debugging"
+            title="AI Chat"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'chat'}
             onClick={() => selectSidebarView('chat')}
           >

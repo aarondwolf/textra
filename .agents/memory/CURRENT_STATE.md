@@ -1,5 +1,26 @@
 # Current state
 
+2026-10-21 Save footer: Settings and AI settings dialogs share SaveFooter
+(features/save-status). It shows autosave state (ui.ts saveState for preferences;
+trackAISave/useAISaveState for AI writes) with an animated check, and Save settings
+waits for pending writes, submits typed API keys, plays a confirm animation and closes.
+Typecheck/lint pass; headless Chromium screenshots reviewed. E2E not run.
+
+2026-10-21 Multi-provider AI: GeminiService replaced by AIService (ai-service.ts) plus
+fixed-endpoint adapters (ai-providers.ts) for Google, OpenAI, Anthropic, Ollama Cloud and
+local Ollama. ai.json is now version 2 (v1 key migrates to Google). New AI settings dialog
+(AISettingsDialog.tsx), searchable ModelPicker, useAISettings hook; AISettingsForm removed.
+IPC: saveAIProvider/removeAIProvider/refreshAIModels/setAIProviderDefault/setAIDefaultModel/
+getOllamaStatus/startOllama/openAIProviderLink; deleteAIKey/saveAIKey/openAIStudio/
+openAIRateLimits removed. Agent turns are provider-neutral. Owner's saved key was deleted
+at his request so he can re-enter it through the new dialog. Evidence: typecheck, eslint,
+prettier pass; unit suite passes except the real-TeX integration tests on a machine without
+TeX; new ai-service (22) and ai-providers (12) tests pass; renderer build plus headless
+Chromium screenshots of the dialog, picker and chat reviewed. E2E specs (chat, agent, shell,
+agent-live) were updated for the new flow but NOT run (no Electron binary in the Linux VM).
+Not verified live against real provider APIs; OpenAI/Anthropic/Ollama tool calling is
+implemented from their documented formats.
+
 2026-10-20 Chat history deletion and Problems mode handoff: history menu now offers a
 per-chat delete action with native confirmation. Main validates the workspace chat ID;
 the workspace history service serializes deletion with saves and atomically rewrites the

@@ -34,6 +34,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       window.textra.sendAIMessage({
         messages: [{ role: 'user', text: 'Do not send this invalid request.' }],
         requestId: '../invalid-request-id',
+        model: { provider: 'google', model: 'gemini-3.5-flash-lite' },
       }),
     );
     expect(invalidChatRequest).toMatchObject({ ok: false, code: 'INVALID_ARGUMENT' });
@@ -47,7 +48,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       try {
         const result: unknown =
           await BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(
-            'window.textra.deleteAIKey()',
+            "window.textra.removeAIProvider({ provider: 'google' })",
           );
         return { result, confirmedPrompt };
       } finally {
@@ -68,7 +69,6 @@ test('native shell keeps security boundaries and persists representative UI acti
       'copyText',
       'createConflictCopy',
       'createEntry',
-      'deleteAIKey',
       'deleteEntry',
       'detectTools',
       'exportSettings',
@@ -78,6 +78,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'getBuildState',
       'getFileRevisions',
       'getLanguageToolStatus',
+      'getOllamaStatus',
       'getPreferences',
       'getProjectConfig',
       'getRecentProjects',
@@ -88,8 +89,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'listAIChats',
       'onAIResponseChunk',
       'onExternalFileChange',
-      'openAIRateLimits',
-      'openAIStudio',
+      'openAIProviderLink',
       'openInCode',
       'openRecentProject',
       'openSetupLink',
@@ -98,21 +98,26 @@ test('native shell keeps security boundaries and persists representative UI acti
       'readFile',
       'readPdf',
       'readProjectPdf',
+      'refreshAIModels',
       'refreshProject',
       'rejectAIAgentProposal',
+      'removeAIProvider',
       'renameEntry',
       'revealEntry',
       'reviewAIAgentProposal',
       'runAIAgent',
       'saveAIChat',
-      'saveAIKey',
+      'saveAIProvider',
       'saveFile',
       'sendAIMessage',
       'setAIAutoSend',
+      'setAIDefaultModel',
+      'setAIProviderDefault',
       'setDirty',
       'setPreferences',
       'setProjectConfig',
       'setProjectPinned',
+      'startOllama',
       'syncAIAgentDocument',
       'syncForward',
       'syncInverse',

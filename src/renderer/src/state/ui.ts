@@ -5,6 +5,8 @@ interface UIState {
   preferences: Preferences;
   hydrated: boolean;
   error: string | null;
+  /** Autosave progress for preference changes, shown in the Settings footer. */
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
   paletteOpen: boolean;
   recipeEditorOpen: boolean;
   panel: 'preview' | 'problems' | 'output';
@@ -33,24 +35,27 @@ function savePreferences(): Promise<void> {
 }
 
 async function persistPending(): Promise<void> {
-  {
-    while (pending) {
-      const value = pending;
-      pending = null;
-      try {
-        const result = await window.textra.setPreferences(value);
-        useUI.setState({ error: result.ok ? null : result.error });
-      } catch {
-        useUI.setState({ error: 'Your layout could not be saved. Changes apply to this session.' });
-      }
+  let failed = false;
+  while (pending) {
+    const value = pending;
+    pending = null;
+    try {
+      const result = await window.textra.setPreferences(value);
+      failed = !result.ok;
+      useUI.setState({ error: result.ok ? null : result.error });
+    } catch {
+      failed = true;
+      useUI.setState({ error: 'Your layout could not be saved. Changes apply to this session.' });
     }
   }
+  useUI.setState({ saveState: failed ? 'error' : 'saved' });
 }
 
 export const useUI = create<UIState>((set, get) => ({
   preferences: { ...DEFAULT_PREFERENCES },
   hydrated: false,
   error: null,
+  saveState: 'idle',
   paletteOpen: false,
   recipeEditorOpen: false,
   panel: 'preview',
@@ -58,7 +63,7 @@ export const useUI = create<UIState>((set, get) => ({
   updatePreferences: (patch) => {
     if (!get().hydrated) return;
     const preferences = { ...get().preferences, ...patch };
-    set({ preferences });
+    set({ preferences, saveState: 'saving' });
     pending = preferences;
     void savePreferences();
   },

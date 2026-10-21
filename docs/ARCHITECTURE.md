@@ -26,30 +26,37 @@ uses LaTeX Workshop recipe/tool keys; shared shape validation is followed by mai
 strict command/argument/path checks. Popup writes use an expected settings snapshot
 and atomic publication. Every compile reads current settings. A PDF version counter
 refreshes stable output paths in the viewer. No credentials in portable settings. Optional
-Gemini chat is not a prerequisite for editing. Main's GeminiService owns SDK requests and
-safeStorage-encrypted repository-local AI settings; preload exposes only settings flags,
-key-test/save, bounded text conversation, cancellation, and a fixed AI Studio link.
+AI chat is not a prerequisite for editing. Main's AIService owns per-provider
+safeStorage-encrypted keys, cached model lists, provider and overall default models, and the
+single in-flight request; ai-providers.ts holds the fixed-endpoint wire adapters (Gemini via
+`@google/genai`, OpenAI Chat Completions, Anthropic Messages, Ollama `/api/chat` for
+ollama.com and 127.0.0.1:11434). Preload exposes settings views without keys, provider
+save/remove/refresh/default calls, local Ollama status/start, bounded text conversation,
+cancellation, and fixed provider links.
 Chat has no project service or tools. The renderer explicitly builds Problems snippets
 from the chosen diagnostic and current buffer (or a normal validated file read), then
-shows a draft by default. Chat and Settings share one configuration form. AIChatStore persists
+shows a draft by default. Chat and Settings open the same AI settings dialog. AIChatStore persists
 bounded transcripts in userData by canonical workspace hash; opaque scope registration isolates
 queued saves across project switches. Chat history survives mode switches, and Agent receives
 validated prior conversation for handoff. Saved transcripts can be deleted through a
 workspace-scoped main-process request after native confirmation. Drafts and pending proposals
 are not persisted.
-Gemini chat uses the SDK's streaming API. A narrow response event carries a request ID and
+Chat streams from every provider (SSE or NDJSON). A narrow response event carries a request ID and
 bounded cumulative text; the renderer accepts only its current request's updates. Successful
 responses enter the conversation once. Interrupted partial text stays visible for review but
 is excluded from subsequent requests. Markdown uses the existing React-node preview renderer
 without HTML injection. The chat follows arriving text only while the reader is near the bottom.
 
-Chat and Agent model IDs live in shared allowlists and are enforced again in main.
-Both modes expose the same seven Google models and default to Gemini 3.5 Flash Lite.
+Models are provider-qualified `{ provider, model }` refs. Main accepts only models present in
+the provider's cached listing. Both modes share the selected model.
 The concise Chat prompt labels actionable fixes; the renderer offers an explicit
 Implement Suggested Fix action that switches modes and submits the existing conversation
 with a short implementation instruction. It uses the normal Agent scope/review path.
 The first-selection Agent notice fades out and stores only a local UI dismissal flag.
-BoundedAgentService stages active `.tex` text tools in memory with a fixed call budget;
+BoundedAgentService runs a provider-neutral transcript (user, assistant with tool calls and
+raw provider content, tool results); each adapter converts it to its own tool-calling format
+and replays raw content such as Gemini thought signatures unchanged.
+It stages active `.tex` text tools in memory with a fixed call budget;
 it has no filesystem or process dependency. AgentWorkspaceService binds its opaque context
 to a validated ProjectService path and disk revision. Narrow document/run/accept/reject
 IPC methods expose no tool dispatcher. Renderer syncs the active buffer snapshot, shows
@@ -58,8 +65,8 @@ editor edit. Main validates hunk IDs, consumes the old proposal, advances the ex
 and context, and rebases only undecided changes into a fresh proposal. Renderer rechecks the
 old live buffer before applying and echoes the new snapshot. Rejections remove only their
 changes; Approve all applies the remainder together. Auto-save pauses until review finishes.
-Context changes revoke in-flight work and proposals. GeminiService serializes credential,
-chat and agent operations and owns cancellation and sanitized provider errors.
+Context changes revoke in-flight work and proposals. AIService serializes settings writes,
+allows one chat or agent request at a time, and owns cancellation and sanitized provider errors.
 
 Development uses `electron-vite dev --watch`: React HMR, main restart and preload
 reload. See the [official watch documentation](https://electron-vite.org/guide/hmr-and-hot-reloading)

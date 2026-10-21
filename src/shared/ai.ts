@@ -1,21 +1,104 @@
-export const AI_MODELS = [
-  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
-  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
-  { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B' },
-  { id: 'gemma-4-31b-it', label: 'Gemma 4 31B' },
+/** Every provider TeXtra knows how to call. Each one has its own request format. */
+export const AI_PROVIDER_IDS = [
+  'google',
+  'openai',
+  'anthropic',
+  'ollama-cloud',
+  'ollama-local',
 ] as const;
-export const CHAT_MODELS = AI_MODELS;
-export const AGENT_MODELS = AI_MODELS;
-export type AIModel = (typeof AI_MODELS)[number]['id'];
-export type AIChatModel = AIModel;
-export type AIAgentModel = AIModel;
+export type AIProviderId = (typeof AI_PROVIDER_IDS)[number];
+export type AIProviderLink = 'keys' | 'limits' | 'download';
+export interface AIProviderInfo {
+  id: AIProviderId;
+  label: string;
+  /** Short wire-format description shown on the provider card. */
+  protocol: string;
+  needsKey: boolean;
+  keyLabel: string;
+  links: Partial<Record<AIProviderLink, string>>;
+  /** True when requests never leave this computer. */
+  local: boolean;
+}
+export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
+  google: {
+    id: 'google',
+    label: 'Google Gemini',
+    protocol: 'Gemini API (generateContent)',
+    needsKey: true,
+    keyLabel: 'Google AI Studio API key',
+    links: {
+      keys: 'https://aistudio.google.com/apikey',
+      limits: 'https://aistudio.google.com/rate-limit',
+    },
+    local: false,
+  },
+  openai: {
+    id: 'openai',
+    label: 'OpenAI',
+    protocol: 'OpenAI Chat Completions',
+    needsKey: true,
+    keyLabel: 'OpenAI API key',
+    links: {
+      keys: 'https://platform.openai.com/api-keys',
+      limits: 'https://platform.openai.com/settings/organization/limits',
+    },
+    local: false,
+  },
+  anthropic: {
+    id: 'anthropic',
+    label: 'Anthropic',
+    protocol: 'Anthropic Messages API',
+    needsKey: true,
+    keyLabel: 'Anthropic API key',
+    links: {
+      keys: 'https://console.anthropic.com/settings/keys',
+      limits: 'https://console.anthropic.com/settings/limits',
+    },
+    local: false,
+  },
+  'ollama-cloud': {
+    id: 'ollama-cloud',
+    label: 'Ollama Cloud',
+    protocol: 'Ollama API (ollama.com)',
+    needsKey: true,
+    keyLabel: 'Ollama API key',
+    links: { keys: 'https://ollama.com/settings/keys', limits: 'https://ollama.com/settings' },
+    local: false,
+  },
+  'ollama-local': {
+    id: 'ollama-local',
+    label: 'Local Ollama',
+    protocol: 'Ollama API (this computer)',
+    needsKey: false,
+    keyLabel: '',
+    links: { download: 'https://ollama.com/download' },
+    local: true,
+  },
+};
+export const OLLAMA_LOCAL_URL = 'http://127.0.0.1:11434';
+export function isAIProviderId(value: unknown): value is AIProviderId {
+  return typeof value === 'string' && (AI_PROVIDER_IDS as readonly string[]).includes(value);
+}
+/** A provider-qualified model. Model ids are only unique within one provider. */
+export interface AIModelRef {
+  provider: AIProviderId;
+  model: string;
+}
+export interface AIModelInfo {
+  id: string;
+  label: string;
+}
+export const AI_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
+export function modelKey(ref: AIModelRef): string {
+  return `${ref.provider}:${ref.model}`;
+}
+export function sameModel(
+  left: AIModelRef | null | undefined,
+  right: AIModelRef | null | undefined,
+) {
+  return Boolean(left && right && left.provider === right.provider && left.model === right.model);
+}
 export type AIMode = 'chat' | 'agent';
-export const DEFAULT_CHAT_MODEL: AIChatModel = CHAT_MODELS[0].id;
-export const DEFAULT_AGENT_MODEL: AIAgentModel = AGENT_MODELS[0].id;
-export const AI_RATE_LIMIT_URL = 'https://aistudio.google.com/rate-limit';
 export const AGENT_SOURCE_LIMIT = 64_000;
 /** Immutable snapshot supplied by the editor, never a model-selected path. */
 export interface AIAgentDocument {
@@ -37,7 +120,7 @@ export interface AIEditProposal extends AIAgentDocument {
 export interface AIAgentRequest {
   contextId: string;
   prompt: string;
-  model: AIAgentModel;
+  model: AIModelRef;
   requestId: string;
   messages?: import('./api').AIMessage[];
 }

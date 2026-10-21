@@ -3,9 +3,19 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Content, Part } from '@google/genai';
 import { BoundedAgentService, type AgentGenerate } from '../../src/main/services/agent';
-import { GeminiService, type KeyCipher } from '../../src/main/services/gemini';
+import { AIService, type KeyCipher } from '../../src/main/services/ai-service';
+import {
+  fromGoogleContent,
+  toGoogleContents,
+  type AgentTurn,
+} from '../../src/main/services/ai-providers';
 import { agentEditHunks } from '../../src/shared/ai-edits';
-import { AI_MODELS, DEFAULT_AGENT_MODEL, DEFAULT_CHAT_MODEL } from '../../src/shared/ai';
+const GOOGLE_MODELS = [
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+  { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B' },
+  { id: 'gemma-4-31b-it', label: 'Gemma 4 31B' },
+];
+const DEFAULT_AGENT_MODEL = { provider: 'google', model: 'gemini-3.5-flash-lite' } as const;
 const cipher: KeyCipher = {
   available: () => true,
   encrypt: (key) => Buffer.from(key),
@@ -21,11 +31,11 @@ const document = {
 const tool = (name: string, args: Record<string, unknown> = {}): Part => ({
   functionCall: { name, args },
 });
-const response = (...parts: Part[]): Content => ({ role: 'model', parts });
+const response = (...parts: Part[]): AgentTurn => fromGoogleContent({ role: 'model', parts });
 
 describe('bounded active-document agent staging', () => {
   let directory: string;
-  let gemini: GeminiService;
+  let gemini: AIService;
   let request: ReturnType<typeof vi.fn<AgentGenerate>>;
   let agent: BoundedAgentService;
   let contextId: string;
@@ -37,12 +47,13 @@ describe('bounded active-document agent staging', () => {
       requestId: 'request-1',
       ...overrides,
     });
+  const sent = (call: number): Content[] => toGoogleContents(request.mock.calls[call][2].items);
   beforeEach(async () => {
     const root = join(process.cwd(), 'test-results', 'agent');
     await mkdir(root, { recursive: true });
     directory = await mkdtemp(join(root, 'case-'));
-    gemini = new GeminiService(directory, cipher, async () => 'OK');
-    await gemini.saveKey({ apiKey: 'test-secret' });
+    gemini = new AIService(directory, cipher, { list: async () => GOOGLE_MODELS });
+    await gemini.saveProvider({ provider: 'google', apiKey: 'test-secret' });
     request = vi.fn<AgentGenerate>().mockResolvedValue(response({ text: 'No change needed.' }));
     agent = new BoundedAgentService(gemini, request);
     contextId = agent.syncDocument(document)!.contextId;
@@ -53,8 +64,9 @@ describe('bounded active-document agent staging', () => {
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   it('stages exact UTF-16 insertions and replacements, preserves signed content, and never writes files', async () => {
-    const first = response(tool('read_current_file'));
-    first.parts![0].thoughtSignature = 'opaque-signature';
+    const signed = tool('read_current_file');
+    signed.thoughtSignature = 'opaque-signature';
+    const first = response(signed);
     request
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce(
@@ -66,7 +78,7 @@ describe('bounded active-document agent staging', () => {
       .mockResolvedValueOnce(response({ text: 'Fixed the greeting.' }));
     const result = await run();
     expect(result.proposal).toMatchObject({ ...document, modified: 'Hello LaTeX.\n', contextId });
-    expect(request.mock.calls[1][2][1]).toBe(first);
+    expect(sent(1)[1]).toBe(first.raw);
     expect(await readdir(directory)).toEqual(['ai.json']);
     expect(agent.getDocument(contextId)).toEqual(document);
     const accepted = agent.accept({ id: result.proposal!.id, contextId });
@@ -75,17 +87,20 @@ describe('bounded active-document agent staging', () => {
     expect(() => agent.accept({ id: accepted.id, contextId })).toThrow();
   });
   it('uses the selected Google model and no proposal for pure explanation', async () => {
-    expect((await run({ model: 'gemma-4-31b-it' })).proposal).toBeNull();
+    expect(
+      (await run({ model: { provider: 'google', model: 'gemma-4-31b-it' } })).proposal,
+    ).toBeNull();
     expect(request.mock.calls[0][1]).toBe('gemma-4-31b-it');
-    expect(request.mock.calls[0][2]).toEqual([
-      { role: 'user', parts: [{ text: 'Fix the greeting.' }] },
-    ]);
+    expect(sent(0)).toEqual([{ role: 'user', parts: [{ text: 'Fix the greeting.' }] }]);
   });
-  it('defaults both modes to Gemini 3.5 Flash Lite', async () => {
-    expect(DEFAULT_AGENT_MODEL).toBe('gemini-3.5-flash-lite');
-    expect(DEFAULT_AGENT_MODEL).toBe(DEFAULT_CHAT_MODEL);
-    await run();
-    expect(request.mock.calls[0][1]).toBe('gemini-3.5-flash-lite');
+  it('refuses a model that is not in the provider list before calling it', async () => {
+    await expect(run({ model: { provider: 'google', model: 'not-listed' } })).rejects.toMatchObject(
+      { code: 'AI_MODEL_UNAVAILABLE' },
+    );
+    await expect(run({ model: { provider: 'openai', model: 'gpt-5-mini' } })).rejects.toMatchObject(
+      { code: 'AI_KEY_REQUIRED' },
+    );
+    expect(request).not.toHaveBeenCalled();
   });
   it.each([undefined, null])(
     'accepts an omitted/null zero-argument read and inserts using Unicode columns: %j',
@@ -106,7 +121,7 @@ describe('bounded active-document agent staging', () => {
         .mockResolvedValueOnce(response({ text: 'Proposed the insertion.' }));
       const result = await run();
       expect(result.proposal?.modified).toBe('One\r\n😀 lorem ipsum two\r\n');
-      expect(request.mock.calls[1][2][2].parts?.[0].functionResponse?.response).toMatchObject({
+      expect(sent(1)[2].parts?.[0].functionResponse?.response).toMatchObject({
         lines: [
           { line: 1, offset: 0, text: 'One', endColumn: 4 },
           { line: 2, offset: 5, text: '😀 two', endColumn: 6 },
@@ -124,7 +139,7 @@ describe('bounded active-document agent staging', () => {
       .mockResolvedValueOnce(response(tool('replace_range', { expected: 'world', text: 'LaTeX' })));
     expect((await run()).proposal?.modified).toBe('Hello LaTeX.');
     expect(request).toHaveBeenCalledTimes(4);
-    expect(request.mock.calls[2][2][4].parts?.[0].functionResponse?.response).toMatchObject({
+    expect(sent(2)[4].parts?.[0].functionResponse?.response).toMatchObject({
       error: { recoverable: true },
     });
   });
@@ -139,7 +154,7 @@ describe('bounded active-document agent staging', () => {
       )
       .mockResolvedValueOnce(response({ text: 'Staged the insertion for review.' }));
     expect((await run()).proposal?.modified).toBe('Hello world. Added.');
-    expect(request.mock.calls[2][2][4].parts?.[0].functionResponse?.response).toMatchObject({
+    expect(sent(2)[4].parts?.[0].functionResponse?.response).toMatchObject({
       staged: false,
       error: { message: expect.stringContaining('Line 1 allows columns 1 through 13.') },
     });
@@ -151,7 +166,7 @@ describe('bounded active-document agent staging', () => {
       response(tool('read_current_file'), tool('replace_range', { expected: 'same', text: 'new' })),
     );
     expect((await run()).proposal).toBeNull();
-    expect(JSON.stringify(request.mock.calls[1][2])).toContain('ambiguous');
+    expect(JSON.stringify(sent(1))).toContain('ambiguous');
   });
   it('includes bounded prior chat and appends the latest instruction once', async () => {
     const messages = [
@@ -159,7 +174,7 @@ describe('bounded active-document agent staging', () => {
       { role: 'model', text: 'Add the package.' },
     ];
     await run({ messages, prompt: 'Apply that package fix.' });
-    expect(request.mock.calls[0][2]).toEqual([
+    expect(sent(0)).toEqual([
       ...messages.map(({ role, text }) => ({ role, parts: [{ text }] })),
       { role: 'user', parts: [{ text: 'Apply that package fix.' }] },
     ]);
@@ -168,7 +183,7 @@ describe('bounded active-document agent staging', () => {
       messages: [...messages, { role: 'user', text: 'Apply that package fix.' }],
       prompt: 'Apply that package fix.',
     });
-    expect(request.mock.calls[0][2]).toHaveLength(3);
+    expect(sent(0)).toHaveLength(3);
   });
   it.each([
     null,
@@ -251,9 +266,7 @@ describe('bounded active-document agent staging', () => {
   ])('returns safe invalid operations as bounded correctable tool errors: %#', async (part) => {
     request.mockResolvedValueOnce(response(tool('read_current_file'), part));
     expect((await run()).proposal).toBeNull();
-    expect(
-      request.mock.calls[1][2].at(-1)?.parts?.at(-1)?.functionResponse?.response,
-    ).toMatchObject({
+    expect(sent(1).at(-1)?.parts?.at(-1)?.functionResponse?.response).toMatchObject({
       staged: false,
       error: { code: 'INVALID_TEXT_OPERATION', recoverable: true },
     });
@@ -261,7 +274,7 @@ describe('bounded active-document agent staging', () => {
   it('requires reading before editing', async () => {
     request.mockResolvedValueOnce(response(tool('insert_text', { offset: 0, text: 'x' })));
     expect((await run()).proposal).toBeNull();
-    expect(request.mock.calls[1][2].at(-1)?.parts?.[0].functionResponse?.response).toMatchObject({
+    expect(sent(1).at(-1)?.parts?.[0].functionResponse?.response).toMatchObject({
       error: { recoverable: true },
     });
   });
@@ -308,7 +321,7 @@ describe('bounded active-document agent staging', () => {
     );
     expect(agentEditHunks(content, proposal.modified)).toHaveLength(2);
     expect(request).toHaveBeenCalledTimes(5);
-    expect(request.mock.calls[4][2].at(-1)?.parts?.[0].functionResponse?.response).toMatchObject({
+    expect(sent(4).at(-1)?.parts?.[0].functionResponse?.response).toMatchObject({
       text: proposal.modified,
     });
   });
@@ -440,7 +453,7 @@ describe('bounded active-document agent staging', () => {
     expect(() => agent.accept({ id: result.proposal!.id, contextId })).toThrow();
   });
   it('invalidates inflight work even when switching away then back', async () => {
-    let finish!: (value: Content) => void;
+    let finish!: (value: AgentTurn) => void;
     let started!: () => void;
     const ready = new Promise<void>((resolve) => {
       started = resolve;
@@ -454,7 +467,9 @@ describe('bounded active-document agent staging', () => {
     const pending = run();
     await ready;
     await expect(run()).rejects.toMatchObject({ code: 'AI_BUSY' });
-    await expect(gemini.deleteKey()).rejects.toMatchObject({ code: 'AI_BUSY' });
+    await expect(gemini.removeProvider({ provider: 'google' })).rejects.toMatchObject({
+      code: 'AI_BUSY',
+    });
     agent.syncDocument(null);
     agent.syncDocument(document);
     finish(response({ text: 'Old response.' }));
@@ -466,11 +481,10 @@ describe('bounded active-document agent staging', () => {
     );
     const error = await run().catch((error: unknown) => error);
     expect(String(error)).not.toContain('test-secret');
-    expect(String(error)).not.toContain('provider details');
-    if (status === 429) expect(String(error)).toContain('https://aistudio.google.com/rate-limit');
+    if (status === 429) expect(error).toMatchObject({ code: 'AI_RATE_LIMIT' });
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it.each(AI_MODELS)(
+  it.each(GOOGLE_MODELS)(
     'routes $id through the real SDK with only three pathless tools',
     async ({ id: model }) => {
       const sent: Request[] = [];
@@ -479,7 +493,7 @@ describe('bounded active-document agent staging', () => {
         vi.fn<typeof fetch>(async (input, init) => {
           sent.push(new Request(input, init));
           return new Response(
-            JSON.stringify({ candidates: [{ content: response({ text: 'Looks good.' }) }] }),
+            JSON.stringify({ candidates: [{ content: response({ text: 'Looks good.' }).raw }] }),
             { headers: { 'content-type': 'application/json' } },
           );
         }),
@@ -489,7 +503,7 @@ describe('bounded active-document agent staging', () => {
       await sdk.run({
         contextId: context.contextId,
         prompt: 'Check this.',
-        model,
+        model: { provider: 'google', model },
         requestId: 'sdk-1',
       });
       expect(sent).toHaveLength(1);
@@ -520,7 +534,7 @@ describe('bounded active-document agent staging', () => {
       vi.fn<typeof fetch>(async (input, init) => {
         bodies.push((await new Request(input, init).json()) as { contents: Content[] });
         return new Response(
-          JSON.stringify({ candidates: [{ content: replies[bodies.length - 1] }] }),
+          JSON.stringify({ candidates: [{ content: replies[bodies.length - 1].raw }] }),
           { headers: { 'content-type': 'application/json' } },
         );
       }),
@@ -531,7 +545,7 @@ describe('bounded active-document agent staging', () => {
     const result = await sdk.run({
       contextId: context.contextId,
       prompt: 'Add a lorem ipsum paragraph.',
-      model: 'gemma-4-26b-a4b-it',
+      model: { provider: 'google', model: 'gemma-4-26b-a4b-it' },
       requestId: 'sdk-insert',
     });
     expect(result.proposal?.modified).toBe(

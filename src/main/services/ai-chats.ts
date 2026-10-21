@@ -3,7 +3,7 @@ import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AIStoredChat } from '../../shared/ai';
 import type { AIMessage } from '../../shared/api';
-import { AIError } from './gemini';
+import { AIError } from './ai-service';
 
 const MAX_BYTES = 16 * 1024 * 1024;
 function object(value: unknown): value is Record<string, unknown> {

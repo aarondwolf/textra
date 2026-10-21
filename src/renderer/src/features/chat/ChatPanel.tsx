@@ -6,23 +6,21 @@ import {
   type ReactNode,
   type KeyboardEvent,
 } from 'react';
-import type { AIMessage, AISettings } from '../../../../shared/api';
+import type { AIMessage } from '../../../../shared/api';
 import { hasSuggestedFix } from '../../../../shared/ai-suggestions';
 import {
-  AGENT_MODELS,
-  CHAT_MODELS,
-  DEFAULT_AGENT_MODEL,
-  DEFAULT_CHAT_MODEL,
+  AI_PROVIDERS,
   type AIAgentContext,
   type AIEditProposal,
   type AIMode,
-  type AIAgentModel,
-  type AIChatModel,
+  type AIModelRef,
   type AIStoredChat,
 } from '../../../../shared/ai';
-import { AI_SETTINGS_CHANGED, AISettingsForm } from './AISettingsForm';
+import { AISettingsDialog } from './AISettingsDialog';
+import { ModelPicker } from './ModelPicker';
+import { findModel, useAISettings } from './useAISettings';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
-import { ArrowUp, Check, ChevronDown, Copy, Square, History, Trash2 } from '../../icons';
+import { ArrowUp, Check, Copy, Square, History, Trash2 } from '../../icons';
 import './chat.css';
 
 const AGENT_NOTICE_SEEN_KEY = 'textra:agent-notice-seen:v1';
@@ -161,8 +159,9 @@ export function ChatPanel({
   reviewActive?: boolean;
   reviewControls?: ReactNode;
 }) {
-  const [settings, setSettings] = useState<AISettings | null>(null);
-  const [settingsError, setSettingsError] = useState('');
+  const { settings, error: settingsLoadError, refresh: refreshSettings } = useAISettings(active);
+  const [settingsWarning, setSettingsError] = useState('');
+  const settingsError = settingsLoadError || settingsWarning;
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -172,8 +171,7 @@ export function ChatPanel({
   const [showSettings, setShowSettings] = useState(false);
   const [partialResponse, setPartialResponse] = useState('');
   const [mode, setMode] = useState<AIMode>('chat');
-  const [model, setModel] = useState<AIChatModel | AIAgentModel>(DEFAULT_CHAT_MODEL);
-  const [modelOpen, setModelOpen] = useState(false);
+  const [model, setModel] = useState<AIModelRef | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
   const [agentNoticePhase, setAgentNoticePhase] = useState<'hidden' | 'visible' | 'fading'>(
     'hidden',
@@ -200,8 +198,6 @@ export function ChatPanel({
   const session = useRef({ projectId: sessionProject, id: chatId, messages, input, loading });
   session.current = { projectId: sessionProject, id: chatId, messages, input, loading };
   const settled = useRef<{ projectId: string; chat: AIStoredChat } | null>(null);
-  const modelControl = useRef<HTMLDivElement>(null);
-  const modelButton = useRef<HTMLButtonElement>(null);
   const latestContext = useRef(agentContext?.contextId);
   latestContext.current = agentContext?.contextId;
   const sending = useRef(false);
@@ -221,7 +217,6 @@ export function ChatPanel({
     setRetryMessages(null);
     setError('');
     setRateLimited(false);
-    setModelOpen(false);
     followResponse.current = true;
   }, []);
 
@@ -234,9 +229,7 @@ export function ChatPanel({
       setRetryMessages(null);
       setError('');
       setRateLimited(false);
-      setModelOpen(false);
       setMode(next);
-      setModel(next === 'chat' ? DEFAULT_CHAT_MODEL : DEFAULT_AGENT_MODEL);
       if (next === 'agent') {
         if (!noticeSeen.current) {
           noticeSeen.current = true;
@@ -262,25 +255,12 @@ export function ChatPanel({
     return () => window.clearTimeout(timer);
   }, [agentNoticePhase]);
 
+  // Follow the saved default until the user picks a model, and recover if a model disappears.
+  const modelAvailable = Boolean(findModel(settings, model));
   useEffect(() => {
-    if (!modelOpen) return;
-    function outside(event: MouseEvent) {
-      if (event.target instanceof Node && !modelControl.current?.contains(event.target))
-        setModelOpen(false);
-    }
-    document.addEventListener('mousedown', outside);
-    return () => document.removeEventListener('mousedown', outside);
-  }, [modelOpen]);
-
-  useEffect(() => {
-    if (!modelOpen) return;
-    const items =
-      modelControl.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
-    const selected = [...(items ?? [])].find(
-      (item) => item.getAttribute('aria-checked') === 'true',
-    );
-    (selected ?? items?.[0])?.focus();
-  }, [modelOpen]);
+    if (!settings) return;
+    if (!model || !modelAvailable) setModel(settings.defaultModel);
+  }, [settings, model, modelAvailable]);
 
   const persist = useCallback(async (projectId: string, chat: AIStoredChat) => {
     if (!chat.messages.length) return;
@@ -459,7 +439,6 @@ export function ChatPanel({
     followResponse.current = true;
     setError('');
     setRateLimited(false);
-    setModelOpen(false);
     setRetryMessages(null);
     setHistoryLoading(Boolean(projectId));
     if (projectId)
@@ -509,25 +488,6 @@ export function ChatPanel({
     }
   }, [resetKey, persist]);
 
-  const refreshSettings = useCallback(async () => {
-    try {
-      const result = await window.textra.getAISettings();
-      if (result.ok) {
-        setSettings(result.value);
-        setSettingsError('');
-      } else setSettingsError(result.error);
-    } catch {
-      setSettingsError('Could not load Gemini settings. Please try again.');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (active) void refreshSettings();
-    const refresh = () => void refreshSettings();
-    window.addEventListener(AI_SETTINGS_CHANGED, refresh);
-    return () => window.removeEventListener(AI_SETTINGS_CHANGED, refresh);
-  }, [active, refreshSettings]);
-
   useEffect(() => {
     return window.textra.onAIResponseChunk((event) => {
       if (event.requestId === streamRequestId.current) setPartialResponse(event.text);
@@ -540,14 +500,16 @@ export function ChatPanel({
   }, [messages, partialResponse, loading, active]);
 
   const send = useCallback(
-    async (
-      conversation: AIMessage[],
-      override?: { mode: AIMode; model: AIChatModel | AIAgentModel; preserveDraft?: boolean },
-    ) => {
+    async (conversation: AIMessage[], override?: { mode: AIMode; preserveDraft?: boolean }) => {
       const requestMode = override?.mode ?? mode;
-      const requestModel = override?.model ?? model;
+      const requestModel = model;
       if (sending.current || reviewActive || historyBusy || sessionProject !== liveProject.current)
         return;
+      if (!requestModel) {
+        if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
+        setError('Choose a model first. Open AI settings to connect a provider.');
+        return;
+      }
       if (requestMode === 'agent' && !agentContext) {
         if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
         setError('Open an active .tex file to use Agent.');
@@ -579,7 +541,6 @@ export function ChatPanel({
       setLoading(true);
       setError('');
       setRateLimited(false);
-      setModelOpen(false);
       setRetryMessages(null);
       try {
         if (requestMode === 'agent' && agentContext) {
@@ -588,7 +549,7 @@ export function ChatPanel({
             contextId,
             prompt: conversation.at(-1)?.text ?? '',
             messages: providerMessages(conversation.slice(0, -1)),
-            model: requestModel as AIAgentModel,
+            model: requestModel,
             requestId: streamId,
           });
           if (currentId !== requestId.current || latestContext.current !== contextId) return;
@@ -612,7 +573,7 @@ export function ChatPanel({
         const result = await window.textra.sendAIMessage({
           messages: providerMessages(conversation),
           requestId: streamId,
-          model: requestModel as AIChatModel,
+          model: requestModel,
         });
         if (currentId !== requestId.current) return;
         if (result.ok) {
@@ -657,7 +618,6 @@ export function ChatPanel({
     changeMode('agent');
     void send([...messages, { role: 'user', text: 'Implement the suggested fix above.' }], {
       mode: 'agent',
-      model: DEFAULT_AGENT_MODEL,
       preserveDraft: true,
     });
   }
@@ -781,10 +741,7 @@ export function ChatPanel({
             aria-haspopup="menu"
             aria-expanded={historyOpen}
             disabled={!sessionProject || loading || reviewActive || historyBusy}
-            onClick={() => {
-              setHistoryOpen((value) => !value);
-              setModelOpen(false);
-            }}
+            onClick={() => setHistoryOpen((value) => !value)}
           >
             <History size={14} aria-hidden="true" />
           </button>
@@ -832,12 +789,14 @@ export function ChatPanel({
         </div>
         <button
           type="button"
-          onClick={() => setShowSettings((value) => !value)}
-          aria-expanded={showSettings}
+          onClick={() => setShowSettings(true)}
+          aria-haspopup="dialog"
+          title="AI providers and models"
         >
-          {showSettings ? 'Back' : 'Settings'}
+          Settings
         </button>
       </header>
+      <AISettingsDialog open={showSettings} onOpenChange={setShowSettings} />
       {historyError && (
         <p className="ai-history-error" role="alert">
           {historyError}
@@ -852,14 +811,22 @@ export function ChatPanel({
         </div>
       )}
       {!settings && !settingsError && <p role="status">Loading AI settings…</p>}
-      {(settings && !settings.configured) || showSettings ? (
+      {settings && !settings.configured ? (
         <div className="ai-chat-setup">
-          <AISettingsForm
-            onSettingsChanged={(value) => {
-              setSettings(value);
-              if (value.configured) setShowSettings(false);
-            }}
-          />
+          <div className="ai-chat-setup-card">
+            <strong>Set up AI</strong>
+            <p>
+              Connect Google, OpenAI, Anthropic, Ollama Cloud or a local Ollama server to chat about
+              LaTeX errors and review focused edits.
+            </p>
+            <button
+              type="button"
+              className="ai-chat-setup-button"
+              onClick={() => setShowSettings(true)}
+            >
+              Configure AI
+            </button>
+          </div>
         </div>
       ) : settings?.configured ? (
         <>
@@ -875,8 +842,10 @@ export function ChatPanel({
           )}
           {mode === 'chat' && messages.length === 0 && (
             <p className="ai-chat-privacy">
-              Messages and selected snippets are sent to Google. No file access or editing tools.
-              Check suggestions before applying them.
+              {model && AI_PROVIDERS[model.provider].local
+                ? 'Messages stay on this computer with local Ollama.'
+                : `Messages and selected snippets are sent to ${model ? AI_PROVIDERS[model.provider].label : 'the provider'}.`}{' '}
+              No file access or editing tools. Check suggestions before applying them.
             </p>
           )}
           <div
@@ -955,7 +924,7 @@ export function ChatPanel({
             )}
             {loading && !partialResponse && (
               <p className="ai-chat-typing" role="status">
-                {mode === 'chat' ? 'Gemini is thinking' : 'Preparing a proposal'}
+                {mode === 'chat' ? 'Thinking' : 'Preparing a proposal'}
                 <span aria-hidden="true">…</span>
               </p>
             )}
@@ -965,20 +934,20 @@ export function ChatPanel({
               <p role="alert" className="ai-error">
                 {error}
               </p>
-              {rateLimited && (
+              {rateLimited && model && AI_PROVIDERS[model.provider].links.limits && (
                 <button
                   type="button"
                   className="ai-rate-limits-link"
                   onClick={() => {
                     void window.textra
-                      .openAIRateLimits()
+                      .openAIProviderLink({ provider: model.provider, link: 'limits' })
                       .then((result) => {
                         if (!result.ok) setError(result.error);
                       })
-                      .catch(() => setError('Could not open Google AI Studio rate limits.'));
+                      .catch(() => setError('Could not open the provider’s usage page.'));
                   }}
                 >
-                  View rate limits in AI Studio
+                  View {AI_PROVIDERS[model.provider].label} limits
                 </button>
               )}
               {retryMessages && !loading && !reviewActive && (
@@ -1017,7 +986,7 @@ export function ChatPanel({
           >
             <textarea
               id="ai-chat-message"
-              aria-label={mode === 'chat' ? 'Message Gemini' : 'Agent request'}
+              aria-label={mode === 'chat' ? 'Message AI' : 'Agent request'}
               rows={2}
               value={input}
               maxLength={30000}
@@ -1040,79 +1009,16 @@ export function ChatPanel({
               }}
             />
             <div className="ai-chat-actions">
-              <div
-                className="ai-chat-controls"
-                ref={modelControl}
-                onBlur={(event) => {
-                  if (
-                    !(event.relatedTarget instanceof Node) ||
-                    !event.currentTarget.contains(event.relatedTarget)
-                  )
-                    setModelOpen(false);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    setModelOpen(false);
-                    modelButton.current?.focus();
-                  }
-                }}
-              >
-                <button
-                  ref={modelButton}
-                  type="button"
-                  className="ai-chat-model"
+              <div className="ai-chat-controls">
+                <ModelPicker
+                  settings={settings}
+                  value={model}
+                  onChange={setModel}
+                  variant="compact"
+                  placement="up"
+                  label="Model"
                   disabled={loading || reviewActive || historyBusy}
-                  aria-haspopup="menu"
-                  aria-expanded={modelOpen}
-                  aria-controls="ai-model-popup"
-                  aria-label="Model"
-                  title={
-                    (mode === 'chat' ? CHAT_MODELS : AGENT_MODELS).find(
-                      (option) => option.id === model,
-                    )?.label
-                  }
-                  onClick={() => {
-                    setModelOpen((value) => !value);
-                    setHistoryOpen(false);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                      event.preventDefault();
-                      setModelOpen(true);
-                    }
-                  }}
-                >
-                  <span className="ai-chat-model-label">Model</span>
-                  <ChevronDown size={10} aria-hidden="true" />
-                </button>
-                {modelOpen && (
-                  <div
-                    className="ai-model-popup"
-                    id="ai-model-popup"
-                    role="menu"
-                    aria-label="AI model"
-                    onKeyDown={navigateMenu}
-                  >
-                    {(mode === 'chat' ? CHAT_MODELS : AGENT_MODELS).map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={option.id === model}
-                        tabIndex={option.id === model ? 0 : -1}
-                        disabled={loading || reviewActive || historyBusy}
-                        onClick={() => {
-                          setModel(option.id);
-                          setModelOpen(false);
-                          modelButton.current?.focus();
-                        }}
-                      >
-                        <span>{option.label}</span>
-                        {option.id === model && <Check size={11} aria-hidden="true" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                />
                 <div className="ai-mode-toggle" role="group" aria-label="AI mode">
                   <button
                     type="button"

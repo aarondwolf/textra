@@ -1,5 +1,14 @@
 # Decisions
 
+- 2026-10-21 multi-provider AI (owner request): AI settings move to a dialog with one card
+  per provider: Google Gemini, OpenAI, Anthropic, Ollama Cloud (ollama.com, key) and Local
+  Ollama (127.0.0.1:11434, no key, status ping plus Start Ollama). Keys are tested by listing
+  models; model lists come from each provider and are cached. Each provider has a default
+  model and there is one overall default. The chat model picker is searchable and grouped
+  by provider; the chosen model persists across Chat/Agent (supersedes the per-mode reset).
+  Wire formats: Gemini generateContent (SDK), OpenAI Chat Completions, Anthropic Messages,
+  Ollama native /api/chat. Agent uses a provider-neutral tool transcript. Unconfigured chat
+  shows only a Configure AI button. The fixed seven-model Google allowlist is retired.
 - 2026-10-20 shared AI defaults and handoff: Gemini 3.5 Flash Lite is the default
   for both modes; all seven configured Google models are available in either mode.
   No automatic model fallback. Chat requests very concise replies and reserves

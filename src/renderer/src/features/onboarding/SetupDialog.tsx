@@ -14,7 +14,8 @@ import {
 import { preferencesSaved, useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
 import { TexLabSettings } from './TexLabSettings';
-import { AISettingsForm } from '../chat/AISettingsForm';
+import { AISettingsLauncher } from '../chat/AISettingsDialog';
+import { SaveFooter } from '../save-status/SaveFooter';
 import './setup.css';
 
 type SectionId =
@@ -64,7 +65,7 @@ export default function SetupDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { tools, build } = useWorkspace();
-  const { preferences, updatePreferences } = useUI();
+  const { preferences, updatePreferences, saveState, error: preferenceError } = useUI();
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -160,7 +161,7 @@ export default function SetupDialog({
               ))}
             </nav>
             <div className="setup-scroll">
-              {section === 'ai' && <AISettingsForm />}
+              {section === 'ai' && <AISettingsLauncher />}
               {section === 'appearance' && (
                 <>
                   <h3>Appearance</h3>
@@ -799,6 +800,16 @@ export default function SetupDialog({
               )}
             </div>
           </div>
+          <SaveFooter
+            state={saveState}
+            error={preferenceError}
+            onSave={async () => {
+              // Fields that commit on blur have already blurred by the time the click lands.
+              await preferencesSaved();
+              return useUI.getState().saveState !== 'error';
+            }}
+            onClose={() => onOpenChange(false)}
+          />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

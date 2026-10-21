@@ -9,7 +9,7 @@ import type {
 } from '../../shared/ai';
 import { AGENT_SOURCE_LIMIT } from '../../shared/ai';
 import type { ProjectService } from './projects';
-import { AIError } from './gemini';
+import { AIError } from './ai-service';
 import type { BoundedAgentService } from './agent';
 
 /** Binds the staging-only runner to the canonical, currently open editor snapshot. */

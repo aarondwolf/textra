@@ -69,7 +69,7 @@ test('opt-in live Gemini 3.5 Flash Lite stages both lipsum edits and reviews the
         contextId: context.value.contextId,
         prompt:
           'Add the lipsum package to the preamble and replace the current line 28 (Lorem ipsum dolor sit amet.) with \\lipsum[1-4]. Complete BOTH requested edits in one proposal. Make no other changes.',
-        model: 'gemini-3.5-flash-lite',
+        model: { provider: 'google', model: 'gemini-3.5-flash-lite' },
         requestId: crypto.randomUUID(),
       });
       if (!proposed.ok) return { ...proposed, phase: 'run' };

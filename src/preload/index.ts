@@ -3,16 +3,21 @@ import type { AppInfo, Preferences, Result, TextraAPI } from '../shared/api';
 
 const api: TextraAPI = {
   getAISettings: () => ipcRenderer.invoke('textra:ai:settings'),
-  saveAIKey: (request) => ipcRenderer.invoke('textra:ai:key', request),
-  deleteAIKey: () => ipcRenderer.invoke('textra:ai:delete'),
+  saveAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:save', request),
+  removeAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:remove', request),
+  refreshAIModels: (request) => ipcRenderer.invoke('textra:ai:models:refresh', request),
+  setAIProviderDefault: (request) => ipcRenderer.invoke('textra:ai:provider:default', request),
+  setAIDefaultModel: (request) => ipcRenderer.invoke('textra:ai:default', request),
   setAIAutoSend: (request) => ipcRenderer.invoke('textra:ai:auto-send', request),
+  getOllamaStatus: () => ipcRenderer.invoke('textra:ai:ollama:status'),
+  startOllama: () => ipcRenderer.invoke('textra:ai:ollama:start'),
   sendAIMessage: (request) => ipcRenderer.invoke('textra:ai:send', request),
   syncAIAgentDocument: (document) => ipcRenderer.invoke('textra:agent:document', document),
   runAIAgent: (request) => ipcRenderer.invoke('textra:agent:run', request),
   acceptAIAgentProposal: (request) => ipcRenderer.invoke('textra:agent:accept', request),
   rejectAIAgentProposal: (id) => ipcRenderer.invoke('textra:agent:reject', id),
   reviewAIAgentProposal: (request) => ipcRenderer.invoke('textra:agent:review', request),
-  openAIRateLimits: () => ipcRenderer.invoke('textra:ai:rate-limits'),
+  openAIProviderLink: (request) => ipcRenderer.invoke('textra:ai:link', request),
   listAIChats: (projectId) => ipcRenderer.invoke('textra:ai:chats:list', projectId),
   saveAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:save', request),
   deleteAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:delete', request),
@@ -34,7 +39,6 @@ const api: TextraAPI = {
     return () => ipcRenderer.removeListener('textra:ai:chunk', receive);
   },
   cancelAIMessage: () => ipcRenderer.invoke('textra:ai:cancel'),
-  openAIStudio: () => ipcRenderer.invoke('textra:ai:studio'),
   getAppInfo: () => ipcRenderer.invoke('textra:app-info') as Promise<Result<AppInfo>>,
   getPreferences: () =>
     ipcRenderer.invoke('textra:preferences:get') as Promise<Result<Preferences>>,

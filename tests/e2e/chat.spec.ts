@@ -8,7 +8,7 @@ interface ChatTestState {
   settings: AISettings;
   keyTests: number;
   keyDeletions: number;
-  studioOpened: boolean;
+  linksOpened: string[];
   copiedText: string | null;
   storedChats: AIStoredChat[];
   savedChats: Array<{ projectId: string; chat: AIStoredChat }>;
@@ -17,7 +17,7 @@ interface ChatTestState {
   release: ((result: Result<string>) => void) | null;
 }
 
-test('native Gemini chat onboards, retries, cancels, and reviews Problems before auto-send', async () => {
+test('native multi-provider chat onboards, retries, cancels, and reviews Problems before auto-send', async () => {
   test.setTimeout(120000);
   const root = join(process.cwd(), 'test-results', 'chat');
   await mkdir(root, { recursive: true });
@@ -39,11 +39,51 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     // and local transcript mocks below. No key is written or sent online;
     // the real clipboard is untouched.
     await application.evaluate(({ ipcMain }) => {
+      const providerIds = [
+        'google',
+        'openai',
+        'anthropic',
+        'ollama-cloud',
+        'ollama-local',
+      ] as const;
+      const unconfigured = (): AISettings => ({
+        configured: false,
+        autoSendProblems: false,
+        defaultModel: null,
+        providers: providerIds.map((id) => ({
+          id,
+          configured: false,
+          defaultModel: null,
+          models: [],
+          modelsFetchedAt: null,
+          error: null,
+        })),
+      });
+      const connectGoogle = (settings: AISettings): AISettings => ({
+        ...settings,
+        configured: true,
+        defaultModel: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+        providers: settings.providers.map((provider) =>
+          provider.id === 'google'
+            ? {
+                ...provider,
+                configured: true,
+                defaultModel: 'gemini-3.5-flash-lite',
+                modelsFetchedAt: Date.now(),
+                models: [
+                  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+                  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+                  { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B' },
+                ],
+              }
+            : provider,
+        ),
+      });
       const state: ChatTestState = {
-        settings: { configured: false, autoSendProblems: false },
+        settings: unconfigured(),
         keyTests: 0,
         keyDeletions: 0,
-        studioOpened: false,
+        linksOpened: [],
         copiedText: null,
         storedChats: [
           {
@@ -70,9 +110,22 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
         release: null,
       };
       (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest = state;
-      for (const name of ['settings', 'key', 'delete', 'auto-send', 'send', 'cancel', 'studio']) {
+      for (const name of [
+        'settings',
+        'provider:save',
+        'provider:remove',
+        'auto-send',
+        'ollama:status',
+        'send',
+        'cancel',
+        'link',
+      ]) {
         ipcMain.removeHandler(`textra:ai:${name}`);
       }
+      ipcMain.handle('textra:ai:ollama:status', () => ({
+        ok: true,
+        value: { running: false, version: null, installed: false },
+      }));
       ipcMain.handle('textra:ai:settings', () => ({ ok: true, value: state.settings }));
       ipcMain.removeHandler('textra:ai:chats:list');
       ipcMain.removeHandler('textra:ai:chats:save');
@@ -93,25 +146,25 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
         state.copiedText = text;
         return { ok: true, value: undefined };
       });
-      ipcMain.handle('textra:ai:key', () => {
+      ipcMain.handle('textra:ai:provider:save', (_event, request: { provider: string }) => {
         ++state.keyTests;
-        if (state.keyTests === 1 || state.keyTests === 3)
+        if (request.provider !== 'google' || state.keyTests === 1)
           return { ok: false, error: 'The test key was rejected.' };
-        state.settings.configured = true;
+        state.settings = connectGoogle(state.settings);
         return { ok: true, value: state.settings };
       });
-      ipcMain.handle('textra:ai:delete', () => {
+      ipcMain.handle('textra:ai:provider:remove', () => {
         // Simulate native confirmation cancellation, then confirmation on retry.
         if (++state.keyDeletions === 1) return { ok: true, value: null };
-        state.settings = { configured: false, autoSendProblems: false };
+        state.settings = { ...unconfigured(), autoSendProblems: state.settings.autoSendProblems };
         return { ok: true, value: state.settings };
       });
       ipcMain.handle('textra:ai:auto-send', (_event, request: { autoSendProblems: boolean }) => {
         state.settings.autoSendProblems = request.autoSendProblems;
         return { ok: true, value: state.settings };
       });
-      ipcMain.handle('textra:ai:studio', () => {
-        state.studioOpened = true;
+      ipcMain.handle('textra:ai:link', (_event, request: { provider: string; link: string }) => {
+        state.linksOpened.push(`${request.provider}:${request.link}`);
         return { ok: true, value: undefined };
       });
       ipcMain.handle(
@@ -143,28 +196,44 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     expect(railPlacement).toBe(true);
     await chatRail.click();
     const chat = page.getByRole('region', { name: 'AI debugging chat', exact: true });
-    await expect(chat.getByRole('heading', { name: 'Debug with Gemini' })).toBeVisible();
-    await expect(chat).toContainText('Gemini 3.5 Flash Lite');
-    const studio = chat.getByRole('link', { name: 'Google AI Studio', exact: true });
-    await expect(studio).toHaveAttribute('href', 'https://aistudio.google.com/');
-    await studio.click();
+    await expect(chat.getByText('Set up AI', { exact: true })).toBeVisible();
+    await expect(chat.getByRole('textbox')).toHaveCount(0);
+    await chat.getByRole('button', { name: 'Configure AI', exact: true }).click();
+    const aiDialog = page.getByRole('dialog', { name: 'AI settings', exact: true });
+    await expect(aiDialog).toBeVisible();
+    for (const name of ['Google Gemini', 'OpenAI', 'Anthropic', 'Ollama Cloud', 'Local Ollama'])
+      await expect(aiDialog.getByRole('region', { name, exact: true })).toBeVisible();
+    const google = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
+    await expect(aiDialog.getByRole('region', { name: 'Local Ollama', exact: true })).toContainText(
+      'Not installed',
+    );
+    await google.getByRole('link', { name: 'Get a key', exact: true }).click();
     expect(
       await application.evaluate(
-        () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.studioOpened,
+        () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.linksOpened,
       ),
-    ).toBe(true);
-    const keyInput = chat.getByLabel('Gemini API key', { exact: true });
+    ).toEqual(['google:keys']);
+    const keyInput = google.getByLabel('Google AI Studio API key', { exact: true });
     await expect(keyInput).toHaveAttribute('type', 'password');
-    const autoSend = chat.getByRole('checkbox', { name: /Automatically send Problems prompts/ });
+    const autoSend = aiDialog.getByRole('checkbox', {
+      name: /Automatically send Problems prompts/,
+    });
     await expect(autoSend).not.toBeChecked();
     await page.screenshot({ path: test.info().outputPath('chat-onboarding.png') });
     await keyInput.fill('AQ.fake-native-test-key');
-    await chat.getByRole('button', { name: 'Save & Test Key', exact: true }).click();
-    await expect(chat.getByRole('alert')).toHaveText('The test key was rejected.');
+    const saveKey = google.getByRole('button', { name: 'Save & load models', exact: true });
+    await saveKey.click();
+    await expect(google.getByRole('alert')).toHaveText('The test key was rejected.');
     await expect(keyInput).toHaveValue('AQ.fake-native-test-key');
-    await expect(chat.getByLabel('Message Gemini')).toHaveCount(0);
-    await chat.getByRole('button', { name: 'Save & Test Key', exact: true }).click();
-    const composer = chat.getByRole('textbox', { name: 'Message Gemini', exact: true });
+    await saveKey.click();
+    await expect(google).toContainText('Connected');
+    await expect(google).toContainText('3 models');
+    await expect(keyInput).toHaveCount(0);
+    await expect(
+      aiDialog.getByRole('button', { name: /^Overall default model: Gemini 3.5 Flash Lite/ }),
+    ).toBeVisible();
+    await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
+    const composer = chat.getByRole('textbox', { name: 'Message AI', exact: true });
     await expect(composer).toBeVisible();
     const headerHeights = await page.evaluate(() =>
       ['.ai-chat-header', '.editor-tab-strip', '.preview-header'].map(
@@ -190,30 +259,22 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await expect(ask.locator('svg')).toHaveAttribute('width', '12');
     const composeFrame = chat.locator('.ai-chat-compose');
     await expect(composeFrame.locator('.ai-chat-actions')).toBeVisible();
-    await expect(
-      composeFrame.getByRole('button', { name: 'Send message', exact: true }),
-    ).toBeVisible();
-    const model = composeFrame.getByRole('button', {
-      name: 'Model',
-      exact: true,
-    });
+    const model = composeFrame.getByRole('button', { name: /^Model: / });
     await expect(model).toBeEnabled();
-    await expect(model).toHaveAttribute('title', 'Gemini 3.5 Flash Lite');
+    await expect(model).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     await model.click();
-    const modelMenu = chat.getByRole('menu', { name: 'AI model', exact: true });
-    await expect(modelMenu.getByRole('menuitemradio')).toHaveText([
-      'Gemini 3.5 Flash Lite',
-      'Gemini 3.1 Flash Lite',
-      'Gemini 3.8 Flash',
-      'Gemini 3.6 Flash',
-      'Gemini 3 Flash (Preview)',
-      'Gemma 4 26B',
-      'Gemma 4 31B',
-    ]);
-    await expect(
-      modelMenu.getByRole('menuitemradio', { name: 'Gemini 3.5 Flash Lite', exact: true }),
-    ).toHaveAttribute('aria-checked', 'true');
-    await page.keyboard.press('Escape');
+    const search = chat.getByRole('combobox', { name: 'Search model', exact: true });
+    await expect(search).toBeFocused();
+    const options = chat.getByRole('listbox', { name: 'Model', exact: true }).getByRole('option');
+    await expect(options).toHaveCount(3);
+    await search.fill('gemma');
+    await expect(options).toHaveCount(1);
+    await page.keyboard.press('Enter');
+    await expect(model).toHaveAccessibleName('Model: Gemma 4 26B');
+    await model.click();
+    await chat.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
+    await page.keyboard.press('Enter');
+    await expect(model).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     await composer.fill('   ');
     await expect(ask).toBeDisabled();
     await composer.fill('');
@@ -221,69 +282,35 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
     await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    const savedKey = settings.getByText('A tested API key is saved.', { exact: true });
-    const replaceKey = settings.getByRole('button', { name: 'Replace key', exact: true });
-    const deleteKey = settings.getByRole('button', { name: 'Delete key', exact: true });
-    const replacementInput = settings.getByLabel('Replace Gemini API key', { exact: true });
-    await expect(savedKey).toBeVisible();
-    await expect(replacementInput).toHaveCount(0);
-    await expect(replaceKey).toBeVisible();
-    await expect(deleteKey).toBeVisible();
-    await replaceKey.click();
-    await expect(replacementInput).toHaveAttribute('type', 'password');
-    await replacementInput.fill('AQ.abandoned-replacement');
-    await settings.getByRole('button', { name: 'Cancel replacement', exact: true }).click();
-    await expect(replacementInput).toHaveCount(0);
-    await replaceKey.click();
-    await expect(replacementInput).toHaveValue('');
-    await replacementInput.fill('AQ.mock-replacement-key');
-    const replaceSubmit = settings.getByRole('button', { name: 'Test & Replace Key', exact: true });
-    await replaceSubmit.click();
-    await expect(settings.getByRole('alert')).toHaveText('The test key was rejected.');
-    await expect(savedKey).toBeVisible();
-    await expect(replacementInput).toHaveValue('AQ.mock-replacement-key');
-    expect(
-      await application.evaluate(
-        () =>
-          (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.settings
-            .configured,
-      ),
-    ).toBe(true);
-    await replaceSubmit.click();
-    await expect(savedKey).toBeVisible();
-    await expect(replacementInput).toHaveCount(0);
-    await expect(settings.getByRole('status')).toContainText(/tested|replaced/i);
-    await deleteKey.click();
-    await expect(deleteKey).toBeEnabled();
-    await expect(savedKey).toBeVisible();
-    await expect(replaceKey).toBeVisible();
-    await deleteKey.click();
-    await expect(savedKey).toHaveCount(0);
-    await expect(replaceKey).toHaveCount(0);
-    await expect(deleteKey).toHaveCount(0);
-    const setupKey = settings.getByLabel('Gemini API key', { exact: true });
+    await expect(settings).toContainText('Connected: Google Gemini.');
+    await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
+    const googleCard = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
+    const remove = googleCard.getByRole('button', { name: 'Remove', exact: true });
+    await remove.click();
+    await expect(googleCard).toContainText('Connected');
+    await remove.click();
+    await expect(googleCard).toContainText('Not set up');
+    const setupKey = googleCard.getByLabel('Google AI Studio API key', { exact: true });
     await expect(setupKey).toHaveValue('');
     await setupKey.fill('AQ.reconfigured-native-test-key');
-    await settings.getByRole('button', { name: 'Save & Test Key', exact: true }).click();
-    await expect(savedKey).toBeVisible();
-    await expect(setupKey).toHaveCount(0);
-    const settingAutoSend = settings.getByRole('checkbox', {
+    await googleCard.getByRole('button', { name: 'Save & load models', exact: true }).click();
+    await expect(googleCard).toContainText('Connected');
+    const settingAutoSend = aiDialog.getByRole('checkbox', {
       name: /Automatically send Problems prompts/,
     });
     await expect(settingAutoSend).not.toBeChecked();
     await settingAutoSend.click();
     await expect(settingAutoSend).toBeChecked();
-    await expect(settingAutoSend).toBeEnabled();
     await settingAutoSend.click();
     await expect(settingAutoSend).not.toBeChecked();
-    await expect(settingAutoSend).toBeEnabled();
+    await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
 
     await composer.fill('Why is my LaTeX brace missing?');
     await expect(ask).toBeEnabled();
     await expect(ask).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await composer.press('Control+Enter');
-    await expect(chat.getByRole('status')).toContainText('Gemini is thinking');
+    await expect(chat.getByRole('status')).toContainText('Thinking');
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toBeVisible();
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toHaveText('');
     await expect(chat.locator('.ai-chat-privacy')).toHaveCount(0);
@@ -380,7 +407,7 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     expect(JSON.stringify(requests[2])).not.toContain('Incomplete response before a quota error.');
     await composer.fill('One more question');
     await ask.click();
-    await expect(chat.getByRole('status')).toContainText('Gemini is thinking');
+    await expect(chat.getByRole('status')).toContainText('Thinking');
     const cancelledRequestId = await application.evaluate(
       () =>
         (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.activeRequestId,
@@ -405,7 +432,7 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
 
     await composer.fill('A fresh conversation question');
     await ask.click();
-    await expect(chat.getByRole('status')).toContainText('Gemini is thinking');
+    await expect(chat.getByRole('status')).toContainText('Thinking');
     const freshRequest = await application.evaluate(() =>
       (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.requests.at(-1),
     );
@@ -542,13 +569,14 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await composer.fill('');
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
+    await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
     await expect(settingAutoSend).not.toBeChecked();
     await settingAutoSend.click();
     await expect(settingAutoSend).toBeChecked();
-    await expect(settingAutoSend).toBeEnabled();
+    await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await problem.getByRole('button', { name: 'Ask in Chat', exact: true }).click();
-    await expect(chat.getByRole('status')).toContainText('Gemini is thinking');
+    await expect(chat.getByRole('status')).toContainText('Thinking');
     const autoRequest = await application.evaluate(() =>
       (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.requests.at(-1),
     );

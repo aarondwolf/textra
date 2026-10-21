@@ -137,7 +137,7 @@
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   font-size: 11px;
   cursor: pointer;

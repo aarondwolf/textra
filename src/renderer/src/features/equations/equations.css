@@ -13,7 +13,7 @@
   box-sizing: border-box;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   background: var(--bg);
   font: inherit;
@@ -54,7 +54,7 @@
   padding: 2px 4px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   background: var(--raised);
   font:

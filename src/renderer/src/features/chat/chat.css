@@ -49,7 +49,7 @@
 .ai-chat button,
 .ai-settings button {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   background: var(--surface);
   padding: 7px 10px;
@@ -386,7 +386,7 @@
   width: 100%;
   min-width: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text);
   padding: 5px 7px;
@@ -438,7 +438,7 @@
   height: auto;
   padding: 7px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   text-align: left;
   line-height: 1.4;
 }
@@ -555,37 +555,4 @@
 .ai-partial-label {
   color: var(--muted);
   font-weight: normal;
-}
-.ai-chat-history,
-.ai-chat-setup,
-.ai-chat textarea,
-.ai-chat .markdown-preview-code {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--muted) 28%, transparent) transparent;
-}
-.ai-chat-history:hover,
-.ai-chat-setup:hover,
-.ai-chat textarea:hover,
-.ai-chat .markdown-preview-code:hover {
-  scrollbar-color: color-mix(in srgb, var(--muted) 50%, transparent) transparent;
-}
-.ai-chat-history::-webkit-scrollbar,
-.ai-chat-setup::-webkit-scrollbar,
-.ai-chat textarea::-webkit-scrollbar,
-.ai-chat .markdown-preview-code::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-.ai-chat-history::-webkit-scrollbar-thumb,
-.ai-chat-setup::-webkit-scrollbar-thumb,
-.ai-chat textarea::-webkit-scrollbar-thumb,
-.ai-chat .markdown-preview-code::-webkit-scrollbar-thumb {
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--muted) 28%, transparent);
-}
-.ai-chat-history:hover::-webkit-scrollbar-thumb,
-.ai-chat-setup:hover::-webkit-scrollbar-thumb,
-.ai-chat textarea:hover::-webkit-scrollbar-thumb,
-.ai-chat .markdown-preview-code:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) 50%, transparent);
 }

@@ -150,7 +150,7 @@ export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
           </button>
 
           {symbolsOpen && (
-            <div className="palette-section-content equation-scroll">
+            <div className="palette-section-content">
               {filteredSymbolGroups.map((group) => (
                 <div key={group.name} className="palette-symbol-group">
                   <h4 className="palette-group-name">{group.name}</h4>

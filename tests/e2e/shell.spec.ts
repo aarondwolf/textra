@@ -69,6 +69,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'copyText',
       'createConflictCopy',
       'createEntry',
+      'deleteAIChat',
       'deleteEntry',
       'detectTools',
       'exportSettings',

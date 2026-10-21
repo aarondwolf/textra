@@ -126,7 +126,8 @@ to the normal editor. **Approve all** applies the remaining changes together; **
 discards the remaining proposal and preserves changes already approved. Each approval is undoable.
 Auto-save pauses during review and resumes for approved text when review finishes.
 Changing the file, its content, or its disk revision expires the proposal. Agent requests
-include the preceding conversation for handoff and have a six-call/twelve-tool budget;
+include the preceding conversation for handoff and have a 24-response/64-tool budget
+with a 90-second deadline (180 seconds for Local Ollama);
 Problems drafts never auto-send in Agent mode. Mode switches preserve conversation and drafts.
 Chat replies favor concise debugging fixes. When a reply includes a **Suggested fix**,
 the **Implement Suggested Fix** pill switches to Agent with the conversation and a simple

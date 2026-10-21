@@ -3,8 +3,9 @@
 Chat and Agent share the same seven allowed Google models, both defaulting to
 Gemini 3.5 Flash Lite. GeminiService owns the encrypted key and serializes all provider
 operations. BoundedAgentService has no filesystem dependency: only staged pathless
-read_current_file/insert_text/replace_range, twelve tools, six API calls,
-60-second deadline. AgentWorkspaceService validates canonical project paths and
+read_current_file/insert_text/replace_range, 64 tools, 24 API calls,
+90-second deadline (180 seconds for Local Ollama). Remaining budgets are supplied
+in each system prompt; cap errors identify the exhausted resource. AgentWorkspaceService validates canonical project paths and
 disk revisions before run/accept. Active buffer snapshots get opaque expiring
 contexts. Renderer reviews disposable read-only Monaco diffs. Each review API call
 validates named approve/reject hunks, consumes the old proposal, updates the expected

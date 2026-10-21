@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { ConflictDiffData } from './types';
+import { minimalEditorScrollbars } from '../editor/scrollbars';
 import './conflicts.css';
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
@@ -44,6 +45,7 @@ export function ConflictDiffView({
       renderOverviewRuler: false,
       minimap: { enabled: false },
       automaticLayout: true,
+      scrollbar: minimalEditorScrollbars,
       scrollBeyondLastLine: false,
       wordWrap: 'on',
       lineNumbers: 'on',

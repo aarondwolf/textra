@@ -1,5 +1,19 @@
 # Current state
 
+2026-10-21 UI consistency and Agent reliability: action/menu buttons and native/model
+dropdowns use pill radii; Appearance select uses border-box paint with content insets.
+Native scrollbars share a 5px arrowless style; source and diff Monaco editors use
+matching narrow scrollbars without shadows/arrows. Snippets & Symbols and Writing
+scroll as whole views instead of clipped/nested cards. New native ui-consistency spec
+covers real wheel scroll, custom-form reachability, and dark/light dropdown geometry.
+Agent now permits 24 provider responses/64 tools (previously six/twelve), reports
+remaining budget each turn, encourages batching, and identifies the exhausted cap.
+Deadline remains 90s (180s Local Ollama); scope/review/stale guards and discard-on-cap
+remain. Unit/integration suite: 391/391 pass with normal Windows permissions;
+typecheck, lint, production build and changed-file formatting pass. Native checks
+and screenshot review are recorded in TESTING.md. Launch: npm run dev.
+Remaining roadmap gates unchanged: native/platform matrix and release work.
+
 2026-10-21 Save footer: Settings and AI settings dialogs share SaveFooter
 (features/save-status). It shows autosave state (ui.ts saveState for preferences;
 trackAISave/useAISaveState for AI writes) with an animated check, and Save settings

@@ -288,7 +288,7 @@
   width: 100%;
   padding: 5px 8px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
   font-size: 11px;
@@ -406,7 +406,7 @@
   height: 24px;
   padding: 0 5px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
@@ -431,7 +431,7 @@
   height: 24px;
   padding: 0 7px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   color: var(--muted);
   font-size: 11px;
 }
@@ -456,7 +456,7 @@
 .editor-format-heading-menu button {
   width: 100%;
   padding: 5px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   font-size: 11px;
   text-align: left;
@@ -537,7 +537,7 @@
   font-family: inherit;
   cursor: pointer;
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   transition:
     color 0.15s,
     background 0.15s;
@@ -883,10 +883,13 @@ body {
   overflow: hidden;
 }
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 button {
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 button:disabled {
@@ -894,7 +897,9 @@ button:disabled {
   opacity: 0.5;
 }
 button,
-input {
+input,
+select,
+textarea {
   -webkit-app-region: no-drag;
 }
 button {
@@ -902,6 +907,8 @@ button {
 }
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -1022,6 +1029,7 @@ kbd {
 }
 .sidebar-title {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
   height: 49px;
@@ -2355,9 +2363,9 @@ h1 > span {
 
 /* Dropdown controls use the same raised surface as contextual menus. Chromium owns
    the open native list, but the trigger and its options remain theme-aware. */
+select,
 :is(
     .editor-toolbar,
-    .editor-format-toolbar,
     .editor-options-menu,
     .setup-dialog,
     .recipe-dialog,
@@ -2366,50 +2374,37 @@ h1 > span {
   )
   select {
   appearance: none;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--border);
-  border-radius: var(--radius-surface);
+  border-radius: var(--radius-pill);
+  padding: 5px 30px 5px 11px;
   color: var(--text);
   background-color: var(--surface);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23979c9e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
-  background-clip: padding-box;
   box-sizing: border-box;
-  box-shadow: 0 3px 10px rgb(0 0 0 / 0.16);
+  font-family: inherit;
   cursor: pointer;
 }
-:is(
-    .editor-toolbar,
-    .editor-format-toolbar,
-    .editor-options-menu,
-    .setup-dialog,
-    .recipe-dialog,
-    .pdf-controls,
-    .problems-filter
-  )
-  select:hover {
+select:hover:not(:disabled) {
   border-color: var(--faint);
   background-color: var(--raised);
 }
-:is(
-    .editor-toolbar,
-    .editor-format-toolbar,
-    .editor-options-menu,
-    .setup-dialog,
-    .recipe-dialog,
-    .pdf-controls,
-    .problems-filter
-  )
-  select:focus-visible {
+select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
+}
+:is(.editor-toolbar, .editor-options-menu) select {
+  padding-right: 25px;
 }
 :is(.setup-dialog, .recipe-dialog) select {
   padding: 7px 30px 7px 11px;
 }
 .setup-dialog select {
   width: auto;
-  min-width: 200px;
+  min-width: min(200px, 100%);
   max-width: 100%;
 }
 .pdf-controls select {
@@ -2481,4 +2476,29 @@ select option {
   flex: 1;
   max-height: none;
   padding-top: 8px;
+}
+
+/* Chromium native scrollbars: one quiet thumb, no arrow buttons or track chrome. */
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--muted) 28%, transparent);
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: var(--radius-pill);
 }

@@ -3,11 +3,6 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  overflow: hidden;
-}
-
-/* Compile uses the shared panel shell, but its independent sections must scroll. */
-.writing-panel.compile-sidebar {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -93,11 +88,10 @@
 }
 
 .writing-outline-section {
-  flex: 1 1 0;
+  flex: 0 0 auto;
 }
 
 .writing-todos-section {
-  max-height: 32%;
   border-top: 1px solid var(--border);
 }
 
@@ -156,7 +150,6 @@
   min-height: 0;
   margin: 0 -4px;
   padding: 0 0 6px;
-  overflow: auto;
   list-style: none;
 }
 

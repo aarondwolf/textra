@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Content, Part } from '@google/genai';
-import { BoundedAgentService, type AgentGenerate } from '../../src/main/services/agent';
+import {
+  AGENT_MAX_TOOLS,
+  AGENT_MAX_TURNS,
+  BoundedAgentService,
+  type AgentGenerate,
+} from '../../src/main/services/agent';
 import { AIService, type KeyCipher } from '../../src/main/services/ai-service';
 import {
   fromGoogleContent,
@@ -325,12 +330,42 @@ describe('bounded active-document agent staging', () => {
       text: proposal.modified,
     });
   });
-  it('discards partial staged work when the model never finishes within six calls', async () => {
+  it('finishes a sequential multi-part edit beyond the previous six-response cap', async () => {
+    contextId = agent.syncDocument({ ...document, content: 'one\ntwo\nthree\n' })!.contextId;
+    request.mockResolvedValueOnce(response(tool('read_current_file')));
+    for (const expected of ['one', 'two', 'three']) {
+      request
+        .mockResolvedValueOnce(
+          response(tool('replace_range', { expected, text: expected.toUpperCase() })),
+        )
+        .mockResolvedValueOnce(response(tool('read_current_file')));
+    }
+    request.mockResolvedValueOnce(response({ text: 'Updated all three parts.' }));
+    const result = await run({ prompt: 'Uppercase one, two, and three.' });
+    expect(result.proposal?.modified).toBe('ONE\nTWO\nTHREE\n');
+    expect(result.text).toBe('Updated all three parts.');
+    expect(request).toHaveBeenCalledTimes(8);
+    expect(request.mock.calls[0][2].system).toContain('24 responses and 64 tool calls');
+    expect(request.mock.calls[7][2].system).toContain('17 responses and 57 tool calls');
+    expect(agent.getDocument(contextId).content).toBe('one\ntwo\nthree\n');
+  });
+  it('allows a final summary on the last available response', async () => {
+    request.mockReset();
+    for (let turn = 0; turn < AGENT_MAX_TURNS - 1; turn++)
+      request.mockResolvedValueOnce(response(tool('read_current_file')));
+    request.mockResolvedValueOnce(response({ text: 'Finished checking.' }));
+    expect((await run()).text).toBe('Finished checking.');
+    expect(request).toHaveBeenCalledTimes(AGENT_MAX_TURNS);
+  });
+  it('discards partial staged work when the model never finishes within the response budget', async () => {
     request
       .mockResolvedValueOnce(response(tool('read_current_file')))
       .mockResolvedValue(response(tool('insert_text', { offset: 0, text: 'partial ' })));
-    await expect(run()).rejects.toMatchObject({ code: 'AI_AGENT_LIMIT' });
-    expect(request).toHaveBeenCalledTimes(6);
+    await expect(run()).rejects.toMatchObject({
+      code: 'AI_AGENT_LIMIT',
+      message: expect.stringContaining(`${AGENT_MAX_TURNS}-response limit`),
+    });
+    expect(request).toHaveBeenCalledTimes(AGENT_MAX_TURNS);
     expect(agent.getDocument(contextId)).toEqual(document);
     expect(() => agent.accept({ id: 'anything', contextId })).toThrow();
   });
@@ -417,7 +452,9 @@ describe('bounded active-document agent staging', () => {
         request.mockResolvedValueOnce(
           response(
             tool('read_current_file'),
-            ...Array.from({ length: 12 }, () => tool('insert_text', { offset: 0, text: 'x' })),
+            ...Array.from({ length: AGENT_MAX_TOOLS }, () =>
+              tool('insert_text', { offset: 0, text: 'x' }),
+            ),
           ),
         );
       if (kind === 'output') request.mockResolvedValueOnce(response({ text: 'a'.repeat(32_001) }));
@@ -429,7 +466,8 @@ describe('bounded active-document agent staging', () => {
           ),
         );
       await expect(run()).rejects.toMatchObject({ code: 'AI_AGENT_LIMIT' });
-      expect(request.mock.calls.length).toBeLessThanOrEqual(6);
+      expect(request.mock.calls.length).toBeLessThanOrEqual(AGENT_MAX_TURNS);
+      expect(agent.getDocument(contextId)).toEqual(document);
     },
   );
   it('keeps an identical snapshot but expires proposals after switching away and back', async () => {

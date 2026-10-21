@@ -55,9 +55,12 @@ and empty replacement/deletion-only edits are rejected. Omitted arguments are no
 for the zero-argument read. Recoverable position mistakes return bounded feedback to the model;
 unknown tools, paths and extra arguments fail closed. Prior conversation is bounded context;
 the latest explicit user request controls the task.
-Reads return only the current in-memory staging buffer. Twelve total tools, six provider
-calls, 4,096 output tokens per call and a 60-second
-whole-request timeout bound each run. There are no automatic retries or background continuations.
+Reads return only the current in-memory staging buffer. Sixty-four total tools, 24 provider
+calls, 32,000 cumulative response characters and a 90-second whole-request timeout
+(180 seconds for Local Ollama) bound each run. Each call requests 4,096 output tokens;
+OpenAI reserves at least 8,192 completion tokens to accommodate reasoning.
+The system prompt reports remaining responses/tools and asks the model to batch independent
+edits and reserve a final summary. There are no automatic retries or background continuations.
 Changing context invalidates pending work, including switching away and back to the same file.
 Proposals require explicit inline review in a read-only diff and single-use approval. Deterministic
 bounded line hunks are shared with main; decisions contain only validated hunk IDs, never

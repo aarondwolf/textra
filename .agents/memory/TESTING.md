@@ -1,5 +1,28 @@
 # Test evidence
 
+2026-10-21 UI consistency/Agent budget: Windows unit/integration 391/391 pass
+with normal permissions, including real MiKTeX and filesystem boundary checks.
+Sandbox first run: 368 pass/22 fail/1 skip due to denied hard links, junctions
+and MiKTeX registry access; normal-permission rerun resolves all failures.
+Typecheck, lint, production build and changed-file Prettier pass. Global
+format:check flags only untouched docs/ROADMAP.md and sandbox/issues.md.
+Agent regression covers three sequential replacements plus reads/summary over
+eight responses, finalization on response 24, remaining-budget feedback, and
+discarding staging on response/tool/source/output cap exhaustion. Provider calls
+are mocked; no live credentials/quota used. Existing opt-in live test skipped.
+Native Agent, word selection, recipes, shell and new ui-consistency checks pass.
+Reviewed native dark/light Appearance, Symbols, Snippets and Agent review PNGs.
+The border assertion allows Chromium device-pixel snapping on scaled Windows
+displays. Shell's bridge allowlist was brought current with existing deleteAIChat.
+Native project-workflow still fails its known obsolete external-change banner
+expectation; the current UI
+correctly presents External change detected instead. Chat's scrollbar assertion
+was updated to check the new shared 5px Chromium scrollbar; its history selector
+now distinguishes the open-chat item from the existing delete-chat item. Final
+native Chat rerun passes (27.3s). Combined native evidence: six passing workflows,
+one known stale project-workflow failure, one opt-in live-provider skip. No roadmap
+gate advanced. Launch: npm run dev.
+
 2026-10-20 shared defaults/handoff: all 418 tests across 32 unit/integration files
 pass. Production build, typecheck, targeted ESLint and task formatting pass. Mocked
 SDK coverage routes all seven allowed models in both modes and rejects unknown IDs;

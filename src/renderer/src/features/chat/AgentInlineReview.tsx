@@ -3,6 +3,7 @@ import * as monaco from 'monaco-editor/editor/editor.api.js';
 import type { Theme } from '../../../../shared/api';
 import type { AIEditProposal } from '../../../../shared/ai';
 import type { AIEditHunk } from '../../../../shared/ai-edits';
+import { minimalEditorScrollbars } from '../editor/scrollbars';
 import './agent-inline-review.css';
 
 interface Props {
@@ -39,6 +40,7 @@ export function AgentInlineReview({
       renderOverviewRuler: false,
       minimap: { enabled: false },
       automaticLayout: true,
+      scrollbar: minimalEditorScrollbars,
       scrollBeyondLastLine: false,
       wordWrap: 'on',
       diffWordWrap: 'on',

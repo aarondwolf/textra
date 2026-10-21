@@ -3,7 +3,10 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 4px 10px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: 4px 10px 16px;
 }
 .palette-search-bar {
   flex-shrink: 0;
@@ -19,16 +22,13 @@
   font-size: 11px;
 }
 .palette-sections {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-bottom: 16px;
 }
 .palette-section {
+  flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -48,6 +48,7 @@
   padding: 8px 10px;
   background: transparent;
   border: none;
+  border-radius: var(--radius-pill);
   color: var(--text);
   font-size: 11px;
   font-weight: 600;
@@ -116,7 +117,7 @@
 .palette-custom-form textarea {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   padding: 5px 8px;
   background: var(--surface);
   color: var(--text);
@@ -124,6 +125,7 @@
   font-family: inherit;
 }
 .palette-custom-form textarea {
+  border-radius: var(--radius-surface);
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 10.5px;
   resize: vertical;
@@ -168,7 +170,7 @@
   background: transparent;
   border: none;
   color: var(--faint);
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 .snippet-delete-btn:hover {
@@ -187,10 +189,10 @@
   width: 100%;
   min-height: 48px;
   margin-bottom: 4px;
-  padding: 6px 9px;
+  padding: 6px 14px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   background: var(--raised);
   text-align: left;

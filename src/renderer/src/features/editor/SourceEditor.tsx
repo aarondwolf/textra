@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { latexFoldingRanges } from './folding';
+import { minimalEditorScrollbars } from './scrollbars';
 import FormattingToolbar from './FormattingToolbar';
 // editor.api.js does not load the icon font that Monaco's widgets (find, suggest) use, and the
 // package exports map cannot address a .css file, so import it by path.
@@ -579,6 +580,7 @@ export function SourceEditor({
       ariaLabel: 'LaTeX source editor',
       editContext: false,
       automaticLayout: true,
+      scrollbar: minimalEditorScrollbars,
       minimap: { enabled: false },
       fontFamily: "'Cascadia Code', Consolas, monospace",
       fontSize: 14,

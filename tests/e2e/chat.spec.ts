@@ -325,7 +325,9 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       });
     }, streamedReply);
     const history = chat.getByRole('log', { name: 'Conversation' });
-    await expect(history).toHaveCSS('scrollbar-width', 'thin');
+    expect(
+      await history.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').width),
+    ).toBe('5px');
     await expect(
       history.getByRole('article', { name: 'Response in progress', exact: true }),
     ).toBeVisible();
@@ -518,7 +520,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(history.locator('article')).toHaveCount(0);
     await historyButton.click();
     const historyMenu = chat.getByRole('menu', { name: 'Workspace chat history', exact: true });
-    await historyMenu.getByRole('menuitem', { name: /Earlier troubleshooting/ }).click();
+    await historyMenu.getByRole('menuitem', { name: /^Earlier troubleshooting/ }).click();
     await expect(history).toContainText('Earlier saved answer.');
     await expect(history).not.toContainText('Stored answer for this workspace.');
     await chat.getByRole('button', { name: 'New chat', exact: true }).click();

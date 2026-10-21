@@ -1,5 +1,13 @@
 # Decisions
 
+- 2026-10-21 Agent multi-part reliability: replace the six-response/twelve-tool cap
+  with 24 responses/64 tools. Each system prompt reports the remaining budget and
+  asks for independent edits to be batched and a final response reserved. Error
+  messages identify response/tool/source/output exhaustion. Existing 90-second
+  provider deadline (180 seconds for Local Ollama), 64k source, 32k cumulative text,
+  active-file-only tools, cancellation, stale guards and mandatory review remain.
+  Exhausted runs still discard all staging; there are no automatic continuations.
+
 - 2026-10-21 multi-provider AI (owner request): AI settings move to a dialog with one card
   per provider: Google Gemini, OpenAI, Anthropic, Ollama Cloud (ollama.com, key) and Local
   Ollama (127.0.0.1:11434, no key, status ping plus Start Ollama). Keys are tested by listing

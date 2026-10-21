@@ -5,12 +5,179 @@
   min-height: 0;
   padding: 4px 10px 0;
 }
-.snippet-list {
+.palette-search-bar {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.palette-search-bar input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 5px 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+}
+.palette-sections {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 16px;
+}
+.palette-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.palette-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 8px;
+}
+.palette-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.palette-section-header:hover {
+  background: var(--hover);
+}
+.palette-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--faint);
+  background: var(--raised);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.palette-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.palette-add-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--hover);
+}
+.palette-section-content {
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--border);
+}
+.palette-symbol-group {
+  margin-bottom: 10px;
+}
+.palette-group-name {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 6px 0 4px;
+}
+.palette-empty-note {
+  font-size: 11px;
+  color: var(--faint);
+  padding: 8px 4px;
+  text-align: center;
+}
+.palette-custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.palette-custom-form input,
+.palette-custom-form textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+}
+.palette-custom-form textarea {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 10.5px;
+  resize: vertical;
+}
+.palette-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.palette-form-actions button {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.palette-form-actions button.primary-pill {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: transparent;
+}
+.custom-snippet-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.custom-snippet-item .snippet {
+  margin-bottom: 4px;
+  padding-right: 32px;
+}
+.snippet-delete-btn {
+  position: absolute;
+  right: 8px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: var(--faint);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.snippet-delete-btn:hover {
+  color: #ff6b6b;
+  background: var(--hover);
+}
+.snippet-list {
   margin: 0;
-  padding: 0 0 12px;
-  overflow: auto;
+  padding: 0;
   list-style: none;
 }
 .snippet {
@@ -18,12 +185,12 @@
   flex-direction: column;
   gap: 2px;
   width: 100%;
-  height: 52px;
+  min-height: 48px;
   margin-bottom: 4px;
-  padding: 7px 10px;
+  padding: 6px 9px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text);
   background: var(--raised);
   text-align: left;
@@ -31,7 +198,7 @@
   user-select: none;
 }
 .snippet strong {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
 .snippet span {
@@ -39,7 +206,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 .snippet:hover {
   background: var(--hover);
@@ -48,13 +215,4 @@
 .snippet:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
-}
-.brace-icon {
-  font:
-    600 13px/1 'Cascadia Code',
-    Consolas,
-    monospace;
-}
-.activity-view[aria-pressed='true'] .brace-icon {
-  color: var(--accent);
 }

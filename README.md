@@ -97,7 +97,10 @@ the folder icon in the explorer. Import/export accepts only versioned theme/layo
 settings; unknown schemas and corrupt files are preserved. Recent folders, keys and
 tool paths are excluded. Offline operation is the default.
 
-The **AI Chat** rail tab opens a conversational debugger using only Gemini 3.5 Flash Lite.
+The **AI Chat** rail tab opens a conversational debugger using Gemini 3.5 Flash Lite by default.
+Both **Chat** and **Agent** default to Gemini 3.5 Flash Lite. Both model menus offer
+all configured Google models: Gemini 3.5/3.1 Flash Lite, Gemini 3.8/3.6 Flash,
+Gemini 3 Flash (Preview), and Gemma 4 26B/31B.
 First use offers a Google AI Studio link and a password field; **Save & Test Key** verifies
 the key before saving; key formats are validated by Google without a required prefix.
 **New chat** clears prior conversation context and retries while preserving unsent draft text.
@@ -106,11 +109,30 @@ before overwriting the saved key, or **Delete key** to remove it after confirmat
 Deleting also turns off automatic Problems prompts. Settings can enable automatic
 Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five
 source lines above and below for review. Sending shares that conversation/snippet with
-Google. The assistant has no file or command tools; suggestions are applied manually.
-History lasts for this window session and clears on project changes. Cancel stops waiting
+Google. Chat has no file or command tools. Agent sends only the active `.tex` buffer
+after an explicit request and can stage precise insertions/replacements in that file.
+It cannot browse other files, delete files, or run commands. Every proposed edit opens
+an inline read-only diff in the editor. **Approve** immediately applies that change to the
+buffer and advances to the next; **Reject** skips that change. The final decision returns
+to the normal editor. **Approve all** applies the remaining changes together; **Reject all**
+discards the remaining proposal and preserves changes already approved. Each approval is undoable.
+Auto-save pauses during review and resumes for approved text when review finishes.
+Changing the file, its content, or its disk revision expires the proposal. Agent requests
+include the preceding conversation for handoff and have a six-call/twelve-tool budget;
+Problems drafts never auto-send in Agent mode. Mode switches preserve conversation and drafts.
+Chat replies favor concise debugging fixes. When a reply includes a **Suggested fix**,
+the **Implement Suggested Fix** pill switches to Agent with the conversation and a simple
+implementation request. It requires an active `.tex` file; all proposed edits still need review.
+The Agent privacy reminder appears on first selection, fades away, and stays dismissed
+for that app profile. Clicking Send or the handoff pill remains the explicit sharing action.
+**Chat history** restores workspace-specific conversations, including after restarting TeXtra.
+History keeps the latest 100 chats per canonical workspace in local app data (`ai-chats/`),
+with at most 80 messages/128,000 characters per stored transcript. History contains plaintext
+conversation text, never API credentials or pending edits; it is excluded from settings exports.
+Unsent drafts remain in memory. **Ctrl+Enter** sends; Enter inserts a newline. Cancel stops waiting
 locally; Google may still process a request already sent.
 Responses stream as full-width Markdown with a copy action below; only your messages use
-bubbles. The compact composer has two text rows, a locked model label, and a circular
+bubbles. The compact composer has two text rows, no resize handle, a model menu, and a circular
 send arrow (a stop control during streaming). The introductory
 guidance disappears once a conversation starts. The chat tab sits with the main rail views.
 
@@ -119,6 +141,8 @@ with the key encrypted by Electron `safeStorage` for your OS account. No plainte
 is allowed. Do not distribute this local directory or put it under source control. Before
 public release, migrate it to global app data; see [security](docs/SECURITY.md).
 Google's free tier availability and limits depend on account/region; TeXtra adds no fee.
+Quota notices suggest switching to another allowed model or trying again later, with
+a link to [your Google AI Studio usage](https://aistudio.google.com/rate-limit).
 
 Recipes default to `build/textra/<relative document>/` and retain the last successful
 PDF through failures. Custom output folders are never automatically pruned. The

@@ -7,6 +7,14 @@ const api: TextraAPI = {
   deleteAIKey: () => ipcRenderer.invoke('textra:ai:delete'),
   setAIAutoSend: (request) => ipcRenderer.invoke('textra:ai:auto-send', request),
   sendAIMessage: (request) => ipcRenderer.invoke('textra:ai:send', request),
+  syncAIAgentDocument: (document) => ipcRenderer.invoke('textra:agent:document', document),
+  runAIAgent: (request) => ipcRenderer.invoke('textra:agent:run', request),
+  acceptAIAgentProposal: (request) => ipcRenderer.invoke('textra:agent:accept', request),
+  rejectAIAgentProposal: (id) => ipcRenderer.invoke('textra:agent:reject', id),
+  reviewAIAgentProposal: (request) => ipcRenderer.invoke('textra:agent:review', request),
+  openAIRateLimits: () => ipcRenderer.invoke('textra:ai:rate-limits'),
+  listAIChats: (projectId) => ipcRenderer.invoke('textra:ai:chats:list', projectId),
+  saveAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:save', request),
   onAIResponseChunk: (listener) => {
     const receive = (_event: IpcRendererEvent, value: unknown) => {
       if (

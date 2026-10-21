@@ -167,6 +167,23 @@ export function closeDocument(path: string): void {
     };
   });
 }
+export function reorderDocuments(fromIndex: number, toIndex: number): void {
+  useWorkspace.setState((state) => {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= state.documents.length ||
+      toIndex < 0 ||
+      toIndex >= state.documents.length ||
+      fromIndex === toIndex
+    ) {
+      return state;
+    }
+    const documents = [...state.documents];
+    const [moved] = documents.splice(fromIndex, 1);
+    documents.splice(toIndex, 0, moved);
+    return { documents };
+  });
+}
 export async function saveDocument(path: string): Promise<boolean> {
   const document = useWorkspace.getState().documents.find((item) => item.path === path);
   if (!document || !dirty(document)) return true;

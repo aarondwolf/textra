@@ -19,11 +19,18 @@ disabled, a timeout and cancellation. This is not an OS-level TeX sandbox: open
 and compile trusted projects only. External installation is not automatic.
 
 Optional Gemini chat transmits only user-submitted conversations and Problems snippets
-to Google's fixed Gemini API endpoint through main-process `@google/genai`. Only
-`gemini-3.5-flash-lite` is used; there is no fallback provider, agent loop, tools, source
-discovery, or execution. Problems drafts include up to five lines either side of the selected
+to Google's fixed Gemini API endpoint through main-process `@google/genai`.
+Both modes permit only the shared Google model allowlist (Gemini 3.5/3.1 Lite,
+3.8/3.6/3 Preview, Gemma 4 26B/31B), defaulting to Gemini 3.5 Flash Lite; there is no automatic
+fallback provider, source discovery, or execution. Problems drafts include up to five lines either side of the selected
 line (600 characters per source line); sending is manual unless the person enables the
-explicit auto-send setting. Conversations are memory-only and reset on project changes.
+explicit auto-send setting. Conversations are stored locally by canonical workspace hash
+under userData/ai-chats, with atomic writes, size/schema validation and symlink rejection.
+Only opaque registered project tokens select a history scope; no renderer-chosen storage paths.
+Queued saves for a previously registered workspace retain their original scope after switching.
+The latest 100 chats are retained per workspace, 80 turns/128,000 text characters per chat,
+16MiB per history file. History is plaintext private conversation content, not portable settings;
+keys, pending proposals, streaming partials and drafts are not serialized as history metadata.
 Requests have a 30-second timeout, one attempt, no automatic 429 retry, at most 40 turns,
 64,000 input characters and 4,096 output tokens. Cancellation stops local waiting; it cannot
 guarantee Google stops work on a request it has received. Provider errors never reach logs
@@ -32,6 +39,38 @@ Streaming updates use a fixed IPC event with validated request IDs and at most 3
 characters. Preload validates event shape and the chat ignores stale requests. Cancelled or
 failed partial replies do not become completed conversation turns. Markdown is rendered as
 React nodes without interpreting raw HTML; renderer navigation/window restrictions remain.
+
+Optional Agent mode uses the same model allowlist, main-process SDK and encrypted key.
+Only an explicit Agent submit or **Implement Suggested Fix** click shares the active
+`.tex` snapshot (at most 64,000 UTF-16 characters) and prompt (12,000 characters).
+Main validates the canonical project path and disk revision before requesting or accepting
+a proposal. The staging service has no filesystem/process dependencies: tools are exactly
+`read_current_file`, `insert_text`, and `replace_range`. Arguments cannot include paths;
+line/column insert positions or exact expected text must match (UTF-16 offsets remain compatible),
+and empty replacement/deletion-only edits are rejected. Omitted arguments are normalized only
+for the zero-argument read. Recoverable position mistakes return bounded feedback to the model;
+unknown tools, paths and extra arguments fail closed. Prior conversation is bounded context;
+the latest explicit user request controls the task.
+Reads return only the current in-memory staging buffer. Twelve total tools, six provider
+calls, 4,096 output tokens per call and a 60-second
+whole-request timeout bound each run. There are no automatic retries or background continuations.
+Changing context invalidates pending work, including switching away and back to the same file.
+Proposals require explicit inline review in a read-only diff and single-use approval. Deterministic
+bounded line hunks are shared with main; decisions contain only validated hunk IDs, never
+renderer-selected arbitrary replacement text. Each approval updates the expected buffer and
+opaque context and returns only remaining changes rebased onto that buffer. Rejection removes
+its change without altering the buffer. Old proposal IDs cannot be reused. Requests must finish
+naturally within the call budget; exhausting the budget discards staging instead of presenting
+a silently truncated partial task. Applying each decision rechecks
+the buffer after asynchronous main validation and uses Monaco's undoable edit API; the agent
+never saves a file. Auto-save pauses while review is pending so it cannot invalidate the
+remaining review with an intermediate revision; normal guarded auto-save resumes for approved
+text when review finishes. Manual/external edits still invalidate the remaining proposal.
+Agent Problems drafts always require manual submit. 429/budget notices use a fixed main-process
+AI Studio rate-limit URL; provider errors and keys are never shown verbatim.
+The one-time Agent reminder uses a profile-local UI flag only; dismissing it never enables
+automatic sending. Suggested-fix detection only offers a button on a completed reply;
+it cannot initiate requests or approve edits without a click.
 
 MVP keys use Electron `safeStorage` encryption in git-ignored repository-local
 `.textra-local/ai.json`, with atomic writes, version validation and symlink rejection.

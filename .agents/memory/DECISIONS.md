@@ -1,5 +1,47 @@
 # Decisions
 
+- 2026-10-20 shared AI defaults and handoff: Gemini 3.5 Flash Lite is the default
+  for both modes; all seven configured Google models are available in either mode.
+  No automatic model fallback. Chat requests very concise replies and reserves
+  **Suggested fix:** for actionable corrections. A completed latest suggestion gets
+  an explicit pill that switches to Agent and sends the bounded transcript with
+  "Implement the suggested fix above." Draft text survives the handoff. Existing
+  active-.tex scope and mandatory review remain. Show Agent disclosure once per
+  profile, fade after five seconds, then remove it; this is UI state, not consent
+  to send future requests. Precise insertion column feedback addresses observed
+  live Gemini coordinate guessing within the unchanged six-call/twelve-tool cap.
+
+- 2026-10-20 sequential review fix: Owner wants immediate per-change approval, not
+  accumulated decisions plus Apply approved. New narrow review API validates hunk IDs,
+  applies each accepted change to the expected buffer and rebases only undecided changes
+  into a fresh single-use proposal/context. Renderer applies each accepted step undoably,
+  removes it, and advances; the last decision closes. Approve all applies the remainder;
+  Reject all preserves already accepted text. Auto-save pauses until review completes.
+  Multi-step requests now have six model calls/twelve tools under the same60s deadline;
+  all requested parts must finish naturally. Budget exhaustion discards staging rather
+  than silently proposing a partial task. Only the final response supplies narration.
+
+- 2026-10-20 follow-up: Preserve one transcript/draft across Chat/Agent switches and
+  pass bounded conversation context into Agent. Workspace-specific history uses a
+  canonical-root hash under userData/ai-chats with atomic writes; newest100 chats,
+  80 messages/128k chars each,16MiB file cap. Credentials/pending proposals/drafts
+  remain outside history serialization. Model menu adds 3.8/3.6 Flash and 3 Flash Preview,
+  with Lite defaults unchanged and no automatic provider retry/fallback. Inline review
+  collects per-hunk decisions, then Apply approved submits only shared deterministic
+  hunk IDs to main. No arbitrary renderer-selected replacement string is accepted.
+  Agent read tools accept omitted args and return bounded staged line tables; insert
+  uses line/column and replacement prefers unique expected text. Re-reading staging
+  is allowed inside the eight-tool/three-call budget; a valid final staged edit is
+  returned for review at the cap rather than requiring another narration request.
+
+- 2026-10-20: Owner expands the earlier chat-only policy to a bounded, optional active-.tex
+  Agent. Chat allows only Gemini 3.5/3.1 Flash Lite; Agent allows only Gemma 4 26B/31B
+  (26B API ID gemma-4-26b-a4b-it). Each switch resets to the mode default. Main stages
+  pathless read/insert/replace tools with a three-call/eight-tool budget; explicit diff
+  approval is required for one undoable buffer edit. No agent disk writes, deletions,
+  other-file access, shell, automatic fallback or retries. Existing save policies apply
+  after user approval. Repository-local encrypted single-key storage remains temporary.
+
 - 2026-10-20: Owner requests Gemini debugging chat before remaining phase gates.
   Use exclusively gemini-3.5-flash-lite and official @google/genai; no AI file/process
   tools. Temporary repository-local config is encrypted with safeStorage already,

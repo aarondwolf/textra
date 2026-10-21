@@ -156,7 +156,7 @@
   "latex-workshop.latex.auxDir": "%OUTDIR%",
   "latex-workshop.latex.recipe.default": "lastUsed",
   "recipes": {
-    "test.tex": "pdflatex",
+    "test.tex": "latexmk",
     "test2.tex": "pdflatex"
   }
 }

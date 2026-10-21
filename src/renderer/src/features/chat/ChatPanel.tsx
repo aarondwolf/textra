@@ -1,9 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type KeyboardEvent,
+} from 'react';
 import type { AIMessage, AISettings } from '../../../../shared/api';
+import { hasSuggestedFix } from '../../../../shared/ai-suggestions';
+import {
+  AGENT_MODELS,
+  CHAT_MODELS,
+  DEFAULT_AGENT_MODEL,
+  DEFAULT_CHAT_MODEL,
+  type AIAgentContext,
+  type AIEditProposal,
+  type AIMode,
+  type AIAgentModel,
+  type AIChatModel,
+  type AIStoredChat,
+} from '../../../../shared/ai';
 import { AI_SETTINGS_CHANGED, AISettingsForm } from './AISettingsForm';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
-import { ArrowUp, Check, ChevronDown, Copy, Square } from '../../icons';
+import { ArrowUp, Check, ChevronDown, Copy, Square, History } from '../../icons';
 import './chat.css';
+
+const AGENT_NOTICE_SEEN_KEY = 'textra:agent-notice-seen:v1';
+let agentNoticeSeenThisSession = false;
+
+function agentNoticeWasSeen(): boolean {
+  if (agentNoticeSeenThisSession) return true;
+  try {
+    return localStorage.getItem(AGENT_NOTICE_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function ResponseContent({ text, incomplete = false }: { text: string; incomplete?: boolean }) {
   const [copied, setCopied] = useState(false);
@@ -58,17 +90,76 @@ function appendQuestion(messages: AIMessage[], text: string): AIMessage[] {
   return [...messages, { role: 'user', text }];
 }
 
+function providerMessages(messages: AIMessage[]): AIMessage[] {
+  const result: AIMessage[] = [];
+  for (const message of messages) {
+    const last = result.at(-1);
+    if (last?.role === message.role) last.text += `\n\n${message.text}`;
+    else result.push({ ...message });
+  }
+  return result;
+}
+
+function storedChat(id: string, messages: AIMessage[]): AIStoredChat {
+  return {
+    id,
+    title: (messages.find((message) => message.role === 'user')?.text ?? 'Untitled chat')
+      .replace(/\s+/g, ' ')
+      .slice(0, 80),
+    updatedAt: Date.now(),
+    messages: messages.map((message) => ({ ...message })),
+  };
+}
+
+function mergeChats(...groups: AIStoredChat[][]): AIStoredChat[] {
+  const chats = new Map<string, AIStoredChat>();
+  for (const group of groups)
+    for (const chat of group) {
+      const previous = chats.get(chat.id);
+      if (!previous || previous.updatedAt < chat.updatedAt) chats.set(chat.id, chat);
+    }
+  return [...chats.values()].sort((left, right) => right.updatedAt - left.updatedAt).slice(0, 100);
+}
+
+function navigateMenu(event: KeyboardEvent<HTMLDivElement>) {
+  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+  if (!keys.includes(event.key)) return;
+  const items = [
+    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+      '[role="menuitemradio"]:not(:disabled), [role="menuitem"]:not(:disabled)',
+    ),
+  ];
+  if (!items.length) return;
+  event.preventDefault();
+  const index = items.indexOf(document.activeElement as HTMLButtonElement);
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? items.length - 1
+        : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  items[next]?.focus();
+}
+
 export function ChatPanel({
   draft,
   onDraftConsumed,
   active = true,
   resetKey,
+  agentContext = null,
+  onReviewProposal,
+  reviewActive = false,
+  reviewControls,
 }: {
   draft: ChatDraft | null;
   onDraftConsumed?: () => void;
   active?: boolean;
   /** Changing projects clears the conversation so source context never crosses projects. */
   resetKey?: string | null;
+  agentContext?: AIAgentContext | null;
+  onReviewProposal?: (proposal: AIEditProposal) => void;
+  reviewActive?: boolean;
+  reviewControls?: ReactNode;
 }) {
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [settingsError, setSettingsError] = useState('');
@@ -80,25 +171,203 @@ export function ChatPanel({
   const [retryMessages, setRetryMessages] = useState<AIMessage[] | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [partialResponse, setPartialResponse] = useState('');
+  const [mode, setMode] = useState<AIMode>('chat');
+  const [model, setModel] = useState<AIChatModel | AIAgentModel>(DEFAULT_CHAT_MODEL);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [agentNoticePhase, setAgentNoticePhase] = useState<'hidden' | 'visible' | 'fading'>(
+    'hidden',
+  );
+  const [noticeWasSeen] = useState(agentNoticeWasSeen);
+  const noticeSeen = useRef(noticeWasSeen);
+  const [chatId, setChatId] = useState<string>(() => crypto.randomUUID());
+  const [sessionProject, setSessionProject] = useState(resetKey ?? null);
+  const [savedChats, setSavedChats] = useState<AIStoredChat[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const historyControl = useRef<HTMLDivElement>(null);
+  const historyButton = useRef<HTMLButtonElement>(null);
+  const projectGeneration = useRef(0);
+  const chatInteraction = useRef(0);
+  const liveProject = useRef(resetKey ?? null);
+  liveProject.current = resetKey ?? null;
+  const projectSessions = useRef(
+    new Map<string, { id: string; messages: AIMessage[]; input: string }>(),
+  );
+  const saves = useRef(new Map<string, Promise<void>>());
+  const session = useRef({ projectId: sessionProject, id: chatId, messages, input, loading });
+  session.current = { projectId: sessionProject, id: chatId, messages, input, loading };
+  const settled = useRef<{ projectId: string; chat: AIStoredChat } | null>(null);
+  const modelControl = useRef<HTMLDivElement>(null);
+  const modelButton = useRef<HTMLButtonElement>(null);
+  const latestContext = useRef(agentContext?.contextId);
+  latestContext.current = agentContext?.contextId;
   const sending = useRef(false);
   const requestId = useRef(0);
   const consumedDraft = useRef<number | null>(null);
   const history = useRef<HTMLDivElement>(null);
   const followResponse = useRef(true);
   const streamRequestId = useRef<string | null>(null);
-  const previousResetKey = useRef(resetKey);
+  const previousResetKey = useRef<string | null | undefined>(undefined);
+  const previousContext = useRef(agentContext?.contextId);
+
+  const clearConversation = useCallback(() => {
+    ++requestId.current;
+    streamRequestId.current = null;
+    setMessages([]);
+    setPartialResponse('');
+    setRetryMessages(null);
+    setError('');
+    setRateLimited(false);
+    setModelOpen(false);
+    followResponse.current = true;
+  }, []);
+
+  function changeMode(next: AIMode) {
+    if (mode === next || sending.current || reviewActive || historyBusy) return;
+    ++requestId.current;
+    streamRequestId.current = null;
+    setPartialResponse('');
+    setRetryMessages(null);
+    setError('');
+    setRateLimited(false);
+    setModelOpen(false);
+    setMode(next);
+    setModel(next === 'chat' ? DEFAULT_CHAT_MODEL : DEFAULT_AGENT_MODEL);
+    if (next === 'agent') {
+      if (!noticeSeen.current) {
+        noticeSeen.current = true;
+        agentNoticeSeenThisSession = true;
+        setAgentNoticePhase('visible');
+        try {
+          localStorage.setItem(AGENT_NOTICE_SEEN_KEY, '1');
+        } catch {
+          /* The session fallback still prevents repeated notices. */
+        }
+      }
+    } else setAgentNoticePhase('hidden');
+  }
 
   useEffect(() => {
-    if (previousResetKey.current === resetKey) return;
-    previousResetKey.current = resetKey;
+    if (agentNoticePhase === 'hidden') return;
+    const timer = window.setTimeout(
+      () => setAgentNoticePhase(agentNoticePhase === 'visible' ? 'fading' : 'hidden'),
+      agentNoticePhase === 'visible' ? 5000 : 500,
+    );
+    return () => window.clearTimeout(timer);
+  }, [agentNoticePhase]);
+
+  useEffect(() => {
+    if (!modelOpen) return;
+    function outside(event: MouseEvent) {
+      if (event.target instanceof Node && !modelControl.current?.contains(event.target))
+        setModelOpen(false);
+    }
+    document.addEventListener('mousedown', outside);
+    return () => document.removeEventListener('mousedown', outside);
+  }, [modelOpen]);
+
+  useEffect(() => {
+    if (!modelOpen) return;
+    const items =
+      modelControl.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]');
+    const selected = [...(items ?? [])].find(
+      (item) => item.getAttribute('aria-checked') === 'true',
+    );
+    (selected ?? items?.[0])?.focus();
+  }, [modelOpen]);
+
+  const persist = useCallback(async (projectId: string, chat: AIStoredChat) => {
+    if (!chat.messages.length) return;
+    const key = `${projectId}:${chat.id}`;
+    const previous = saves.current.get(key) ?? Promise.resolve();
+    const operation = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const result = await window.textra.saveAIChat({ projectId, chat });
+        if (!result.ok) throw new Error(result.error);
+        if (liveProject.current === projectId)
+          setSavedChats((current) => mergeChats([chat], current));
+      });
+    saves.current.set(key, operation);
+    try {
+      await operation;
+    } finally {
+      if (saves.current.get(key) === operation) saves.current.delete(key);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!sessionProject || sessionProject !== (resetKey ?? null) || loading || !messages.length)
+      return;
+    const snapshot = { projectId: sessionProject, chat: storedChat(chatId, messages) };
+    settled.current = snapshot;
+    void persist(snapshot.projectId, snapshot.chat)
+      .then(() => {
+        if (liveProject.current === snapshot.projectId) setHistoryError('');
+      })
+      .catch((cause: unknown) => {
+        if (liveProject.current === snapshot.projectId)
+          setHistoryError(cause instanceof Error ? cause.message : 'Could not save chat history.');
+      });
+  }, [sessionProject, resetKey, chatId, messages, loading, persist]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const outside = (event: MouseEvent) => {
+      if (event.target instanceof Node && !historyControl.current?.contains(event.target))
+        setHistoryOpen(false);
+    };
+    document.addEventListener('mousedown', outside);
+    if (!historyLoading)
+      historyControl.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    return () => document.removeEventListener('mousedown', outside);
+  }, [historyOpen, historyLoading]);
+
+  async function chooseChat(chat?: AIStoredChat) {
+    if (sending.current || reviewActive || historyBusy) return;
+    const generation = projectGeneration.current;
+    const current = session.current;
+    if (chat?.id === current.id) {
+      setHistoryOpen(false);
+      historyButton.current?.focus();
+      return;
+    }
+    ++chatInteraction.current;
+    setHistoryBusy(true);
+    try {
+      if (current.projectId && current.messages.length)
+        await persist(current.projectId, storedChat(current.id, current.messages));
+      if (generation !== projectGeneration.current) return;
+      clearConversation();
+      setChatId(chat?.id ?? crypto.randomUUID());
+      setMessages(chat?.messages.map((message) => ({ ...message })) ?? []);
+      setHistoryOpen(false);
+      setHistoryError('');
+      settled.current = null;
+      historyButton.current?.focus();
+    } catch (cause) {
+      if (generation === projectGeneration.current)
+        setHistoryError(
+          cause instanceof Error ? cause.message : 'Could not save the current chat.',
+        );
+    } finally {
+      if (generation === projectGeneration.current) setHistoryBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (previousContext.current === agentContext?.contextId) return;
+    previousContext.current = agentContext?.contextId;
+    if (mode !== 'agent') return;
     const currentId = ++requestId.current;
     streamRequestId.current = null;
     setPartialResponse('');
-    followResponse.current = true;
-    setMessages([]);
-    setInput('');
-    setError('');
     setRetryMessages(null);
+    setError('');
+    setRateLimited(false);
     if (sending.current) {
       setCancelling(true);
       void window.textra
@@ -114,7 +383,98 @@ export function ChatPanel({
             setError('Could not confirm cancellation of the previous response.');
         });
     }
-  }, [resetKey]);
+  }, [agentContext?.contextId, mode]);
+
+  useEffect(() => {
+    const projectId = resetKey ?? null;
+    if (previousResetKey.current === projectId) return;
+    const old = session.current;
+    if (previousResetKey.current !== undefined && old.projectId) {
+      projectSessions.current.set(old.projectId, {
+        id: old.id,
+        messages: old.messages,
+        input: old.input,
+      });
+      const snapshot = !old.loading
+        ? { projectId: old.projectId, chat: storedChat(old.id, old.messages) }
+        : settled.current;
+      if (snapshot?.projectId === old.projectId)
+        void persist(snapshot.projectId, snapshot.chat).catch(() =>
+          setHistoryError(
+            'The previous workspace chat could not be saved. It is still available in this session.',
+          ),
+        );
+    }
+    previousResetKey.current = projectId;
+    setAgentNoticePhase('hidden');
+    const generation = ++projectGeneration.current;
+    const interaction = chatInteraction.current;
+    const cached = projectId ? projectSessions.current.get(projectId) : undefined;
+    const id = cached?.id ?? crypto.randomUUID();
+    setSessionProject(projectId);
+    setChatId(id);
+    setMessages(cached?.messages ?? []);
+    setInput(cached?.input ?? '');
+    setSavedChats([]);
+    setHistoryError('');
+    setHistoryOpen(false);
+    setHistoryBusy(false);
+    settled.current = null;
+    const currentId = ++requestId.current;
+    streamRequestId.current = null;
+    setPartialResponse('');
+    followResponse.current = true;
+    setError('');
+    setRateLimited(false);
+    setModelOpen(false);
+    setRetryMessages(null);
+    setHistoryLoading(Boolean(projectId));
+    if (projectId)
+      void window.textra
+        .listAIChats(projectId)
+        .then((result) => {
+          if (generation !== projectGeneration.current) return;
+          if (!result.ok) {
+            setHistoryError(result.error);
+            return;
+          }
+          setSavedChats((current) => mergeChats(current, result.value));
+          if (
+            !cached &&
+            chatInteraction.current === interaction &&
+            !sending.current &&
+            result.value.length
+          ) {
+            const latest = [...result.value].sort(
+              (left, right) => right.updatedAt - left.updatedAt,
+            )[0];
+            setChatId(latest.id);
+            setMessages(latest.messages.map((message) => ({ ...message })));
+          }
+        })
+        .catch(() => {
+          if (generation === projectGeneration.current)
+            setHistoryError('Could not load workspace chat history.');
+        })
+        .finally(() => {
+          if (generation === projectGeneration.current) setHistoryLoading(false);
+        });
+    if (sending.current) {
+      setCancelling(true);
+      void window.textra
+        .cancelAIMessage()
+        .finally(() => {
+          if (currentId !== requestId.current) return;
+          sending.current = false;
+          setLoading(false);
+          setCancelling(false);
+        })
+        .catch(() => {
+          if (currentId === requestId.current)
+            setError('Could not confirm cancellation of the previous response.');
+        });
+    }
+  }, [resetKey, persist]);
 
   const refreshSettings = useCallback(async () => {
     try {
@@ -146,60 +506,131 @@ export function ChatPanel({
     if (container && followResponse.current && active) container.scrollTop = container.scrollHeight;
   }, [messages, partialResponse, loading, active]);
 
-  const send = useCallback(async (conversation: AIMessage[]) => {
-    if (sending.current) return;
-    if (
-      conversation.length > 40 ||
-      conversation.some((message) => message.text.length > 32_000) ||
-      conversation.reduce((size, message) => size + message.text.length, 0) > 64_000
-    ) {
-      setInput(conversation.at(-1)?.text ?? '');
-      setError(
-        'This conversation has reached its size limit. Start a new chat or shorten the question. Your question is preserved below.',
-      );
-      return;
-    }
-    sending.current = true;
-    const currentId = ++requestId.current;
-    const streamId = crypto.randomUUID();
-    streamRequestId.current = streamId;
-    setPartialResponse('');
-    followResponse.current = true;
-    setMessages(conversation);
-    setLoading(true);
-    setError('');
-    setRetryMessages(null);
-    try {
-      const result = await window.textra.sendAIMessage({
-        messages: conversation,
-        requestId: streamId,
-      });
-      if (currentId !== requestId.current) return;
-      if (result.ok) {
-        setPartialResponse('');
-        setMessages([...conversation, { role: 'model', text: result.value }]);
-      } else {
+  const send = useCallback(
+    async (
+      conversation: AIMessage[],
+      override?: { mode: AIMode; model: AIChatModel | AIAgentModel; preserveDraft?: boolean },
+    ) => {
+      const requestMode = override?.mode ?? mode;
+      const requestModel = override?.model ?? model;
+      if (sending.current || reviewActive || historyBusy || sessionProject !== liveProject.current)
+        return;
+      if (requestMode === 'agent' && !agentContext) {
+        if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
+        setError('Open an active .tex file to use Agent.');
+        return;
+      }
+      if (
+        conversation.length > 79 ||
+        conversation.reduce((size, message) => size + message.text.length, 0) > 96_000 ||
+        (requestMode === 'chat' &&
+          (providerMessages(conversation).length > 40 ||
+            providerMessages(conversation).some((message) => message.text.length > 32_000) ||
+            conversation.reduce((size, message) => size + message.text.length, 0) > 64_000)) ||
+        (requestMode === 'agent' && (conversation.at(-1)?.text.length ?? 0) > 12_000)
+      ) {
+        if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
         setError(
-          result.code === 'AI_RATE_LIMIT'
-            ? 'Gemini is receiving too many requests. Please wait a little and retry. Google may also have a daily quota for your account.'
-            : result.error,
+          'This conversation has reached its size limit. Start a new chat or shorten the question. Your question is preserved below.',
         );
+        return;
+      }
+      sending.current = true;
+      ++chatInteraction.current;
+      const currentId = ++requestId.current;
+      const streamId = crypto.randomUUID();
+      streamRequestId.current = requestMode === 'chat' ? streamId : null;
+      setPartialResponse('');
+      followResponse.current = true;
+      setMessages(conversation);
+      setLoading(true);
+      setError('');
+      setRateLimited(false);
+      setModelOpen(false);
+      setRetryMessages(null);
+      try {
+        if (requestMode === 'agent' && agentContext) {
+          const contextId = agentContext.contextId;
+          const result = await window.textra.runAIAgent({
+            contextId,
+            prompt: conversation.at(-1)?.text ?? '',
+            messages: providerMessages(conversation.slice(0, -1)),
+            model: requestModel as AIAgentModel,
+            requestId: streamId,
+          });
+          if (currentId !== requestId.current || latestContext.current !== contextId) return;
+          if (result.ok) {
+            setMessages([...conversation, { role: 'model', text: result.value.text }]);
+            if (result.value.proposal) onReviewProposal?.(result.value.proposal);
+          } else {
+            const limited = result.code === 'AI_RATE_LIMIT' || result.code === 'AI_AGENT_LIMIT';
+            setRateLimited(limited);
+            setError(
+              result.code === 'AI_AGENT_LIMIT'
+                ? result.error
+                : limited
+                  ? 'The request reached a rate or Agent budget limit. Choose another available model or try again later.'
+                  : result.error,
+            );
+            setRetryMessages(conversation);
+          }
+          return;
+        }
+        const result = await window.textra.sendAIMessage({
+          messages: providerMessages(conversation),
+          requestId: streamId,
+          model: requestModel as AIChatModel,
+        });
+        if (currentId !== requestId.current) return;
+        if (result.ok) {
+          setPartialResponse('');
+          setMessages([...conversation, { role: 'model', text: result.value }]);
+        } else {
+          setRateLimited(result.code === 'AI_RATE_LIMIT' || result.code === 'AI_AGENT_LIMIT');
+          setError(
+            result.code === 'AI_RATE_LIMIT'
+              ? 'The model reached a rate or quota limit. Choose another available model or try again later.'
+              : result.error,
+          );
+          setRetryMessages(conversation);
+        }
+      } catch {
+        if (currentId !== requestId.current) return;
+        setError('Could not reach the model. Check your connection and try again.');
         setRetryMessages(conversation);
+      } finally {
+        if (currentId === requestId.current) {
+          streamRequestId.current = null;
+          sending.current = false;
+          setLoading(false);
+        }
       }
-    } catch {
-      if (currentId !== requestId.current) return;
-      setError('Could not reach Gemini. Check your connection and try again.');
-      setRetryMessages(conversation);
-    } finally {
-      if (currentId === requestId.current) {
-        streamRequestId.current = null;
-        sending.current = false;
-        setLoading(false);
-      }
-    }
-  }, []);
+    },
+    [mode, model, agentContext, onReviewProposal, reviewActive, historyBusy, sessionProject],
+  );
+
+  function implementSuggestedFix() {
+    if (
+      mode !== 'chat' ||
+      sending.current ||
+      reviewActive ||
+      historyBusy ||
+      !agentContext ||
+      sessionProject !== liveProject.current
+    )
+      return;
+    const latest = messages.at(-1);
+    if (latest?.role !== 'model' || !hasSuggestedFix(latest.text)) return;
+    changeMode('agent');
+    void send([...messages, { role: 'user', text: 'Implement the suggested fix above.' }], {
+      mode: 'agent',
+      model: DEFAULT_AGENT_MODEL,
+      preserveDraft: true,
+    });
+  }
 
   useEffect(() => {
+    if (sessionProject !== (resetKey ?? null)) return;
     if (!draft || !settings?.configured || consumedDraft.current === draft.id || loading) return;
     let current = true;
     // Recheck consent at the moment a Problems prompt is consumed.
@@ -213,6 +644,8 @@ export function ChatPanel({
           result.ok &&
           result.value.configured &&
           result.value.autoSendProblems &&
+          mode === 'chat' &&
+          !reviewActive &&
           !sending.current
         ) {
           void send(appendQuestion(messages, draft.text));
@@ -233,7 +666,18 @@ export function ChatPanel({
     return () => {
       current = false;
     };
-  }, [draft, settings?.configured, loading, messages, onDraftConsumed, send]);
+  }, [
+    draft,
+    settings?.configured,
+    loading,
+    messages,
+    onDraftConsumed,
+    send,
+    mode,
+    reviewActive,
+    sessionProject,
+    resetKey,
+  ]);
 
   async function cancel() {
     if (cancelling) return;
@@ -261,22 +705,77 @@ export function ChatPanel({
     <section className="ai-chat" aria-label="AI debugging chat">
       <header className="ai-chat-header">
         <div>
-          <strong>Chat</strong>
+          <strong>{mode === 'chat' ? 'Chat' : 'Agent'}</strong>
         </div>
         <button
           type="button"
-          disabled={loading || messages.length === 0}
-          onClick={() => {
-            setMessages([]);
-            streamRequestId.current = null;
-            setPartialResponse('');
-            followResponse.current = true;
-            setError('');
-            setRetryMessages(null);
-          }}
+          disabled={loading || reviewActive || historyBusy || messages.length === 0}
+          onClick={() => void chooseChat()}
         >
           New chat
         </button>
+        <div
+          className="ai-history-control"
+          ref={historyControl}
+          onBlur={(event) => {
+            if (
+              !(event.relatedTarget instanceof Node) ||
+              !event.currentTarget.contains(event.relatedTarget)
+            )
+              setHistoryOpen(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setHistoryOpen(false);
+              historyButton.current?.focus();
+            }
+          }}
+        >
+          <button
+            ref={historyButton}
+            type="button"
+            className="ai-history-trigger"
+            aria-label="Chat history"
+            title="Latest 100 workspace chats"
+            aria-haspopup="menu"
+            aria-expanded={historyOpen}
+            disabled={!sessionProject || loading || reviewActive || historyBusy}
+            onClick={() => {
+              setHistoryOpen((value) => !value);
+              setModelOpen(false);
+            }}
+          >
+            <History size={14} aria-hidden="true" />
+          </button>
+          {historyOpen && (
+            <div
+              className="ai-history-menu"
+              role="menu"
+              aria-label="Workspace chat history"
+              onKeyDown={navigateMenu}
+            >
+              {historyLoading && <p role="status">Loading history…</p>}
+              {!historyLoading && savedChats.length === 0 && <p>No saved chats yet.</p>}
+              {savedChats.map((chat) => (
+                <button
+                  key={chat.id}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  disabled={historyBusy}
+                  title={chat.title}
+                  onClick={() => void chooseChat(chat)}
+                >
+                  <span>{chat.title}</span>
+                  <small>
+                    {new Date(chat.updatedAt).toLocaleDateString()}
+                    {chat.id === chatId ? ' · Current' : ''}
+                  </small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => setShowSettings((value) => !value)}
@@ -285,6 +784,11 @@ export function ChatPanel({
           {showSettings ? 'Back' : 'Settings'}
         </button>
       </header>
+      {historyError && (
+        <p className="ai-history-error" role="alert">
+          {historyError}
+        </p>
+      )}
       {settingsError && (
         <div className="ai-settings-failure">
           <p role="alert">{settingsError}</p>
@@ -305,7 +809,17 @@ export function ChatPanel({
         </div>
       ) : settings?.configured ? (
         <>
-          {messages.length === 0 && (
+          {mode === 'agent' && agentNoticePhase !== 'hidden' && (
+            <p
+              className="ai-chat-privacy ai-agent-notice"
+              data-state={agentNoticePhase}
+              role="status"
+            >
+              The conversation and active .tex file{agentContext ? ` (${agentContext.path})` : ''}{' '}
+              are sent. Edits require review; tools cannot access other files.
+            </p>
+          )}
+          {mode === 'chat' && messages.length === 0 && (
             <p className="ai-chat-privacy">
               Messages and selected snippets are sent to Google. No file access or editing tools.
               Check suggestions before applying them.
@@ -326,10 +840,13 @@ export function ChatPanel({
           >
             {messages.length === 0 && (
               <div className="ai-chat-empty">
-                <strong>Let’s untangle that error.</strong>
+                <strong>
+                  {mode === 'chat' ? 'Let’s untangle that error.' : 'Review a focused edit.'}
+                </strong>
                 <p>
-                  Ask a LaTeX question or choose Ask in Chat from Problems. Review any source
-                  snippet before sending.
+                  {mode === 'chat'
+                    ? 'Ask a LaTeX question or choose Ask in Chat from Problems. Review any source snippet before sending.'
+                    : 'Describe a correction to the active file. Your conversation stays with you; proposed changes open for review.'}
                 </p>
               </div>
             )}
@@ -340,7 +857,32 @@ export function ChatPanel({
                 aria-label={message.role === 'model' ? 'Assistant response' : 'Your message'}
               >
                 {message.role === 'model' ? (
-                  <ResponseContent text={message.text} />
+                  <>
+                    <ResponseContent text={message.text} />
+                    {mode === 'chat' &&
+                      index === messages.length - 1 &&
+                      hasSuggestedFix(message.text) && (
+                        <button
+                          type="button"
+                          className="ai-implement-fix"
+                          disabled={
+                            loading ||
+                            reviewActive ||
+                            historyBusy ||
+                            !agentContext ||
+                            sessionProject !== liveProject.current
+                          }
+                          title={
+                            !agentContext
+                              ? 'Open an active .tex file to implement this fix'
+                              : 'Run Agent on the active .tex file and review its proposed edits'
+                          }
+                          onClick={implementSuggestedFix}
+                        >
+                          Implement Suggested Fix
+                        </button>
+                      )}
+                  </>
                 ) : (
                   <>
                     <strong>You</strong>
@@ -359,7 +901,8 @@ export function ChatPanel({
             )}
             {loading && !partialResponse && (
               <p className="ai-chat-typing" role="status">
-                Gemini is thinking<span aria-hidden="true">…</span>
+                {mode === 'chat' ? 'Gemini is thinking' : 'Preparing a proposal'}
+                <span aria-hidden="true">…</span>
               </p>
             )}
           </div>
@@ -368,43 +911,173 @@ export function ChatPanel({
               <p role="alert" className="ai-error">
                 {error}
               </p>
-              {retryMessages && !loading && (
+              {rateLimited && (
+                <button
+                  type="button"
+                  className="ai-rate-limits-link"
+                  onClick={() => {
+                    void window.textra
+                      .openAIRateLimits()
+                      .then((result) => {
+                        if (!result.ok) setError(result.error);
+                      })
+                      .catch(() => setError('Could not open Google AI Studio rate limits.'));
+                  }}
+                >
+                  View rate limits in AI Studio
+                </button>
+              )}
+              {retryMessages && !loading && !reviewActive && (
                 <button type="button" onClick={() => void send(retryMessages)}>
                   Retry response
                 </button>
               )}
             </div>
           )}
+          {reviewControls}
+          {mode === 'agent' && !agentContext && (
+            <p id="ai-agent-context-hint" className="ai-agent-context-hint">
+              Open an active .tex file to use Agent.
+            </p>
+          )}
           <form
             className="ai-chat-compose"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!input.trim() || sending.current) return;
+              if (
+                !input.trim() ||
+                sending.current ||
+                reviewActive ||
+                historyBusy ||
+                (mode === 'agent' && !agentContext)
+              )
+                return;
               const text = input.trim();
               setInput('');
-              void send(appendQuestion(messages, text));
+              void send(
+                mode === 'chat'
+                  ? appendQuestion(messages, text)
+                  : [...messages, { role: 'user', text }],
+              );
             }}
           >
             <textarea
               id="ai-chat-message"
-              aria-label="Message Gemini"
+              aria-label={mode === 'chat' ? 'Message Gemini' : 'Agent request'}
               rows={2}
               value={input}
               maxLength={30000}
-              placeholder="Ask about your LaTeX…"
+              placeholder={
+                mode === 'agent' && !agentContext
+                  ? 'Open an active .tex file to use Agent'
+                  : 'Ask about your LaTeX…'
+              }
+              aria-describedby={
+                mode === 'agent' && !agentContext ? 'ai-agent-context-hint' : undefined
+              }
+              disabled={reviewActive || (mode === 'agent' && !agentContext)}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && event.ctrlKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
             />
             <div className="ai-chat-actions">
-              <button
-                type="button"
-                className="ai-chat-model"
-                disabled
-                aria-label="Model: Gemini 3.5 Flash Lite (locked)"
-                title="Gemini 3.5 Flash Lite · Model selection is locked"
+              <div
+                className="ai-chat-controls"
+                ref={modelControl}
+                onBlur={(event) => {
+                  if (
+                    !(event.relatedTarget instanceof Node) ||
+                    !event.currentTarget.contains(event.relatedTarget)
+                  )
+                    setModelOpen(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setModelOpen(false);
+                    modelButton.current?.focus();
+                  }
+                }}
               >
-                <span className="ai-chat-model-label">Gemini 3.5 Flash Lite</span>
-                <ChevronDown size={10} aria-hidden="true" />
-              </button>
+                <button
+                  ref={modelButton}
+                  type="button"
+                  className="ai-chat-model"
+                  disabled={loading || reviewActive || historyBusy}
+                  aria-haspopup="menu"
+                  aria-expanded={modelOpen}
+                  aria-controls="ai-model-popup"
+                  aria-label="Model"
+                  title={
+                    (mode === 'chat' ? CHAT_MODELS : AGENT_MODELS).find(
+                      (option) => option.id === model,
+                    )?.label
+                  }
+                  onClick={() => {
+                    setModelOpen((value) => !value);
+                    setHistoryOpen(false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      setModelOpen(true);
+                    }
+                  }}
+                >
+                  <span className="ai-chat-model-label">Model</span>
+                  <ChevronDown size={10} aria-hidden="true" />
+                </button>
+                {modelOpen && (
+                  <div
+                    className="ai-model-popup"
+                    id="ai-model-popup"
+                    role="menu"
+                    aria-label="AI model"
+                    onKeyDown={navigateMenu}
+                  >
+                    {(mode === 'chat' ? CHAT_MODELS : AGENT_MODELS).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={option.id === model}
+                        tabIndex={option.id === model ? 0 : -1}
+                        disabled={loading || reviewActive || historyBusy}
+                        onClick={() => {
+                          setModel(option.id);
+                          setModelOpen(false);
+                          modelButton.current?.focus();
+                        }}
+                      >
+                        <span>{option.label}</span>
+                        {option.id === model && <Check size={11} aria-hidden="true" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="ai-mode-toggle" role="group" aria-label="AI mode">
+                  <button
+                    type="button"
+                    aria-pressed={mode === 'chat'}
+                    disabled={loading || reviewActive || historyBusy}
+                    onClick={() => changeMode('chat')}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={mode === 'agent'}
+                    disabled={loading || reviewActive || historyBusy}
+                    onClick={() => changeMode('agent')}
+                  >
+                    Agent
+                  </button>
+                </div>
+              </div>
               {loading ? (
                 <button
                   type="button"
@@ -422,11 +1095,16 @@ export function ChatPanel({
                   type="submit"
                   className="ai-chat-send"
                   data-active={Boolean(input.trim())}
-                  disabled={!input.trim()}
+                  disabled={
+                    !input.trim() ||
+                    reviewActive ||
+                    historyBusy ||
+                    (mode === 'agent' && !agentContext)
+                  }
                   aria-label="Send message"
                   title="Send message"
                 >
-                  <ArrowUp size={14} weight="bold" aria-hidden="true" />
+                  <ArrowUp size={12} weight="bold" aria-hidden="true" />
                 </button>
               )}
             </div>

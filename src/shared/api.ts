@@ -1,4 +1,15 @@
 import type { RecipeSettings } from './recipes';
+import type {
+  AIChatModel,
+  AIAgentDocument,
+  AIAgentContext,
+  AIAgentRequest,
+  AIAgentResult,
+  AIEditProposal,
+  AIStoredChat,
+  AIAgentReviewRequest,
+  AIAgentReviewResult,
+} from './ai';
 export const PRODUCT_NAME = 'TeXtra';
 export type Theme = 'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
 export type ChktexRunMode = 'save' | 'live';
@@ -310,7 +321,23 @@ export interface TextraAPI {
   /** Confirms locally before clearing the single saved credential; null means cancelled. */
   deleteAIKey(): Promise<Result<AISettings | null>>;
   setAIAutoSend(request: { autoSendProblems: boolean }): Promise<Result<AISettings>>;
-  sendAIMessage(request: { messages: AIMessage[]; requestId?: string }): Promise<Result<string>>;
+  sendAIMessage(request: {
+    messages: AIMessage[];
+    requestId?: string;
+    model?: AIChatModel;
+  }): Promise<Result<string>>;
+  syncAIAgentDocument(document: AIAgentDocument | null): Promise<Result<AIAgentContext | null>>;
+  runAIAgent(request: AIAgentRequest): Promise<Result<AIAgentResult>>;
+  acceptAIAgentProposal(request: {
+    id: string;
+    contextId: string;
+    hunkIds?: string[];
+  }): Promise<Result<AIEditProposal>>;
+  rejectAIAgentProposal(id: string): Promise<Result<void>>;
+  reviewAIAgentProposal(request: AIAgentReviewRequest): Promise<Result<AIAgentReviewResult>>;
+  openAIRateLimits(): Promise<Result<void>>;
+  listAIChats(projectId: string): Promise<Result<AIStoredChat[]>>;
+  saveAIChat(request: { projectId: string; chat: AIStoredChat }): Promise<Result<void>>;
   onAIResponseChunk(listener: (chunk: AIResponseChunk) => void): () => void;
   cancelAIMessage(): Promise<Result<void>>;
   openAIStudio(): Promise<Result<void>>;

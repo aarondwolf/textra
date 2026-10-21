@@ -12,11 +12,15 @@ import {
 } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ChatPanel } from './features/chat/ChatPanel';
+import { AgentInlineReview, AgentReviewControls } from './features/chat/AgentInlineReview';
+import { agentEditHunks } from '../../shared/ai-edits';
+import { AGENT_SOURCE_LIMIT, type AIAgentContext, type AIEditProposal } from '../../shared/ai';
 import {
   AIChat,
   ArrowRight,
   ArrowsInSimple,
   ArrowsOutSimple,
+  BracketsCurly,
   Check,
   ChevronRight,
   Copy,
@@ -70,6 +74,7 @@ import {
   initializeWorkspace,
   markExternalChange,
   openDocument,
+  reorderDocuments,
   saveAll,
   saveDocument,
   setProject,
@@ -81,7 +86,6 @@ import { SourceEditor, type TexlabDiagnostic } from './features/editor/SourceEdi
 import { createTexlabAdapter, texlabMarkers } from './features/editor/texlabAdapter';
 import PdfViewer from './features/pdf/PdfViewer';
 import { MarkdownPreview } from './features/markdown';
-import EquationPalette from './features/equations/EquationPalette';
 import SnippetPalette from './features/snippets/SnippetPalette';
 import { notify } from './features/notifications/ToastViewport';
 import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
@@ -407,31 +411,57 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     try {
       const saved = JSON.parse(raw) as {
         projectId?: string;
+        recentId?: string;
         paths?: string[];
         activePath?: string;
       };
-      if (!saved.projectId) return;
-      void window.textra.openRecentProject(saved.projectId).then(async (result) => {
-        if (!result.ok || !result.value) return;
-        await setProject(result.value);
-        for (const path of saved.paths?.slice(0, 50) ?? []) await openDocument(path);
-        if (saved.activePath) useWorkspace.setState({ activePath: saved.activePath });
-      });
+      const idToOpen = saved.recentId ?? saved.projectId;
+      if (!idToOpen) return;
+      void (async () => {
+        try {
+          const recentsResult = await window.textra.getRecentProjects();
+          if (!recentsResult.ok || recentsResult.value.length === 0) {
+            window.localStorage.removeItem('textra:workspace-session');
+            return;
+          }
+          const recentsList = recentsResult.value;
+          const targetEntry =
+            recentsList.find((item) => item.id === idToOpen) ??
+            (recentsList.length > 0 ? recentsList[0] : null);
+          if (!targetEntry) {
+            window.localStorage.removeItem('textra:workspace-session');
+            return;
+          }
+          const result = await window.textra.openRecentProject(targetEntry.id);
+          if (!result.ok || !result.value) {
+            window.localStorage.removeItem('textra:workspace-session');
+            return;
+          }
+          await setProject(result.value);
+          for (const path of saved.paths?.slice(0, 50) ?? []) await openDocument(path);
+          if (saved.activePath) useWorkspace.setState({ activePath: saved.activePath });
+        } catch {
+          window.localStorage.removeItem('textra:workspace-session');
+        }
+      })();
     } catch {
       window.localStorage.removeItem('textra:workspace-session');
     }
   }, [preferences.restoreSession]);
   useEffect(() => {
     if (!project || !preferences.restoreSession) return;
+    const matchingRecent = recents.find((item) => item.rootPath === project.rootPath);
+    if (!matchingRecent) return;
     window.localStorage.setItem(
       'textra:workspace-session',
       JSON.stringify({
-        projectId: project.id,
+        recentId: matchingRecent.id,
+        projectId: matchingRecent.id,
         paths: documents.map((document) => document.path),
         activePath,
       }),
     );
-  }, [activePath, documents, preferences.restoreSession, project]);
+  }, [activePath, documents, preferences.restoreSession, project, recents]);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -459,7 +489,68 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [buildHistory, setBuildHistory] = useState<
     { outcome: string; recipe: string; time: string }[]
   >([]);
+  const [tabContextMenu, setTabContextMenu] = useState<{
+    x: number;
+    y: number;
+    path: string;
+    index: number;
+  } | null>(null);
+  const [tabOverflowOpen, setTabOverflowOpen] = useState(false);
   const restoredSession = useRef(false);
+
+  useEffect(() => {
+    if (!tabContextMenu && !tabOverflowOpen) return;
+    const dismiss = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest('.tab-context-menu, .tab-overflow-container')) return;
+      setTabContextMenu(null);
+      setTabOverflowOpen(false);
+    };
+    window.addEventListener('mousedown', dismiss);
+    return () => window.removeEventListener('mousedown', dismiss);
+  }, [tabContextMenu, tabOverflowOpen]);
+
+  const closeOtherTabs = (keepPath: string) => {
+    const toClose = documents.filter((d) => d.path !== keepPath);
+    for (const doc of toClose) {
+      if (dirty(doc)) protect(async () => closeDocument(doc.path));
+      else closeDocument(doc.path);
+    }
+  };
+
+  const closeTabsToTheRight = (index: number) => {
+    const toClose = documents.slice(index + 1);
+    for (const doc of toClose) {
+      if (dirty(doc)) protect(async () => closeDocument(doc.path));
+      else closeDocument(doc.path);
+    }
+  };
+
+  const closeSavedTabs = () => {
+    const toClose = documents.filter((d) => !dirty(d));
+    for (const doc of toClose) {
+      closeDocument(doc.path);
+    }
+  };
+  type BuildFeedback = 'idle' | 'success' | 'failed';
+  const [buildFeedback, setBuildFeedback] = useState<BuildFeedback>('idle');
+  const wasRunning = useRef(false);
+
+  useEffect(() => {
+    if (wasRunning.current && !build.running) {
+      if (build.outcome === 'success') {
+        setBuildFeedback('success');
+        const timer = window.setTimeout(() => setBuildFeedback('idle'), 2500);
+        return () => window.clearTimeout(timer);
+      } else if (build.outcome === 'failed') {
+        setBuildFeedback('failed');
+        const timer = window.setTimeout(() => setBuildFeedback('idle'), 3500);
+        return () => window.clearTimeout(timer);
+      }
+    } else if (build.running) {
+      setBuildFeedback('idle');
+    }
+    wasRunning.current = build.running;
+  }, [build.running, build.outcome]);
   const [projectSources, setProjectSources] = useState<Record<string, string>>({});
   const [lintDiagnostics, setLintDiagnostics] = useState<ProblemDiagnostic[]>([]);
   const [texlabStatus, setTexlabStatus] = useState<TexlabStatus | null>(null);
@@ -682,6 +773,197 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const polling = useRef(false);
   const operations = useRef(0);
   const active = documents.find((document) => document.path === activePath);
+  const [agentContext, setAgentContext] = useState<AIAgentContext | null>(null);
+  const [agentProposal, setAgentProposal] = useState<AIEditProposal | null>(null);
+  const agentApprovedSnapshot = useRef<Pick<
+    AIEditProposal,
+    'projectId' | 'path' | 'modified'
+  > | null>(null);
+  const [agentReviewBusy, setAgentReviewBusy] = useState(false);
+  const [agentReviewError, setAgentReviewError] = useState<string | null>(null);
+  const agentReviewRunning = useRef(false);
+  const agentHunks = useMemo(
+    () => (agentProposal ? agentEditHunks(agentProposal.content, agentProposal.modified) : []),
+    [agentProposal],
+  );
+  function reviewAgentProposal(proposal: AIEditProposal) {
+    agentApprovedSnapshot.current = null;
+    setAgentReviewError(null);
+    setAgentProposal(proposal);
+  }
+  async function runAgentReview(action: () => Promise<void>) {
+    if (agentReviewRunning.current) return;
+    agentReviewRunning.current = true;
+    setAgentReviewBusy(true);
+    setAgentReviewError(null);
+    try {
+      await action();
+    } catch (cause) {
+      setAgentReviewError(
+        cause instanceof Error ? cause.message : 'Could not complete the review action.',
+      );
+    } finally {
+      agentReviewRunning.current = false;
+      setAgentReviewBusy(false);
+    }
+  }
+  const agentProjectId = active?.projectId;
+  const agentPath = active?.path;
+  const agentContent = active?.content;
+  const agentRevision = active?.revision;
+  const agentConflict = active?.conflict;
+  useEffect(() => {
+    let current = true;
+    setAgentContext(null);
+    const snapshot =
+      agentProjectId &&
+      agentPath &&
+      agentContent !== undefined &&
+      agentRevision &&
+      !agentConflict &&
+      !busy &&
+      /\.tex$/i.test(agentPath) &&
+      agentContent.length <= AGENT_SOURCE_LIMIT
+        ? {
+            projectId: agentProjectId,
+            path: agentPath,
+            content: agentContent,
+            revision: agentRevision,
+          }
+        : null;
+    void window.textra
+      .syncAIAgentDocument(snapshot)
+      .then((result) => {
+        if (current && result.ok) setAgentContext(result.value);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [agentProjectId, agentPath, agentContent, agentRevision, agentConflict, busy]);
+  useEffect(
+    () => () => {
+      void window.textra.syncAIAgentDocument(null);
+    },
+    [],
+  );
+  const agentInvalidReason =
+    agentProposal &&
+    (busy ||
+      !active ||
+      active.conflict ||
+      agentContext?.contextId !== agentProposal.contextId ||
+      active.projectId !== agentProposal.projectId ||
+      active.path !== agentProposal.path ||
+      active.content !== agentProposal.content ||
+      active.revision !== agentProposal.revision)
+      ? 'The active file changed. Reject this proposal and ask again using the current file.'
+      : null;
+  async function saveApprovedAgentBuffer() {
+    const approved = agentApprovedSnapshot.current;
+    agentApprovedSnapshot.current = null;
+    if (!approved || !useUI.getState().preferences.autoSave) return;
+    const workspace = useWorkspace.getState();
+    const document = workspace.documents.find((item) => item.path === approved.path);
+    if (
+      !workspace.busy &&
+      workspace.project?.id === approved.projectId &&
+      document?.projectId === approved.projectId &&
+      !document.conflict &&
+      document.content === approved.modified &&
+      document.savedContent !== document.content
+    )
+      await saveDocument(approved.path);
+  }
+  async function decideAgentHunks(approveHunkIds: string[], rejectHunkIds: string[]) {
+    const proposal = agentProposal;
+    if (!proposal || agentInvalidReason) throw new Error('This proposal is no longer current.');
+    const result = unwrap(
+      await window.textra.reviewAIAgentProposal({
+        id: proposal.id,
+        contextId: proposal.contextId,
+        approveHunkIds,
+        rejectHunkIds,
+      }),
+    );
+    try {
+      const workspace = useWorkspace.getState();
+      const document = workspace.documents.find((item) => item.path === workspace.activePath);
+      if (
+        workspace.busy ||
+        !document ||
+        document.conflict ||
+        document.projectId !== proposal.projectId ||
+        document.path !== proposal.path ||
+        document.content !== proposal.content ||
+        document.revision !== proposal.revision
+      )
+        throw new Error(
+          'The active file changed while approving. Ask again using the current file.',
+        );
+      if (result.applied) {
+        const event = new CustomEvent('textra:apply-agent-edit', {
+          detail: result.applied,
+          cancelable: true,
+        });
+        if (window.dispatchEvent(event))
+          throw new Error('The active editor could not apply this proposal.');
+        agentApprovedSnapshot.current = result.applied;
+      }
+    } catch (cause) {
+      if (result.remaining)
+        await window.textra.rejectAIAgentProposal(result.remaining.id).catch(() => undefined);
+      setAgentProposal(null);
+      agentApprovedSnapshot.current = null;
+      const workspace = useWorkspace.getState();
+      const current = workspace.documents.find((item) => item.path === workspace.activePath);
+      const snapshot =
+        current &&
+        !current.conflict &&
+        !workspace.busy &&
+        /\.tex$/i.test(current.path) &&
+        current.content.length <= AGENT_SOURCE_LIMIT
+          ? {
+              projectId: current.projectId,
+              path: current.path,
+              content: current.content,
+              revision: current.revision,
+            }
+          : null;
+      const synced = await window.textra.syncAIAgentDocument(snapshot).catch(() => null);
+      const latest = useWorkspace.getState();
+      const latestDocument = latest.documents.find((item) => item.path === latest.activePath);
+      if (
+        latest.project?.id === workspace.project?.id &&
+        latest.activePath === workspace.activePath &&
+        latest.busy === workspace.busy &&
+        latestDocument?.projectId === current?.projectId &&
+        latestDocument?.path === current?.path &&
+        latestDocument?.content === current?.content &&
+        latestDocument?.revision === current?.revision &&
+        latestDocument?.conflict === current?.conflict
+      )
+        setAgentContext(synced?.ok ? synced.value : null);
+      window.dispatchEvent(
+        new CustomEvent('textra:notify', {
+          detail: {
+            message:
+              'The file changed during review. Your current text is safe; ask again to review fresh changes.',
+            tone: 'error',
+          },
+        }),
+      );
+      throw cause;
+    }
+    setAgentContext(result.context);
+    setAgentProposal(result.remaining);
+    if (!result.remaining) await saveApprovedAgentBuffer();
+  }
+  async function rejectAgentProposal() {
+    if (agentProposal) unwrap(await window.textra.rejectAIAgentProposal(agentProposal.id));
+    setAgentProposal(null);
+    await saveApprovedAgentBuffer();
+  }
   const recipeSettings = useMemo(
     () => validateRecipeSettings(state.projectConfig ?? {}),
     [state.projectConfig],
@@ -1421,6 +1703,54 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     window.addEventListener('keydown', keyboard);
     return () => window.removeEventListener('keydown', keyboard);
   });
+
+  useEffect(() => {
+    const handleCompile = () => void compile();
+    const handleSaveActive = () => {
+      if (activePath)
+        void run(async () => {
+          await saveAndLint(activePath);
+        });
+    };
+    const handleSaveAll = () =>
+      void run(async () => {
+        await saveAll();
+      });
+    const handleOpenFolder = () => openFolder();
+    const handleNewFile = () => newEntry('file');
+    const handleNewFolder = () => newEntry('directory');
+    const handleFormatDoc = () => void run(formatActive);
+    const handleCleanArtifacts = () => {
+      if (!project) return;
+      void run(async () => {
+        const result = await window.textra.cleanProjectBuildArtifacts(project.id);
+        if (!result.ok) throw new Error(result.error);
+      });
+    };
+    const handleToggleWrap = () => setWrap(!wrap);
+
+    window.addEventListener('textra:compile', handleCompile);
+    window.addEventListener('textra:save-active', handleSaveActive);
+    window.addEventListener('textra:save-all', handleSaveAll);
+    window.addEventListener('textra:open-folder', handleOpenFolder);
+    window.addEventListener('textra:new-file', handleNewFile);
+    window.addEventListener('textra:new-folder', handleNewFolder);
+    window.addEventListener('textra:format-document', handleFormatDoc);
+    window.addEventListener('textra:clean-artifacts', handleCleanArtifacts);
+    window.addEventListener('textra:toggle-wrap', handleToggleWrap);
+
+    return () => {
+      window.removeEventListener('textra:compile', handleCompile);
+      window.removeEventListener('textra:save-active', handleSaveActive);
+      window.removeEventListener('textra:save-all', handleSaveAll);
+      window.removeEventListener('textra:open-folder', handleOpenFolder);
+      window.removeEventListener('textra:new-file', handleNewFile);
+      window.removeEventListener('textra:new-folder', handleNewFolder);
+      window.removeEventListener('textra:format-document', handleFormatDoc);
+      window.removeEventListener('textra:clean-artifacts', handleCleanArtifacts);
+      window.removeEventListener('textra:toggle-wrap', handleToggleWrap);
+    };
+  });
   const selectedSteps = availableRecipes.find((recipe) => recipe.name === engine)!.tools;
   const missingTool =
     toolsReady &&
@@ -1510,25 +1840,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <button
             className="icon-button activity-view"
-            aria-label="Equations"
-            title="Equations: symbol palette"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'equations'}
-            onClick={() => selectSidebarView('equations')}
-          >
-            <span className="sigma-icon" aria-hidden="true">
-              Σ
-            </span>
-          </button>
-          <button
-            className="icon-button activity-view"
-            aria-label="Snippets"
-            title="Snippets: tables, figures and more"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'snippets'}
+            aria-label="Snippets & Symbols"
+            title="Snippets & Symbols: math symbols, tables, templates"
+            aria-pressed={
+              preferences.sidebarVisible &&
+              (sidebarView === 'snippets' || sidebarView === 'equations')
+            }
             onClick={() => selectSidebarView('snippets')}
           >
-            <span className="brace-icon" aria-hidden="true">
-              {'{}'}
-            </span>
+            <BracketsCurly
+              size={19}
+              weight={
+                preferences.sidebarVisible &&
+                (sidebarView === 'snippets' || sidebarView === 'equations')
+                  ? 'duotone'
+                  : 'light'
+              }
+            />
           </button>
           <button
             className="icon-button"
@@ -1580,6 +1908,28 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             style={{ width: preferences.sidebarWidth }}
           >
             <ChatPanel
+              agentContext={agentContext}
+              reviewActive={agentProposal !== null}
+              onReviewProposal={reviewAgentProposal}
+              reviewControls={
+                agentProposal ? (
+                  <AgentReviewControls
+                    total={agentHunks.length}
+                    busy={agentReviewBusy}
+                    invalidReason={agentInvalidReason}
+                    error={agentReviewError}
+                    onApproveAll={() =>
+                      void runAgentReview(() =>
+                        decideAgentHunks(
+                          agentHunks.map((hunk) => hunk.id),
+                          [],
+                        ),
+                      )
+                    }
+                    onRejectAll={() => void runAgentReview(rejectAgentProposal)}
+                  />
+                ) : null
+              }
               resetKey={project?.id ?? null}
               draft={chatDraft?.projectId === (project?.id ?? null) ? chatDraft : null}
               onDraftConsumed={() => setChatDraft(null)}
@@ -1626,10 +1976,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 onFormatDocument={() => void run(formatActive)}
                 formatAvailable={tools.some((tool) => tool.name === 'latexindent' && !!tool.path)}
               />
-            ) : sidebarView === 'snippets' ? (
+            ) : sidebarView === 'snippets' || sidebarView === 'equations' ? (
               <>
                 <div className="sidebar-title">
-                  <span className="sidebar-heading">Snippets</span>
+                  <span className="sidebar-heading">Snippets & Symbols</span>
                 </div>
                 <SnippetPalette canInsert={!!active} />
               </>
@@ -1693,13 +2043,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     <span>Folders you open will show up here.</span>
                   </div>
                 )}
-              </>
-            ) : sidebarView === 'equations' ? (
-              <>
-                <div className="sidebar-title">
-                  <span className="sidebar-heading">Equations</span>
-                </div>
-                <EquationPalette canInsert={!!active} />
               </>
             ) : sidebarView === 'compile' ? (
               <div className="writing-panel compile-sidebar">
@@ -2112,11 +2455,43 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
               <div className="editor-tab-strip">
                 <div className="document-tabs" role="tablist" aria-label="Open documents">
                   {documents.length ? (
-                    documents.map((document) => (
+                    documents.map((document, index) => (
                       <div
                         className={`document-tab ${document.path === activePath ? 'selected' : ''}${document.path === previewPath ? ' preview-tab' : ''}`}
                         key={document.path}
                         data-close-buttons={preferences.tabCloseButtons}
+                        draggable={true}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', String(index));
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fromIndex = Number(e.dataTransfer.getData('text/plain'));
+                          if (!isNaN(fromIndex) && fromIndex !== index) {
+                            reorderDocuments(fromIndex, index);
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setTabContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            path: document.path,
+                            index,
+                          });
+                        }}
+                        onAuxClick={(event) => {
+                          if (event.button === 1) {
+                            event.preventDefault();
+                            if (dirty(document)) protect(async () => closeDocument(document.path));
+                            else closeDocument(document.path);
+                          }
+                        }}
                       >
                         <button
                           role="tab"
@@ -2158,6 +2533,38 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     </div>
                   )}
                 </div>
+                {documents.length > 2 && (
+                  <div className="tab-overflow-container">
+                    <button
+                      className="icon-button small"
+                      aria-label="Open tabs list"
+                      title="Open tabs list"
+                      onClick={() => setTabOverflowOpen(!tabOverflowOpen)}
+                    >
+                      <ChevronDown size={13} />
+                    </button>
+                    {tabOverflowOpen && (
+                      <div className="tab-overflow-menu" role="menu">
+                        <div className="tab-overflow-header">OPEN EDITORS ({documents.length})</div>
+                        {documents.map((doc) => (
+                          <button
+                            key={doc.path}
+                            className={`tab-overflow-item ${doc.path === activePath ? 'active' : ''}`}
+                            role="menuitem"
+                            onClick={() => {
+                              setTabOverflowOpen(false);
+                              useWorkspace.setState({ activePath: doc.path, navigation: null });
+                            }}
+                          >
+                            <FileText size={13} />
+                            <span>{doc.path.split('/').at(-1)}</span>
+                            {dirty(doc) && <span className="dirty-dot" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {active && (
                   <div className="editor-tab-actions">
                     <button
@@ -2354,19 +2761,44 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       onClose={() => setComparison(null)}
                     />
                   ) : (
-                    <SourceEditor
-                      key={project?.id}
-                      documents={documents}
-                      activePath={active.path}
-                      theme={preferences.theme}
-                      navigation={navigation}
-                      fontSize={fontSize}
-                      wrap={wrap}
-                      readOnly={busy || active.conflict}
-                      formatToolbarVisible={formatToolbarVisible}
-                      bibliographyEntries={bibliographyEntries}
-                      texlab={texlabAdapter}
-                    />
+                    <div className="agent-review-editor-stack">
+                      <div
+                        className={`agent-review-source-host ${agentProposal ? 'is-reviewing' : ''}`}
+                        inert={agentProposal !== null}
+                      >
+                        <SourceEditor
+                          key={project?.id}
+                          documents={documents}
+                          activePath={active.path}
+                          theme={preferences.theme}
+                          navigation={navigation}
+                          fontSize={fontSize}
+                          wrap={wrap}
+                          readOnly={busy || active.conflict}
+                          autoSavePaused={agentProposal !== null}
+                          formatToolbarVisible={formatToolbarVisible}
+                          bibliographyEntries={bibliographyEntries}
+                          texlab={texlabAdapter}
+                        />
+                      </div>
+                      {agentProposal && (
+                        <AgentInlineReview
+                          proposal={agentProposal}
+                          hunks={agentHunks}
+                          onDecide={(id, decision) =>
+                            void runAgentReview(() =>
+                              decideAgentHunks(
+                                decision === 'approved' ? [id] : [],
+                                decision === 'rejected' ? [id] : [],
+                              ),
+                            )
+                          }
+                          invalidReason={agentInvalidReason}
+                          busy={agentReviewBusy}
+                          theme={preferences.theme}
+                        />
+                      )}
+                    </div>
                   )}
                 </>
               ) : (
@@ -2462,22 +2894,27 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   }}
                 >
                   <button
-                    className="toolbar-button compile-button"
+                    className={`toolbar-button compile-button compile-feedback-${buildFeedback}`}
+                    data-feedback={buildFeedback}
                     aria-label={build.running ? 'Cancel build' : 'Compile active document'}
                     title={
                       build.running
                         ? 'Cancel build'
-                        : !canCompile
-                          ? 'Open a .tex document to compile it.'
-                          : busy
-                            ? 'Wait for the current file operation to finish.'
-                            : missingTool
-                              ? engine + ' not found. Check Settings, LaTeX tools.'
-                              : 'Compile ' +
-                                (activePath ?? 'active document') +
-                                ' with ' +
-                                engine +
-                                ' (Ctrl+Enter)'
+                        : buildFeedback === 'success'
+                          ? 'Build succeeded!'
+                          : buildFeedback === 'failed'
+                            ? 'Build failed.'
+                            : !canCompile
+                              ? 'Open a .tex document to compile it.'
+                              : busy
+                                ? 'Wait for the current file operation to finish.'
+                                : missingTool
+                                  ? engine + ' not found. Check Settings, LaTeX tools.'
+                                  : 'Compile ' +
+                                    (activePath ?? 'active document') +
+                                    ' with ' +
+                                    engine +
+                                    ' (Ctrl+Enter)'
                     }
                     style={
                       build.running && build.stepCount
@@ -2499,8 +2936,22 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                         : void compile()
                     }
                   >
-                    {build.running ? <Square size={13} /> : <Play size={13} />}
-                    {build.running ? 'Cancel' : 'Compile'}
+                    {build.running ? (
+                      <Square size={13} />
+                    ) : buildFeedback === 'success' ? (
+                      <Check size={13} />
+                    ) : buildFeedback === 'failed' ? (
+                      <Warning size={13} />
+                    ) : (
+                      <Play size={13} />
+                    )}
+                    {build.running
+                      ? 'Cancel'
+                      : buildFeedback === 'success'
+                        ? 'Success!'
+                        : buildFeedback === 'failed'
+                          ? 'Failed'
+                          : 'Compile'}
                   </button>
                   <button
                     className="toolbar-button compile-button recipe-toggle"
@@ -2825,15 +3276,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   <PanelRightOpen size={17} />
                 </button>
                 <button
-                  className="collapsed-compile"
+                  className={`collapsed-compile collapsed-feedback-${buildFeedback}`}
+                  data-feedback={buildFeedback}
                   data-running={build.running ? 'true' : undefined}
                   aria-label={build.running ? 'Cancel build' : 'Compile active document'}
                   title={
                     build.running
                       ? 'Cancel build'
-                      : !canCompile
-                        ? 'Open a .tex document to compile it.'
-                        : 'Compile with ' + engine + ' (Ctrl+Enter)'
+                      : buildFeedback === 'success'
+                        ? 'Build succeeded!'
+                        : buildFeedback === 'failed'
+                          ? 'Build failed.'
+                          : !canCompile
+                            ? 'Open a .tex document to compile it.'
+                            : 'Compile with ' + engine + ' (Ctrl+Enter)'
                   }
                   disabled={!build.running && (!canCompile || busy)}
                   onClick={() =>
@@ -2846,6 +3302,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 >
                   {build.running ? (
                     <Square size={11} weight="fill" />
+                  ) : buildFeedback === 'success' ? (
+                    <Check size={12} weight="bold" />
+                  ) : buildFeedback === 'failed' ? (
+                    <Warning size={12} weight="fill" />
                   ) : (
                     <Play size={12} weight="fill" />
                   )}
@@ -3013,6 +3473,88 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
               {relative ? 'Copy Relative Path' : 'Copy Path'}
             </button>
           ))}
+        </div>
+      )}
+      {tabContextMenu && (
+        <div
+          className="file-menu tab-context-menu"
+          role="menu"
+          tabIndex={-1}
+          aria-label={'Tab actions for ' + tabContextMenu.path}
+          style={{ left: tabContextMenu.x, top: tabContextMenu.y }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setTabContextMenu(null);
+          }}
+        >
+          <div className="file-menu-name">{tabContextMenu.path.split('/').at(-1)}</div>
+          <button
+            role="menuitem"
+            onClick={() => {
+              const path = tabContextMenu.path;
+              setTabContextMenu(null);
+              const doc = documents.find((d) => d.path === path);
+              if (doc && dirty(doc)) protect(async () => closeDocument(path));
+              else closeDocument(path);
+            }}
+          >
+            Close
+          </button>
+          <button
+            role="menuitem"
+            disabled={documents.length <= 1}
+            onClick={() => {
+              const path = tabContextMenu.path;
+              setTabContextMenu(null);
+              closeOtherTabs(path);
+            }}
+          >
+            Close Other Tabs
+          </button>
+          <button
+            role="menuitem"
+            disabled={tabContextMenu.index >= documents.length - 1}
+            onClick={() => {
+              const idx = tabContextMenu.index;
+              setTabContextMenu(null);
+              closeTabsToTheRight(idx);
+            }}
+          >
+            Close Tabs to the Right
+          </button>
+          <button
+            role="menuitem"
+            disabled={!documents.some((d) => !dirty(d))}
+            onClick={() => {
+              setTabContextMenu(null);
+              closeSavedTabs();
+            }}
+          >
+            Close Saved Tabs
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              const path = tabContextMenu.path;
+              setTabContextMenu(null);
+              void navigator.clipboard.writeText(path);
+            }}
+          >
+            Copy Relative Path
+          </button>
+          {project && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                const path = tabContextMenu.path;
+                setTabContextMenu(null);
+                void run(async () => {
+                  unwrap(await window.textra.revealEntry({ projectId: project.id, path }));
+                });
+              }}
+            >
+              Open in File Explorer
+            </button>
+          )}
         </div>
       )}
       <Dialog.Root open={!!formatPreview} onOpenChange={(open) => !open && setFormatPreview(null)}>

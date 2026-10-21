@@ -16,6 +16,9 @@ Each phase depends on the preceding gate. Do not describe a partial gate as comp
 Common gate: `npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.
 Owner-requested AI slice (2026-10-20): optional Gemini 3.5 Flash Lite debugging chat,
 key onboarding/settings, and Problems drafts with opt-in auto-send are implemented.
+The owner subsequently authorized a bounded active-.tex Agent slice: Gemma 4 26B/31B,
+review-before-apply diffs and undoable buffer edits. Chat also permits Gemini 3.1 Flash Lite.
+This is not a general workspace agent; no other files, deletion, shell or background work.
 This does not close the remaining earlier phase gates. Repository-local encrypted
 settings must migrate to global app data before public release (SECURITY.md).
 Use PowerShell commands individually if the shell does not support `&&`.

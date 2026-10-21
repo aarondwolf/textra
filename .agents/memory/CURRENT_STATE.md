@@ -1,5 +1,60 @@
 # Current state
 
+2026-10-20 AI defaults/handoff complete: Chat and Agent both default to Gemini
+3.5 Flash Lite and expose all seven configured Google models. Chat asks for concise
+answers and labels actionable fixes; the latest completed suggestion shows an
+Implement Suggested Fix pill. Clicking switches to Agent, preserves draft/history,
+and explicitly sends the preceding conversation with a simple implementation request.
+Agent's first-selection disclosure fades after five seconds and never repeats in
+the same profile, including after restart. Active-.tex scope/review stay mandatory.
+Live verification found repeated guessed insertion columns; line tables now expose
+endColumn and recoverable errors give exact bounds, keeping existing budgets intact.
+All 418 unit/integration tests pass; build/typecheck/targeted lint/format pass.
+Native Chat and Agent verify menus/defaults, handoff context, disabled non-.tex input,
+notice fading/profile restart and sequential review; shell smoke passes. Live Gemini
+3.5 Flash Lite staged both lipsum edits and passed sequential approvals with unchanged
+disk after the column-feedback fix. Earlier failed live attempts are superseded by
+this passing rerun. Launch npm run dev. Existing mixed working changes are preserved
+and uncommitted; remaining roadmap gates unchanged.
+
+2026-10-20 Sequential Agent fix complete: multi-part editing now permits six model
+calls/twelve text tools under the unchanged 60-second deadline. Instructions require
+all requested parts, preserve original line targets after insertions, and use only
+the final narration. Budget exhaustion discards staging instead of returning partial
+edits. New narrow review IPC immediately approves/rejects named hunks, rebases only
+undecided changes, and advances the expected buffer/context. Renderer applies each
+approval undoably and removes it; the final decision returns to the normal editor.
+Approve all applies the remainder, Reject all keeps previously approved text.
+Auto-save pauses until review completes; stale async approvals discard remaining
+work and preserve the current file. Validation: 82 focused backend tests pass;
+full suite covered 386 tests (385 passed initially; one unrelated EBUSY preferences
+fixture cleanup passed on the six-test rerun). Typecheck/lint/build/task-format pass.
+Live Gemma 4 26B passed adding lipsum and replacing original line 28 in one proposal,
+then approving both sequentially with unchanged disk. Native immediate approvals,
+advancement, final dismissal, Undo, stale responses, chat and shell pass. Native
+fixture now waits for firstWindow before replacing IPC to avoid a startup race.
+Launch npm run dev. Prior unrelated renderer/sandbox changes remain preserved;
+working tree remains intentionally uncommitted. Earlier roadmap gates unchanged.
+
+2026-10-20 Bounded Agent/chat follow-up complete: checkpoint0ea59a2 committed prior
+working changes first. Chat now preserves conversations/drafts across mode switches,
+passes prior conversation to Agent, saves/restores workspace-specific local history,
+sends on Ctrl+Enter, and uses immediate model menu options with smaller send control.
+Chat adds Gemini3.8/3.6 Flash and3 Flash Preview; Lite defaults remain. Agent tools
+support omitted read args, line/column insertions and exact-text replacement, with
+safe bounded correction. Staged reads/valid edits finish inside3 calls/8tools.
+Inline read-only diff replaces modal; per-hunk decisions or Approve all then Apply
+approved changes exactly selected hunks, undoably, after context/disk/buffer checks.
+Monaco wordOperations import fixes cumulative Ctrl+Shift+Arrow selection.
+Evidence:377 full unit/integration tests pass, final agent/workspace73 and history4
+reruns pass. Build/typecheck/lint/task-format pass. Native chat/history, word selection,
+shell and final inline approval/reject/partial-apply/Undo/stale checks pass. Opt-in
+live Gemma4 26B proposed and main accepted exact temporary-file lorem ipsum insertion;
+disk stayed unchanged. Native screenshots reviewed. No plaintext key exposure.
+Launch npm run dev. Remaining roadmap gates stay incomplete. This feature slice
+remains uncommitted alongside concurrent unrelated renderer/sandbox changes, preserved
+without staging or reverting them. Global format still flags sandbox/issues.md.
+
 2026-10-20 Chat alignment polish: header uses shared --bar-height like editor/preview,
 no wrapping, with compact 24px pill buttons. Rail uses a single chat-and-sparkles SVG
 through the existing Phosphor IconBase/context. Send glyph shrank from 16px to 14px

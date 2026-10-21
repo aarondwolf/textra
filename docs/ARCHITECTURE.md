@@ -31,13 +31,33 @@ safeStorage-encrypted repository-local AI settings; preload exposes only setting
 key-test/save, bounded text conversation, cancellation, and a fixed AI Studio link.
 Chat has no project service or tools. The renderer explicitly builds Problems snippets
 from the chosen diagnostic and current buffer (or a normal validated file read), then
-shows a draft by default. Chat and Settings share one configuration form. Session-only
-history survives sidebar switches and resets when the selected project changes.
+shows a draft by default. Chat and Settings share one configuration form. AIChatStore persists
+bounded transcripts in userData by canonical workspace hash; opaque scope registration isolates
+queued saves across project switches. Chat history survives mode switches, and Agent receives
+validated prior conversation for handoff. Drafts and pending proposals are not persisted.
 Gemini chat uses the SDK's streaming API. A narrow response event carries a request ID and
 bounded cumulative text; the renderer accepts only its current request's updates. Successful
 responses enter the conversation once. Interrupted partial text stays visible for review but
 is excluded from subsequent requests. Markdown uses the existing React-node preview renderer
 without HTML injection. The chat follows arriving text only while the reader is near the bottom.
+
+Chat and Agent model IDs live in shared allowlists and are enforced again in main.
+Both modes expose the same seven Google models and default to Gemini 3.5 Flash Lite.
+The concise Chat prompt labels actionable fixes; the renderer offers an explicit
+Implement Suggested Fix action that switches modes and submits the existing conversation
+with a short implementation instruction. It uses the normal Agent scope/review path.
+The first-selection Agent notice fades out and stores only a local UI dismissal flag.
+BoundedAgentService stages active `.tex` text tools in memory with a fixed call budget;
+it has no filesystem or process dependency. AgentWorkspaceService binds its opaque context
+to a validated ProjectService path and disk revision. Narrow document/run/accept/reject
+IPC methods expose no tool dispatcher. Renderer syncs the active buffer snapshot, shows
+a read-only inline Monaco diff, and immediately applies each approved hunk as an undoable
+editor edit. Main validates hunk IDs, consumes the old proposal, advances the expected buffer
+and context, and rebases only undecided changes into a fresh proposal. Renderer rechecks the
+old live buffer before applying and echoes the new snapshot. Rejections remove only their
+changes; Approve all applies the remainder together. Auto-save pauses until review finishes.
+Context changes revoke in-flight work and proposals. GeminiService serializes credential,
+chat and agent operations and owns cancellation and sanitized provider errors.
 
 Development uses `electron-vite dev --watch`: React HMR, main restart and preload
 reload. See the [official watch documentation](https://electron-vite.org/guide/hmr-and-hot-reloading)

@@ -47,6 +47,10 @@ import { LanguageService } from './services/language';
 import { TexlabManager } from './services/texlab-manager';
 import { TexlabError } from './services/texlab';
 import { AIError, GeminiService } from './services/gemini';
+import { BoundedAgentService } from './services/agent';
+import { AgentWorkspaceService } from './services/agent-workspace';
+import { AI_RATE_LIMIT_URL } from '../shared/ai';
+import { AIChatStore } from './services/ai-chats';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -73,6 +77,11 @@ const gemini = new GeminiService(join(app.getAppPath(), '.textra-local'), {
   decrypt: (value) => safeStorage.decryptString(value),
 });
 const projects = new ProjectService(app.getPath('userData'));
+const agent = new BoundedAgentService(gemini);
+const agentWorkspace = new AgentWorkspaceService(projects, agent);
+const aiChats = new AIChatStore(join(app.getPath('userData'), 'ai-chats'), (id) =>
+  projects.getRoot(id),
+);
 const externalEditor = new ExternalEditorService(projects);
 const builds = new BuildService((id) => projects.getRoot(id));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
@@ -243,7 +252,13 @@ function createWindow(): void {
     }
     event.preventDefault();
     forceClose = true;
-    void Promise.all([builds.cancel(), healthBuild?.cancel(), projects.flush(), config.flush()])
+    void Promise.all([
+      builds.cancel(),
+      healthBuild?.cancel(),
+      projects.flush(),
+      config.flush(),
+      aiChats.flush(),
+    ])
       .then(() => {
         dirty = false;
         if (!window.isDestroyed()) window.close();
@@ -309,8 +324,27 @@ void app.whenReady().then(() => {
         : undefined,
     );
   });
-  handle('textra:ai:cancel', 0, () => gemini.cancel());
+  handleRequest<'syncAIAgentDocument'>('textra:agent:document', (request) =>
+    agentWorkspace.sync(request),
+  );
+  handleRequest<'runAIAgent'>('textra:agent:run', (request) => agentWorkspace.run(request));
+  handleRequest<'acceptAIAgentProposal'>('textra:agent:accept', (request) =>
+    agentWorkspace.accept(request),
+  );
+  handleRequest<'rejectAIAgentProposal'>('textra:agent:reject', (request) =>
+    agentWorkspace.reject(request),
+  );
+  handleRequest<'reviewAIAgentProposal'>('textra:agent:review', (request) =>
+    agentWorkspace.review(request),
+  );
+  handle('textra:ai:cancel', 0, () => {
+    agent.cancel();
+    gemini.cancel();
+  });
   handle('textra:ai:studio', 0, () => shell.openExternal('https://aistudio.google.com/'));
+  handle('textra:ai:rate-limits', 0, () => shell.openExternal(AI_RATE_LIMIT_URL));
+  handleRequest<'listAIChats'>('textra:ai:chats:list', (projectId) => aiChats.list(projectId));
+  handleRequest<'saveAIChat'>('textra:ai:chats:save', (request) => aiChats.save(request));
   handle('textra:preferences:get', 0, () => preferences.get());
   void preferences
     .get()
@@ -640,6 +674,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('will-quit', () => {
+  agent.cancel();
   gemini.cancel();
   externalEditor.clear();
   void builds.cancel();

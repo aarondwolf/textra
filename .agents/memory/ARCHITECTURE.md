@@ -1,5 +1,28 @@
 # Architecture memory
 
+Chat and Agent share the same seven allowed Google models, both defaulting to
+Gemini 3.5 Flash Lite. GeminiService owns the encrypted key and serializes all provider
+operations. BoundedAgentService has no filesystem dependency: only staged pathless
+read_current_file/insert_text/replace_range, twelve tools, six API calls,
+60-second deadline. AgentWorkspaceService validates canonical project paths and
+disk revisions before run/accept. Active buffer snapshots get opaque expiring
+contexts. Renderer reviews disposable read-only Monaco diffs. Each review API call
+validates named approve/reject hunks, consumes the old proposal, updates the expected
+buffer/context and returns only undecided changes rebased onto approved text. Renderer
+checks the old live buffer after await, applies approvals through a guarded undoable
+editor event and echoes the new snapshot. Rejections skip text; the last decision
+closes review. No agent saves. Auto-save pauses during review and the normal guarded
+save resumes for approved text after review ends. Model menu and Chat/Agent toggle replace the
+previous locked label; mode switches preserve the transcript and use the mode's default model.
+
+Chat asks for concise replies and marks actionable fixes with **Suggested fix:**.
+A completed latest marked reply exposes an explicit Implement Suggested Fix action:
+switch to Agent/default model and send the existing transcript plus a simple request.
+Agent still requires an active .tex context and review. Its first-selection notice
+fades after five seconds and stores only a seen flag in profile localStorage.
+Agent read line tables include Unicode endColumn; invalid insertions return precise
+column bounds, avoiding repeated guessed positions without widening tool budgets.
+
 Single-key AI settings expose deleteAIKey() through preload. Main confirms with a
 native dialog and returns null on cancellation, otherwise GeminiService atomically
 clears the credential/auto-send flag. Replacement uses the same tested single-slot
@@ -11,13 +34,13 @@ active ID. Final replies commit once; partial cancelled/failed replies never ent
 conversation context. Gemini key tests remain lightweight nonstreaming requests. Existing
 safe React-node MarkdownPreview renders full-width responses without raw HTML interpretation.
 Response copy icons use the existing typed clipboard API. The compact composer contains two
-text rows and an inset locked model/send row; the current model remains Gemini-only.
+text rows and an inset model/mode/send row; resize is disabled.
 
 GeminiService owns bounded SDK calls and safeStorage-encrypted repository-local AI
 configuration; key material never returns through preload. Separate from portable
 preferences/exports and selected projects. Chat has no project service or tools;
 Workspace prepares explicitly selected Problems snippets and Chat reviews by default.
-Auto-send is an explicit persisted consent setting. Main pins endpoint/model and
+Auto-send is an explicit persisted Chat consent setting (Agent always manual). Main pins endpoint/model allowlists and
 sanitizes provider failures. Release TODO: move .textra-local to app userData.
 
 Root coordinator owns config, shared/api.ts, docs/memory and integration.

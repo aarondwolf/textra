@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import type { AIMessage, AISettings, BuildRequest, BuildState, Result } from '../../src/shared/api';
+import type { AIStoredChat } from '../../src/shared/ai';
 
 interface ChatTestState {
   settings: AISettings;
@@ -9,6 +10,8 @@ interface ChatTestState {
   keyDeletions: number;
   studioOpened: boolean;
   copiedText: string | null;
+  storedChats: AIStoredChat[];
+  savedChats: Array<{ projectId: string; chat: AIStoredChat }>;
   requests: AIMessage[][];
   activeRequestId?: string;
   release: ((result: Result<string>) => void) | null;
@@ -30,9 +33,11 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
   let application: ElectronApplication | undefined;
   try {
     application = await electron.launch({ args: ['.'], env: environment });
+    const page = await application.firstWindow();
     // Only the remote AI boundary is mocked. The native window, preload bridge,
     // UI, and non-AI handlers remain real except the explicit clipboard-write
-    // mock below. No key is written or sent online; the real clipboard is untouched.
+    // and local transcript mocks below. No key is written or sent online;
+    // the real clipboard is untouched.
     await application.evaluate(({ ipcMain }) => {
       const state: ChatTestState = {
         settings: { configured: false, autoSendProblems: false },
@@ -40,6 +45,27 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
         keyDeletions: 0,
         studioOpened: false,
         copiedText: null,
+        storedChats: [
+          {
+            id: 'restored-chat',
+            title: 'Restored debugging chat',
+            updatedAt: 2000,
+            messages: [
+              { role: 'user', text: 'Restored question' },
+              { role: 'model', text: 'Stored answer for this workspace.' },
+            ],
+          },
+          {
+            id: 'earlier-chat',
+            title: 'Earlier troubleshooting',
+            updatedAt: 1000,
+            messages: [
+              { role: 'user', text: 'An earlier question' },
+              { role: 'model', text: 'Earlier saved answer.' },
+            ],
+          },
+        ],
+        savedChats: [],
         requests: [],
         release: null,
       };
@@ -48,6 +74,20 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
         ipcMain.removeHandler(`textra:ai:${name}`);
       }
       ipcMain.handle('textra:ai:settings', () => ({ ok: true, value: state.settings }));
+      ipcMain.removeHandler('textra:ai:chats:list');
+      ipcMain.removeHandler('textra:ai:chats:save');
+      ipcMain.handle('textra:ai:chats:list', () => ({ ok: true, value: state.storedChats }));
+      ipcMain.handle(
+        'textra:ai:chats:save',
+        (_event, request: { projectId: string; chat: AIStoredChat }) => {
+          state.savedChats.push(request);
+          state.storedChats = [
+            request.chat,
+            ...state.storedChats.filter((chat) => chat.id !== request.chat.id),
+          ];
+          return { ok: true, value: undefined };
+        },
+      );
       ipcMain.removeHandler('textra:clipboard:copy');
       ipcMain.handle('textra:clipboard:copy', (_event, text: string) => {
         state.copiedText = text;
@@ -92,7 +132,6 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
         return { ok: true, value: undefined };
       });
     });
-    const page = await application.firstWindow();
     const chatRail = page.getByRole('button', { name: 'AI Chat', exact: true });
     await expect(chatRail.locator('svg')).toHaveCount(1);
     const railPlacement = await chatRail.evaluate((element) => {
@@ -147,24 +186,34 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     const sendBounds = await ask.boundingBox();
     expect(sendBounds).not.toBeNull();
     expect(Math.abs(sendBounds!.width - sendBounds!.height)).toBeLessThan(1);
+    expect(sendBounds!.width).toBe(24);
+    await expect(ask.locator('svg')).toHaveAttribute('width', '12');
     const composeFrame = chat.locator('.ai-chat-compose');
     await expect(composeFrame.locator('.ai-chat-actions')).toBeVisible();
     await expect(
       composeFrame.getByRole('button', { name: 'Send message', exact: true }),
     ).toBeVisible();
     const model = composeFrame.getByRole('button', {
-      name: 'Model: Gemini 3.5 Flash Lite (locked)',
+      name: 'Model',
       exact: true,
     });
-    await expect(model).toBeDisabled();
-    await expect(model).toHaveAttribute('title', /Gemini 3\.5 Flash Lite.*locked/i);
-    expect(
-      await model.evaluate((element) =>
-        [element, ...element.querySelectorAll('*')].some(
-          (node) => getComputedStyle(node).textOverflow === 'ellipsis',
-        ),
-      ),
-    ).toBe(true);
+    await expect(model).toBeEnabled();
+    await expect(model).toHaveAttribute('title', 'Gemini 3.5 Flash Lite');
+    await model.click();
+    const modelMenu = chat.getByRole('menu', { name: 'AI model', exact: true });
+    await expect(modelMenu.getByRole('menuitemradio')).toHaveText([
+      'Gemini 3.5 Flash Lite',
+      'Gemini 3.1 Flash Lite',
+      'Gemini 3.8 Flash',
+      'Gemini 3.6 Flash',
+      'Gemini 3 Flash (Preview)',
+      'Gemma 4 26B',
+      'Gemma 4 31B',
+    ]);
+    await expect(
+      modelMenu.getByRole('menuitemradio', { name: 'Gemini 3.5 Flash Lite', exact: true }),
+    ).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Escape');
     await composer.fill('   ');
     await expect(ask).toBeDisabled();
     await composer.fill('');
@@ -233,7 +282,7 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await composer.fill('Why is my LaTeX brace missing?');
     await expect(ask).toBeEnabled();
     await expect(ask).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await ask.click();
+    await composer.press('Control+Enter');
     await expect(chat.getByRole('status')).toContainText('Gemini is thinking');
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toBeVisible();
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toHaveText('');
@@ -259,8 +308,11 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await expect(history.locator('pre code')).toHaveText('\\textbf{Fixed}');
     await expect(history.getByRole('listitem')).toHaveText(['Check braces', 'Compile again']);
     await expect(history.getByRole('list')).toHaveCSS('list-style-type', 'disc');
+    await expect(
+      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
+    ).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('chat-streaming-markdown.png') });
-    const completedReply = `${streamedReply}\n\nAdd the closing brace after the command argument.`;
+    const completedReply = `${streamedReply}\n\n**Suggested fix:** Add the closing brace after the command argument.`;
     await application.evaluate((_electron, text) => {
       const state = (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest;
       state.release?.({ ok: true, value: text });
@@ -270,6 +322,9 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await expect(history).toContainText('Add the closing brace after the command argument.');
     await expect(history.getByRole('article', { name: 'Response in progress' })).toHaveCount(0);
     await expect(history.locator('strong').filter({ hasText: 'Likely cause:' })).toHaveCount(1);
+    await expect(
+      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
+    ).toBeDisabled();
     const assistant = history.getByRole('article', { name: 'Assistant response', exact: true });
     await expect(assistant).toHaveCSS('border-top-width', '0px');
     await expect(assistant).toHaveCSS('padding', '0px');
@@ -286,6 +341,11 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
         () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.copiedText,
       ),
     ).toBe(completedReply);
+    await chat.getByRole('button', { name: 'Agent', exact: true }).click();
+    await expect(history).toContainText('Add the closing brace after the command argument.');
+    await expect(history).toContainText('Why is my LaTeX brace missing?');
+    await chat.getByRole('button', { name: 'Chat', exact: true }).click();
+    await expect(history).toContainText('Add the closing brace after the command argument.');
     await composer.fill('What should I check next?');
     await ask.click();
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toBeVisible();
@@ -302,12 +362,15 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
       state.release?.({ ok: false, error: 'Quota exceeded', code: 'AI_RATE_LIMIT' });
       state.release = null;
     });
-    await expect(chat.getByRole('alert')).toContainText('too many requests');
+    await expect(chat.getByRole('alert')).toContainText('rate or quota limit');
     await expect(
       history.getByRole('article', { name: 'Incomplete response', exact: true }),
     ).toContainText('Incomplete response before a quota error.');
     await chat.getByRole('button', { name: 'Retry response', exact: true }).click();
     await expect(history).toContainText('Retry succeeded. Check the missing brace.');
+    await expect(
+      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
+    ).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('chat-conversation.png') });
     const requests = await application.evaluate(
       () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.requests,
@@ -419,6 +482,37 @@ test('native Gemini chat onboards, retries, cancels, and reviews Problems before
     await page.getByRole('button', { name: 'File Explorer', exact: true }).click();
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
+    await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
+    await expect(history).toContainText('Stored answer for this workspace.');
+    await expect(history).toContainText('Restored question');
+    const historyButton = chat.getByRole('button', { name: 'Chat history', exact: true });
+    await expect(historyButton).toBeEnabled();
+    await chat.getByRole('button', { name: 'New chat', exact: true }).click();
+    await expect(history.locator('article')).toHaveCount(0);
+    await historyButton.click();
+    const historyMenu = chat.getByRole('menu', { name: 'Workspace chat history', exact: true });
+    await historyMenu.getByRole('menuitem', { name: /Earlier troubleshooting/ }).click();
+    await expect(history).toContainText('Earlier saved answer.');
+    await expect(history).not.toContainText('Stored answer for this workspace.');
+    await chat.getByRole('button', { name: 'New chat', exact: true }).click();
+    await expect(history.locator('article')).toHaveCount(0);
+    const savedTranscripts = await application.evaluate(
+      () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.savedChats,
+    );
+    expect(
+      savedTranscripts.some(
+        ({ chat }) =>
+          chat.id === 'restored-chat' &&
+          chat.messages[1]?.text === 'Stored answer for this workspace.',
+      ),
+    ).toBe(true);
+    expect(
+      savedTranscripts.some(
+        ({ chat }) =>
+          chat.id === 'earlier-chat' && chat.messages[1]?.text === 'Earlier saved answer.',
+      ),
+    ).toBe(true);
+    await expect(composer).toHaveValue('');
     await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
     await page.getByRole('tab', { name: 'Problems', exact: true }).click();
     const problem = page

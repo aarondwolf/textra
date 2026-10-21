@@ -112,6 +112,7 @@
   opacity: 0.8;
 }
 .pdf-scroll {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -123,7 +124,6 @@
   display: block;
   margin: 0 auto;
   background: white;
-  box-shadow: 0 4px 24px #0003;
 }
 .pdf-empty {
   min-height: 100%;
@@ -167,7 +167,12 @@
 .pdf-page {
   position: relative;
   width: fit-content;
-  margin: 0 auto;
+  margin: 0 auto 24px auto;
+  background: white;
+  box-shadow: 0 4px 24px #00000040;
+}
+.pdf-page:last-child {
+  margin-bottom: 20px;
 }
 .pdf-highlights {
   position: absolute;
@@ -179,4 +184,30 @@
   background: #f2c94c66;
   border-radius: 2px;
   mix-blend-mode: multiply;
+}
+.pdf-synctex-indicator {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(99, 182, 168, 0.45);
+  border: 2px solid var(--accent, #63b6a8);
+  pointer-events: none;
+  animation: synctex-pulse 1.8s ease-out forwards;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+}
+@keyframes synctex-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.2);
+    opacity: 0;
+  }
 }

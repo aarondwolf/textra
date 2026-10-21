@@ -1,5 +1,38 @@
 # Test evidence
 
+2026-10-20 shared defaults/handoff: all 418 tests across 32 unit/integration files
+pass. Production build, typecheck, targeted ESLint and task formatting pass. Mocked
+SDK coverage routes all seven allowed models in both modes and rejects unknown IDs;
+16 suggestion-label cases exclude code fences and incomplete labels. Native Chat,
+Agent and shell pass serially. Agent native covers explicit suggested-fix handoff
+with prior response/active context/default 3.5, once-only fading notice across mode,
+workspace and restart, and the existing review/conflict guards. A fixture assertion
+was corrected to expect the intentionally disabled non-.tex input. Two initial live
+3.5 attempts exhausted the bounded call budget through repeated invalid insertion
+columns. Added explicit endColumn read metadata and precise correctable bounds, plus
+a regression test. Final opt-in live Gemini 3.5 Flash Lite test passes both lipsum
+edits and sequential review with unchanged disk. No credential output; temporary
+fixture-only provider tracing was removed. Launch npm run dev. No phase gates advanced.
+
+2026-10-20 sequential review: backend82/82 pass; full386 cases covered after retrying
+an unrelated EBUSY preferences fixture cleanup (385 initial passes,6/6 rerun).
+Typecheck/lint/task-format/build pass. Live Gemma 4 26B successfully staged both
+lipsum edits and accepted them sequentially, leaving disk unchanged. Native immediate
+approval/skip, next-change advancement, final dismissal, Approve all, Undo, stale
+review reply, .tex scope and external conflict checks pass (26.6s). Native chat and
+shell pass. Startup mocks now wait for firstWindow before replacing IPC handlers.
+Launch npm run dev; remaining roadmap gates and unrelated dirty files preserved.
+
+2026-10-20 bounded Agent/chat follow-up: full Vitest377/377 passes, final agent/workspace
+73/73 and canonical history4/4 reruns pass. Production build, typecheck and lint pass.
+Native chat/history, cumulative word selection and shell pass. Opt-in real Gemma4 26B
+test passed the exact temporary-file lorem ipsum proposal/main acceptance with unchanged
+disk. No plaintext key logged or persisted. Mocked inline approval workflow passes,
+including two-hunk partial acceptance, Undo, stale replies and external-conflict invalidation.
+Global format retains unrelated sandbox/issues.md; task files checked separately.
+Run `npm run dev`. Live test requires explicit TEXTRA_LIVE_AI_TEST=1 and existing key;
+normal native checks do not consume Google quota. Remaining phase gates unchanged.
+
 2026-10-18 Windows: Node v24.14.0, npm 11.9.0; Git present. MiKTeX
 pdflatex/xelatex/lualatex/latexmk/bibtex/biber/synctex found on PATH.
 MiKTeX 25.12 (pdfTeX4.23), Git2.52.0.windows.1, Electron44.9.0,

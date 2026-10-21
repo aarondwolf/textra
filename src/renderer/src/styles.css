@@ -23,6 +23,38 @@
 .compile-button {
   background: var(--accent-bg);
   color: var(--accent);
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease,
+    border-color 0.4s ease;
+}
+.compile-button[data-feedback='success'],
+.compile-button.compile-feedback-success {
+  background: var(--accent-bg);
+  color: var(--accent-strong, var(--accent));
+  font-weight: 600;
+}
+.compile-button[data-feedback='failed'],
+.compile-button.compile-feedback-failed {
+  background: color-mix(in srgb, #e05252 22%, transparent);
+  color: #ff6b6b;
+  border-color: rgba(224, 82, 82, 0.4);
+  font-weight: 600;
+}
+.collapsed-compile {
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease;
+}
+.collapsed-compile[data-feedback='failed'],
+.collapsed-compile.collapsed-feedback-failed {
+  background: color-mix(in srgb, #e05252 22%, transparent);
+  color: #ff6b6b;
+}
+.collapsed-compile[data-feedback='success'],
+.collapsed-compile.collapsed-feedback-success {
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 .editor-toolbar select {
   background: var(--surface);
@@ -223,6 +255,64 @@
   color: var(--faint);
   opacity: 0;
 }
+.tab-overflow-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.tab-overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 8px 24px #0004;
+  padding: 4px;
+  z-index: 60;
+}
+.tab-overflow-header {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  padding: 4px 8px;
+}
+.tab-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.tab-overflow-item:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.tab-overflow-item.active {
+  color: var(--accent-strong);
+  background: var(--hover);
+}
+.tab-overflow-item span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-context-menu {
+  position: fixed;
+  z-index: 100;
+}
 .document-tab.selected .tab-close,
 .document-tab:hover .tab-close,
 .document-tab:focus-within .tab-close {
@@ -418,6 +508,47 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+.editor-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--faint);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  user-select: none;
+  flex-shrink: 0;
+}
+.editor-status-left,
+.editor-status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.editor-status-action {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.editor-status-action:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.editor-status-sep {
+  opacity: 0.4;
+  font-size: 8px;
 }
 .conflict-banner {
   background: #493e25;

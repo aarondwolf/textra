@@ -1,7 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowRight, Columns2, PanelLeft, Search } from './icons';
-import { DEFAULT_PREFERENCES } from '../../shared/api';
+import {
+  ArrowRight,
+  Columns2,
+  FilePdf,
+  FilePlus2,
+  FolderOpen,
+  FolderPlus,
+  Hammer,
+  LocateFixed,
+  Palette,
+  PanelLeft,
+  Pencil,
+  Play,
+  Save,
+  Scroll,
+  Search,
+  Settings,
+  Trash2,
+} from './icons';
+import { DEFAULT_PREFERENCES, type Theme } from '../../shared/api';
 import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
 import SetupDialog from './features/onboarding/SetupDialog';
@@ -10,13 +28,15 @@ import { ToastViewport } from './features/notifications/ToastViewport';
 
 const SHORTCUT_REFERENCE = [
   ['Command palette', 'Ctrl/Cmd K'],
+  ['Compile active document', 'Ctrl/Cmd Enter'],
   ['Save current file', 'Ctrl/Cmd S'],
   ['Save file as', 'Shift Ctrl/Cmd S'],
-  ['Compile active document', 'Ctrl/Cmd Enter'],
+  ['Open folder', 'Ctrl/Cmd O'],
   ['Toggle sidebar', 'Ctrl/Cmd B'],
   ['Toggle preview/output', 'Ctrl/Cmd J'],
   ['Find in editor or preview', 'Ctrl/Cmd F'],
   ['Find and replace in editor', 'Ctrl/Cmd H'],
+  ['Go to line', 'Ctrl/Cmd G'],
 ] as const;
 
 function CommandPalette() {
@@ -27,12 +47,103 @@ function CommandPalette() {
     setPaletteOpen,
     expandedPane,
     setExpandedPane,
+    setRecipeEditorOpen,
   } = useUI();
   const [query, setQuery] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const allCommands = [
+    {
+      label: 'Compile active document',
+      shortcut: 'Ctrl Enter',
+      icon: Play,
+      run: () => window.dispatchEvent(new Event('textra:compile')),
+    },
+    {
+      label: 'Save current file',
+      shortcut: 'Ctrl S',
+      icon: Save,
+      run: () => window.dispatchEvent(new Event('textra:save-active')),
+    },
+    {
+      label: 'Save all open files',
+      shortcut: '',
+      icon: Save,
+      run: () => window.dispatchEvent(new Event('textra:save-all')),
+    },
+    {
+      label: 'Open project folder',
+      shortcut: 'Ctrl O',
+      icon: FolderOpen,
+      run: () => window.dispatchEvent(new Event('textra:open-folder')),
+    },
+    {
+      label: 'New file',
+      shortcut: '',
+      icon: FilePlus2,
+      run: () => window.dispatchEvent(new Event('textra:new-file')),
+    },
+    {
+      label: 'New folder',
+      shortcut: '',
+      icon: FolderPlus,
+      run: () => window.dispatchEvent(new Event('textra:new-folder')),
+    },
+    {
+      label: 'Find in PDF preview',
+      shortcut: 'Ctrl F',
+      icon: FilePdf,
+      run: () => window.dispatchEvent(new Event('textra:find-pdf')),
+    },
+    {
+      label: 'Find and replace in editor',
+      shortcut: 'Ctrl H',
+      icon: Search,
+      run: () => window.dispatchEvent(new Event('textra:replace-source')),
+    },
+    {
+      label: 'Go to line',
+      shortcut: 'Ctrl G',
+      icon: LocateFixed,
+      run: () => window.dispatchEvent(new Event('textra:goto-line')),
+    },
+    {
+      label: 'Format document with latexindent',
+      shortcut: '',
+      icon: Pencil,
+      run: () => window.dispatchEvent(new Event('textra:format-document')),
+    },
+    {
+      label: 'Clean generated build files',
+      shortcut: '',
+      icon: Trash2,
+      run: () => window.dispatchEvent(new Event('textra:clean-artifacts')),
+    },
+    {
+      label: 'Toggle word wrap',
+      shortcut: '',
+      icon: Scroll,
+      run: () => window.dispatchEvent(new Event('textra:toggle-wrap')),
+    },
+    {
+      label: 'Toggle formatting toolbar',
+      shortcut: '',
+      icon: Pencil,
+      run: () => updatePreferences({ formatToolbarVisible: !preferences.formatToolbarVisible }),
+    },
+    {
+      label: 'Manage compile recipes',
+      shortcut: '',
+      icon: Hammer,
+      run: () => setRecipeEditorOpen(true),
+    },
+    {
+      label: 'Open settings',
+      shortcut: '',
+      icon: Settings,
+      run: () => window.dispatchEvent(new Event('textra:open-settings')),
+    },
     {
       label: 'Toggle sidebar',
       shortcut: 'Ctrl B',
@@ -41,7 +152,7 @@ function CommandPalette() {
     },
     {
       label: 'Toggle preview pane',
-      shortcut: '',
+      shortcut: 'Ctrl J',
       icon: Columns2,
       run: () => updatePreferences({ previewVisible: !preferences.previewVisible }),
     },
@@ -78,6 +189,12 @@ function CommandPalette() {
         });
       },
     },
+    ...(['light', 'midnight', 'forest', 'ocean', 'rose', 'sand'] as Theme[]).map((theme) => ({
+      label: `Switch theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`,
+      shortcut: '',
+      icon: Palette,
+      run: () => updatePreferences({ theme }),
+    })),
   ];
   const search = query.toLowerCase().trim();
   const commands = [...allCommands]
@@ -234,6 +351,11 @@ export function App() {
   const { recipeEditorOpen, setRecipeEditorOpen } = useUI();
   useEffect(() => {
     void hydratePreferences();
+  }, []);
+  useEffect(() => {
+    const handleOpenSettings = () => setSettingsOpen(true);
+    window.addEventListener('textra:open-settings', handleOpenSettings);
+    return () => window.removeEventListener('textra:open-settings', handleOpenSettings);
   }, []);
   useEffect(() => {
     const root = document.documentElement;

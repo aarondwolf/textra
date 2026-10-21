@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Ellipsis, LocateFixed } from '../../icons';
 import {
@@ -79,6 +79,218 @@ function highlightRects(
   return found;
 }
 
+interface PageItemProps {
+  pdf: PDFDocumentProxy;
+  pageNumber: number;
+  scale: number;
+  defaultDimensions: { width: number; height: number };
+  searchTerm: string;
+  synctexLocation: PdfLocation | null;
+  scrollContainer: HTMLElement | null;
+  onInverse: (
+    event: React.MouseEvent<HTMLCanvasElement>,
+    pageNumber: number,
+    page: PDFPageProxy,
+    scale: number,
+  ) => void;
+  registerPageRef: (pageNumber: number, el: HTMLDivElement | null) => void;
+}
+
+function PdfPageItem({
+  pdf,
+  pageNumber,
+  scale,
+  defaultDimensions,
+  searchTerm,
+  synctexLocation,
+  scrollContainer,
+  onInverse,
+  registerPageRef,
+}: PageItemProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [pageProxy, setPageProxy] = useState<PDFPageProxy | null>(null);
+  const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number } | null>(
+    null,
+  );
+  const [isVisible, setIsVisible] = useState(false);
+  const [rendered, setRendered] = useState(false);
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [synctexPoint, setSynctexPoint] = useState<{ x: number; y: number } | null>(null);
+
+  // Intersection observer to track when page enters viewport window (+/- 600px buffer)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !scrollContainer) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting);
+      },
+      {
+        root: scrollContainer,
+        rootMargin: '600px 0px 600px 0px',
+      },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollContainer]);
+
+  // Unload rendered canvas memory for large documents when scrolled far away
+  useEffect(() => {
+    if (!isVisible && rendered && pdf && pdf.numPages > 30) {
+      setRendered(false);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+  }, [isVisible, rendered, pdf]);
+
+  // Render canvas buffer when visible
+  useEffect(() => {
+    if (!isVisible || !pdf) return;
+    let disposed = false;
+    let rendering: RenderTask | undefined;
+
+    void (async () => {
+      try {
+        const page = await pdf.getPage(pageNumber);
+        if (disposed) return;
+        setPageProxy(page);
+        const natural = page.getViewport({ scale: 1 });
+        setPageDimensions({ width: natural.width, height: natural.height });
+
+        const viewport = page.getViewport({ scale });
+        const ratio = Math.min(
+          window.devicePixelRatio || 1,
+          2,
+          Math.sqrt(16_000_000 / (viewport.width * viewport.height)),
+        );
+
+        const buffer = window.document.createElement('canvas');
+        buffer.width = Math.ceil(viewport.width * ratio);
+        buffer.height = Math.ceil(viewport.height * ratio);
+
+        rendering = page.render({
+          canvas: buffer,
+          viewport,
+          transform: [ratio, 0, 0, ratio, 0, 0],
+        });
+        await rendering.promise;
+        if (disposed) return;
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.width = buffer.width;
+          canvas.height = buffer.height;
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(buffer, 0, 0);
+          setRendered(true);
+        }
+      } catch (err) {
+        if (!disposed && !(err instanceof Error && err.name === 'RenderingCancelledException')) {
+          console.error(`Page ${pageNumber} render error:`, err);
+        }
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      rendering?.cancel();
+    };
+  }, [pdf, pageNumber, scale, isVisible]);
+
+  // Search highlights
+  useEffect(() => {
+    if (!pageProxy || !searchTerm || !isVisible) {
+      setHighlights([]);
+      return;
+    }
+    let disposed = false;
+    void (async () => {
+      try {
+        const content = await pageProxy.getTextContent();
+        if (disposed) return;
+        const viewport = pageProxy.getViewport({ scale });
+        setHighlights(highlightRects(content.items, viewport, searchTerm));
+      } catch {
+        if (!disposed) setHighlights([]);
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [pageProxy, searchTerm, scale, isVisible]);
+
+  // SyncTeX indicator
+  useEffect(() => {
+    if (!synctexLocation || synctexLocation.page !== pageNumber || !pageProxy) {
+      setSynctexPoint(null);
+      return;
+    }
+    const viewport = pageProxy.getViewport({ scale });
+    const [x, y] = viewport.convertToViewportPoint(
+      synctexLocation.x + pageProxy.view[0],
+      pageProxy.view[3] - synctexLocation.y,
+    );
+    setSynctexPoint({ x, y });
+    const timer = window.setTimeout(() => setSynctexPoint(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [synctexLocation, pageNumber, pageProxy, scale]);
+
+  const natural = pageDimensions ?? defaultDimensions;
+  const pageWidth = Math.round(natural.width * scale);
+  const pageHeight = Math.round(natural.height * scale);
+
+  return (
+    <div
+      className="pdf-page"
+      ref={(el) => {
+        containerRef.current = el;
+        registerPageRef(pageNumber, el);
+      }}
+      data-page-number={pageNumber}
+      style={{
+        width: `${pageWidth}px`,
+        height: `${pageHeight}px`,
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        aria-label={`PDF page ${pageNumber}`}
+        onDoubleClick={(event) => {
+          if (pageProxy) onInverse(event, pageNumber, pageProxy, scale);
+        }}
+        title="Double-click to find this position in the source"
+        style={{
+          display: isVisible || rendered ? 'block' : 'none',
+        }}
+      />
+      {highlights.length > 0 && (
+        <div className="pdf-highlights" aria-hidden="true">
+          {highlights.map((box, index) => (
+            <span key={index} className="pdf-highlight" style={box} />
+          ))}
+        </div>
+      )}
+      {synctexPoint && (
+        <div
+          className="pdf-synctex-indicator"
+          aria-hidden="true"
+          style={{
+            left: `${synctexPoint.x}px`,
+            top: `${synctexPoint.y}px`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 interface Props {
   project: ProjectInfo | null;
   build: BuildState;
@@ -111,6 +323,7 @@ export default function PdfViewer({
 }: Props) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [defaultDimensions, setDefaultDimensions] = useState({ width: 595, height: 842 });
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [fit, setFit] = useState(true);
@@ -123,24 +336,38 @@ export default function PdfViewer({
   const [matches, setMatches] = useState<number[]>([]);
   const [searched, setSearched] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [renderedScale, setRenderedScale] = useState(0);
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [location, setLocation] = useState<PdfLocation | null>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+
   const scroll = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const searchInput = useRef<HTMLInputElement>(null);
   const preservedScroll = useRef<{ top: number; left: number } | null>(null);
-  const pageInfo = useRef<{ page: PDFPageProxy; scale: number } | null>(null);
   const pdfRef = useRef<ReturnType<typeof getDocument> | null>(null);
-  const lastHeight = useRef(0);
   const searchId = useRef(0);
-  /** Scale requested by pinch/ctrl+wheel that the canvas has not caught up with yet. */
   const pendingScale = useRef<number | null>(null);
+  const isProgrammaticScroll = useRef(false);
+  const scrollTimer = useRef<number | undefined>(undefined);
+  const scrollRaf = useRef<number | null>(null);
+
+  const activeProject = project?.id;
+  const pdfPath = externalPdfPath ?? (build.projectId === activeProject ? build.pdfPath : null);
+
+  const scale = fit ? Math.min(3, Math.max(0.1, width / defaultDimensions.width)) : zoom;
+  const prevScaleRef = useRef(scale);
+
+  const pages = useMemo(() => {
+    if (!pdf) return [];
+    return Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+  }, [pdf]);
+
   const cancelSearch = useCallback(() => {
     searchId.current++;
   }, []);
-  const activeProject = project?.id;
-  const pdfPath = externalPdfPath ?? (build.projectId === activeProject ? build.pdfPath : null);
+
+  const registerPageRef = useCallback((pageNum: number, el: HTMLDivElement | null) => {
+    pageRefs.current[pageNum] = el;
+  }, []);
 
   useEffect(() => {
     if (searchOpen && pdf) {
@@ -163,17 +390,16 @@ export default function PdfViewer({
   function closeSearch() {
     setSearchOpen(false);
     setSearchTerm('');
-    setHighlights([]);
     cancelSearch();
     setSearching(false);
     scroll.current?.focus();
   }
 
+  // Observe container width changes for fit-width
   useEffect(() => {
     const element = scroll.current;
     if (!element) return;
     let timer: number | undefined;
-    // Re-fit only after resizing settles so the page is not re-rendered on every frame.
     const observer = new ResizeObserver(([entry]) => {
       const next = Math.round(entry.contentRect.width);
       if (next <= 0) return;
@@ -187,24 +413,35 @@ export default function PdfViewer({
     };
   }, []);
 
-  // Touchpad pinch arrives as a wheel event with ctrlKey set (Chromium synthesizes it), as does
-  // Ctrl+wheel. It must be a native non-passive listener so the browser's page zoom is cancelled.
+  // Scale preservation when container width or zoom changes
+  useEffect(() => {
+    if (
+      prevScaleRef.current &&
+      prevScaleRef.current !== scale &&
+      scroll.current &&
+      !preservedScroll.current
+    ) {
+      const ratio = scale / prevScaleRef.current;
+      scroll.current.scrollTop = scroll.current.scrollTop * ratio;
+      scroll.current.scrollLeft = scroll.current.scrollLeft * ratio;
+    }
+    prevScaleRef.current = scale;
+  }, [scale]);
+
+  // Touchpad pinch / Ctrl+wheel zoom
   useEffect(() => {
     const element = scroll.current;
     if (!element) return;
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey) return;
       event.preventDefault();
-      const info = pageInfo.current;
-      if (!info) return;
-      const base = pendingScale.current ?? info.scale;
+      const base = pendingScale.current ?? scale;
       const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
       const next = Math.min(
         MAX_ZOOM,
         Math.max(MIN_ZOOM, base * Math.exp(-event.deltaY * lines * 0.01)),
       );
       if (Math.abs(next - base) < 1e-4) return;
-      // Keep the point under the cursor fixed while the page grows or shrinks.
       const bounds = element.getBoundingClientRect();
       const pointX = event.clientX - bounds.left;
       const pointY = event.clientY - bounds.top;
@@ -223,17 +460,29 @@ export default function PdfViewer({
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [scale]);
+
+  // Apply preserved scroll after pinch zoom
+  useEffect(() => {
+    if (preservedScroll.current && scroll.current) {
+      scroll.current.scrollTo(preservedScroll.current.left, preservedScroll.current.top);
+      preservedScroll.current = null;
+      pendingScale.current = null;
+    }
+  }, [scale]);
 
   useEffect(
     () => () => {
       const last = pdfRef.current;
       pdfRef.current = null;
       if (last) void last.destroy().catch(() => undefined);
+      if (scrollRaf.current !== null) cancelAnimationFrame(scrollRaf.current);
+      window.clearTimeout(scrollTimer.current);
     },
     [],
   );
 
+  // Load PDF
   useEffect(() => {
     let disposed = false;
     let adopted = false;
@@ -273,11 +522,22 @@ export default function PdfViewer({
           await task.destroy();
           return;
         }
-        // Swap documents without unmounting the canvas, so recompiling does not flash.
+
         const previous = pdfRef.current;
         pdfRef.current = task;
         adopted = true;
         setPdf(loaded);
+
+        // Fetch page 1 natural dimensions for layout placeholders
+        try {
+          const firstPage = await loaded.getPage(1);
+          const firstViewport = firstPage.getViewport({ scale: 1 });
+          setDefaultDimensions({ width: firstViewport.width, height: firstViewport.height });
+        } catch {
+          // Standard A4 dimensions
+          setDefaultDimensions({ width: 595, height: 842 });
+        }
+
         setPageNumber((current) => Math.min(Math.max(1, current), loaded.numPages));
         if (previous) window.setTimeout(() => void previous.destroy().catch(() => undefined), 1000);
       } catch (failure) {
@@ -292,106 +552,112 @@ export default function PdfViewer({
       cancelSearch();
       if (task && !adopted) void task.destroy().catch(() => undefined);
     };
-  }, [activeProject, pdfPath, build.pdfVersion, cancelSearch]);
+  }, [activeProject, pdfPath, build.pdfVersion, cancelSearch, externalPdfPath]);
 
-  useEffect(() => {
-    if (!pdf || !canvas.current) return;
-    let disposed = false;
-    let rendering: RenderTask | undefined;
-    const element = canvas.current;
-    const previousScroll = preservedScroll.current ?? {
-      top: scroll.current?.scrollTop ?? 0,
-      left: scroll.current?.scrollLeft ?? 0,
-    };
-    void (async () => {
-      try {
-        const page = await pdf.getPage(pageNumber);
-        if (disposed) return;
-        const natural = page.getViewport({ scale: 1 });
-        const scale = fit ? Math.min(3, Math.max(0.1, width / natural.width)) : zoom;
-        const viewport = page.getViewport({ scale });
-        // Bound backing canvas memory independently of oversized PDF page dimensions.
-        const ratio = Math.min(
-          window.devicePixelRatio || 1,
-          2,
-          Math.sqrt(16_000_000 / (viewport.width * viewport.height)),
-        );
-        // Draw off screen, then swap in one step. Resizing the visible canvas clears it, which
-        // showed up as flicker whenever the page re-rendered.
-        const buffer = window.document.createElement('canvas');
-        buffer.width = Math.ceil(viewport.width * ratio);
-        buffer.height = Math.ceil(viewport.height * ratio);
-        rendering = page.render({
-          canvas: buffer,
-          viewport,
-          transform: [ratio, 0, 0, ratio, 0, 0],
+  // Programmatic scroll to page
+  const scrollToPage = useCallback(
+    (targetPage: number, behavior: ScrollBehavior = 'smooth') => {
+      if (!pdf) return;
+      const target = Math.min(pdf.numPages, Math.max(1, targetPage));
+      setPageNumber(target);
+      setLocation(null);
+      const container = scroll.current;
+      const pageEl = pageRefs.current[target];
+      if (container && pageEl) {
+        isProgrammaticScroll.current = true;
+        const containerRect = container.getBoundingClientRect();
+        const pageRect = pageEl.getBoundingClientRect();
+        const targetScrollTop = pageRect.top - containerRect.top + container.scrollTop - 20;
+        container.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior,
         });
-        await rendering.promise;
-        if (disposed) return;
-        const context = element.getContext('2d');
-        const oldHeight = lastHeight.current;
-        element.width = buffer.width;
-        element.height = buffer.height;
-        element.style.width = `${viewport.width}px`;
-        element.style.height = `${viewport.height}px`;
-        context?.drawImage(buffer, 0, 0);
-        lastHeight.current = viewport.height;
-        pageInfo.current = { page, scale };
-        if (pendingScale.current !== null && Math.abs(pendingScale.current - scale) < 1e-4)
-          pendingScale.current = null;
-        setRenderedScale(scale);
-        // Keep the reading position when the page changes size (window resize, zoom).
-        const factor = preservedScroll.current || !oldHeight ? 1 : viewport.height / oldHeight;
-        scroll.current?.scrollTo(previousScroll.left * factor, previousScroll.top * factor);
-        preservedScroll.current = null;
-        if (location?.page === pageNumber) {
-          const [x, y] = viewport.convertToViewportPoint(
-            location.x + page.view[0],
-            page.view[3] - location.y,
-          );
-          scroll.current?.scrollTo({
-            left: Math.max(0, x - width / 2),
-            top: Math.max(0, y - 120),
-            behavior: 'smooth',
-          });
-        }
-      } catch (failure) {
-        if (
-          !disposed &&
-          !(failure instanceof Error && failure.name === 'RenderingCancelledException')
-        )
-          setError(failure instanceof Error ? failure.message : 'Page could not be rendered.');
+        window.clearTimeout(scrollTimer.current);
+        scrollTimer.current = window.setTimeout(() => {
+          isProgrammaticScroll.current = false;
+        }, 700);
       }
-    })();
-    return () => {
-      disposed = true;
-      rendering?.cancel();
-    };
-  }, [pdf, pageNumber, zoom, fit, width, location]);
+    },
+    [pdf],
+  );
 
-  // Search highlights are computed separately so searching never re-renders the page bitmap.
-  useEffect(() => {
-    if (!pdf || !searchTerm || !renderedScale) {
-      setHighlights([]);
-      return;
-    }
-    let disposed = false;
-    void (async () => {
+  // SyncTeX location scrolling
+  const scrollToLocation = useCallback(
+    async (loc: PdfLocation) => {
+      const container = scroll.current;
+      const pageEl = pageRefs.current[loc.page];
+      if (!container || !pageEl || !pdf) return;
+
+      isProgrammaticScroll.current = true;
       try {
-        const page = await pdf.getPage(pageNumber);
-        const content = await page.getTextContent();
-        if (!disposed)
-          setHighlights(
-            highlightRects(content.items, page.getViewport({ scale: renderedScale }), searchTerm),
-          );
+        const page = await pdf.getPage(loc.page);
+        const natural = page.getViewport({ scale: 1 });
+        const currentScale = fit ? Math.min(3, Math.max(0.1, width / natural.width)) : zoom;
+        const viewport = page.getViewport({ scale: currentScale });
+        const [vx, vy] = viewport.convertToViewportPoint(
+          loc.x + page.view[0],
+          page.view[3] - loc.y,
+        );
+        const containerRect = container.getBoundingClientRect();
+        const pageRect = pageEl.getBoundingClientRect();
+        const targetY = pageRect.top - containerRect.top + container.scrollTop + vy - 120;
+        const targetX = Math.max(0, vx - width / 2);
+        container.scrollTo({
+          top: Math.max(0, targetY),
+          left: targetX,
+          behavior: 'smooth',
+        });
       } catch {
-        if (!disposed) setHighlights([]);
+        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
-    })();
-    return () => {
-      disposed = true;
-    };
-  }, [pdf, pageNumber, searchTerm, renderedScale]);
+
+      window.clearTimeout(scrollTimer.current);
+      scrollTimer.current = window.setTimeout(() => {
+        isProgrammaticScroll.current = false;
+      }, 700);
+    },
+    [pdf, fit, width, zoom],
+  );
+
+  // Dynamic scroll listener: tracks active page in view for the toolbar
+  const handleScroll = useCallback(() => {
+    if (isProgrammaticScroll.current) return;
+    if (scrollRaf.current !== null) return;
+
+    scrollRaf.current = requestAnimationFrame(() => {
+      scrollRaf.current = null;
+      const container = scroll.current;
+      if (!container || !pdf) return;
+
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+        setPageNumber(pdf.numPages);
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      const focalY = containerRect.top + Math.min(150, containerRect.height / 3);
+
+      let currentVisiblePage = 1;
+      let minDistance = Infinity;
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const el = pageRefs.current[i];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= focalY && rect.bottom >= focalY) {
+          currentVisiblePage = i;
+          break;
+        }
+        const dist = Math.min(Math.abs(rect.top - focalY), Math.abs(rect.bottom - focalY));
+        if (dist < minDistance) {
+          minDistance = dist;
+          currentVisiblePage = i;
+        }
+      }
+
+      setPageNumber((current) => (current !== currentVisiblePage ? currentVisiblePage : current));
+    });
+  }, [pdf]);
 
   async function findText() {
     if (!pdf || !query.trim()) return;
@@ -414,8 +680,7 @@ export default function PdfViewer({
       setSearched(true);
       setSearchTerm(query.trim());
       if (found[0]) {
-        setLocation(null);
-        setPageNumber(found[0]);
+        scrollToPage(found[0]);
       }
     } catch {
       if (id === searchId.current) setError('PDF text search could not finish.');
@@ -423,6 +688,7 @@ export default function PdfViewer({
       if (id === searchId.current) setSearching(false);
     }
   }
+
   async function forward() {
     if (!project || !source || !build.rootFile) return;
     setError(null);
@@ -433,41 +699,48 @@ export default function PdfViewer({
       line: source.line,
     });
     if (result.ok) {
-      setPageNumber(result.value.page);
-      setLocation(result.value);
+      const loc = result.value;
+      setPageNumber(loc.page);
+      setLocation(loc);
+      void scrollToLocation(loc);
     } else setError(result.error);
   }
-  async function inverse(event: React.MouseEvent<HTMLCanvasElement>) {
-    const info = pageInfo.current;
-    if (!project || !build.rootFile || !info) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const viewport = info.page.getViewport({ scale: info.scale });
-    const [x, y] = viewport.convertToPdfPoint(
-      event.clientX - bounds.left,
-      event.clientY - bounds.top,
-    );
-    const result = await window.textra.syncInverse({
-      projectId: project.id,
-      rootFile: build.rootFile,
-      page: pageNumber,
-      x: x - info.page.view[0],
-      y: info.page.view[3] - y,
-    });
-    if (result.ok) {
-      setError(null);
-      onNavigate(result.value);
-    } else setError(result.error);
-  }
+
+  const handleInverse = useCallback(
+    async (
+      event: React.MouseEvent<HTMLCanvasElement>,
+      pageIndex: number,
+      page: PDFPageProxy,
+      pageScale: number,
+    ) => {
+      if (!project || !build.rootFile) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const viewport = page.getViewport({ scale: pageScale });
+      const [x, y] = viewport.convertToPdfPoint(
+        event.clientX - bounds.left,
+        event.clientY - bounds.top,
+      );
+      const result = await window.textra.syncInverse({
+        projectId: project.id,
+        rootFile: build.rootFile,
+        page: pageIndex,
+        x: x - page.view[0],
+        y: page.view[3] - y,
+      });
+      if (result.ok) {
+        setError(null);
+        onNavigate(result.value);
+      } else setError(result.error);
+    },
+    [project, build.rootFile, onNavigate],
+  );
 
   const toolbarInner = pdf ? (
     <>
       <button
         aria-label="Previous PDF page"
         disabled={pageNumber <= 1}
-        onClick={() => {
-          setLocation(null);
-          setPageNumber(pageNumber - 1);
-        }}
+        onClick={() => scrollToPage(pageNumber - 1)}
       >
         <ChevronLeft size={15} aria-hidden="true" />
       </button>
@@ -480,8 +753,18 @@ export default function PdfViewer({
           max={pdf.numPages}
           value={pageNumber}
           onChange={(event) => {
-            setLocation(null);
-            setPageNumber(Math.min(pdf.numPages, Math.max(1, Number(event.target.value) || 1)));
+            const val = Number(event.target.value);
+            if (!isNaN(val) && val >= 1 && val <= pdf.numPages) {
+              scrollToPage(val, 'auto');
+            } else {
+              setPageNumber(val);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              const val = Math.min(pdf.numPages, Math.max(1, pageNumber || 1));
+              scrollToPage(val, 'smooth');
+            }
           }}
         />{' '}
         / {pdf.numPages}
@@ -489,10 +772,7 @@ export default function PdfViewer({
       <button
         aria-label="Next PDF page"
         disabled={pageNumber >= pdf.numPages}
-        onClick={() => {
-          setLocation(null);
-          setPageNumber(pageNumber + 1);
-        }}
+        onClick={() => scrollToPage(pageNumber + 1)}
       >
         <ChevronRight size={15} aria-hidden="true" />
       </button>
@@ -635,11 +915,10 @@ export default function PdfViewer({
               <button
                 type="button"
                 onClick={() => {
-                  setLocation(null);
-                  setPageNumber(
+                  const prev =
                     [...matches].reverse().find((number) => number < pageNumber) ??
-                      matches[matches.length - 1],
-                  );
+                    matches[matches.length - 1];
+                  scrollToPage(prev);
                 }}
               >
                 Previous match
@@ -647,8 +926,8 @@ export default function PdfViewer({
               <button
                 type="button"
                 onClick={() => {
-                  setLocation(null);
-                  setPageNumber(matches.find((number) => number > pageNumber) ?? matches[0]);
+                  const next = matches.find((number) => number > pageNumber) ?? matches[0];
+                  scrollToPage(next);
                 }}
               >
                 Next match
@@ -664,11 +943,19 @@ export default function PdfViewer({
       )}
       <div
         className="pdf-scroll"
-        ref={scroll}
+        ref={(el) => {
+          scroll.current = el;
+          setScrollEl(el);
+        }}
         tabIndex={0}
         aria-label="PDF pages"
         aria-keyshortcuts="Control+f Meta+f Control+h Meta+h"
+        onScroll={handleScroll}
+        onWheel={() => {
+          isProgrammaticScroll.current = false;
+        }}
         onPointerDown={(event) => {
+          isProgrammaticScroll.current = false;
           if (
             event.target instanceof HTMLElement &&
             !event.target.closest('button, input, select, a, canvas')
@@ -681,20 +968,20 @@ export default function PdfViewer({
             Loading PDF…
           </div>
         ) : pdf ? (
-          <div className="pdf-page">
-            <canvas
-              ref={canvas}
-              tabIndex={0}
-              aria-label={`PDF page ${pageNumber}`}
-              onDoubleClick={(event) => void inverse(event)}
-              title="Double-click to find this position in the source"
+          pages.map((p) => (
+            <PdfPageItem
+              key={p}
+              pdf={pdf}
+              pageNumber={p}
+              scale={scale}
+              defaultDimensions={defaultDimensions}
+              searchTerm={searchTerm}
+              synctexLocation={location}
+              scrollContainer={scrollEl}
+              onInverse={handleInverse}
+              registerPageRef={registerPageRef}
             />
-            <div className="pdf-highlights" aria-hidden="true">
-              {highlights.map((box, index) => (
-                <span key={index} className="pdf-highlight" style={box} />
-              ))}
-            </div>
-          </div>
+          ))
         ) : (
           <div className="pdf-empty">
             <h2>PDF preview</h2>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { latexFoldingRanges } from './folding';
 import FormattingToolbar from './FormattingToolbar';
 // editor.api.js does not load the icon font that Monaco's widgets (find, suggest) use, and the
@@ -11,12 +11,14 @@ import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
 import 'monaco-editor/editor/contrib/folding/browser/folding.js';
 import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js';
 import 'monaco-editor/editor/contrib/comment/browser/comment.js';
+import 'monaco-editor/editor/contrib/wordOperations/browser/wordOperations.js';
 import 'monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols.js';
 import 'monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands.js';
 import 'monaco-editor/editor/contrib/hover/browser/hoverContribution.js';
 import 'monaco-editor/editor/contrib/inlayHints/browser/inlayHints.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { Theme, SourceLocation } from '../../../../shared/api';
+import type { AIEditProposal } from '../../../../shared/ai';
 import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
 import { editDocument, saveDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
@@ -513,6 +515,7 @@ export function SourceEditor({
   fontSize,
   wrap,
   readOnly,
+  autoSavePaused = false,
   formatToolbarVisible,
   bibliographyEntries,
   texlab,
@@ -524,6 +527,7 @@ export function SourceEditor({
   fontSize: number;
   wrap: boolean;
   readOnly: boolean;
+  autoSavePaused?: boolean;
   formatToolbarVisible: boolean;
   bibliographyEntries: readonly BibliographyEntry[];
   texlab?: TexlabEditorAdapter;
@@ -538,8 +542,18 @@ export function SourceEditor({
   const bibliographyEntriesRef = useRef(bibliographyEntries);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { autoSave, autoSaveDelayMs, editorMinimap } = useUI((state) => state.preferences);
-  const autoSavePreferences = useRef({ enabled: autoSave, delayMs: autoSaveDelayMs, readOnly });
+  const autoSavePreferences = useRef({
+    enabled: autoSave && !autoSavePaused,
+    delayMs: autoSaveDelayMs,
+    readOnly,
+  });
   const minimapPreference = useRef(editorMinimap);
+  const [cursorPos, setCursorPos] = useState({ line: 1, column: 1 });
+  const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(
+    null,
+  );
+  const [wordCount, setWordCount] = useState(0);
+  const [lineEnding, setLineEnding] = useState('LF');
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
@@ -550,9 +564,13 @@ export function SourceEditor({
     bibliographyEntriesRef.current = bibliographyEntries;
   }, [bibliographyEntries]);
   useEffect(() => {
-    autoSavePreferences.current = { enabled: autoSave, delayMs: autoSaveDelayMs, readOnly };
-    if (!autoSave && autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-  }, [autoSave, autoSaveDelayMs, readOnly]);
+    autoSavePreferences.current = {
+      enabled: autoSave && !autoSavePaused,
+      delayMs: autoSaveDelayMs,
+      readOnly,
+    };
+    if ((!autoSave || autoSavePaused) && autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+  }, [autoSave, autoSaveDelayMs, readOnly, autoSavePaused]);
   useEffect(() => {
     minimapPreference.current = editorMinimap;
   }, [editorMinimap]);
@@ -582,6 +600,32 @@ export function SourceEditor({
       theme: 'textra-dark',
     });
     editor.current = instance;
+    const applyAgentEdit = (event: Event) => {
+      const proposal = (event as CustomEvent<AIEditProposal>).detail;
+      const model = instance.getModel();
+      const document = documentsRef.current.find((item) => item.path === current.current);
+      if (
+        !proposal ||
+        !model ||
+        !document ||
+        document.conflict ||
+        instance.getOption(monaco.editor.EditorOption.readOnly) ||
+        document.projectId !== proposal.projectId ||
+        document.path !== proposal.path ||
+        document.revision !== proposal.revision ||
+        !/\.tex$/i.test(document.path) ||
+        model !== models.current.get(proposal.path) ||
+        model.getValue() !== proposal.content
+      )
+        return;
+      instance.pushUndoStop();
+      const applied = instance.executeEdits('textra-agent-review', [
+        { range: model.getFullModelRange(), text: proposal.modified },
+      ]);
+      instance.pushUndoStop();
+      if (applied) event.preventDefault();
+    };
+    window.addEventListener('textra:apply-agent-edit', applyAgentEdit);
     const replaceSource = () => {
       if (!instance.getModel()) return;
       instance.focus();
@@ -706,10 +750,22 @@ export function SourceEditor({
       });
     });
     const cursor = instance.onDidChangeCursorPosition((event) => {
+      setCursorPos({ line: event.position.lineNumber, column: event.position.column });
       if (current.current)
         useWorkspace.setState({
           source: { path: current.current, line: event.position.lineNumber },
         });
+    });
+    const selection = instance.onDidChangeCursorSelection((event) => {
+      const model = instance.getModel();
+      if (!model || event.selection.isEmpty()) {
+        setSelectionStats(null);
+      } else {
+        const text = model.getValueInRange(event.selection);
+        const chars = text.length;
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        setSelectionStats({ words, chars });
+      }
     });
     const sourceDocument = (model: monaco.editor.ITextModel) => {
       const document =
@@ -1060,11 +1116,13 @@ export function SourceEditor({
     const retainedModels = models.current;
     return () => {
       window.removeEventListener('textra:replace-source', replaceSource);
+      window.removeEventListener('textra:apply-agent-edit', applyAgentEdit);
       window.removeEventListener('textra:insert-source', insertSource);
       window.removeEventListener('textra:format-source', formatSource);
       content.dispose();
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       cursor.dispose();
+      selection.dispose();
       environmentEnter.dispose();
       completion.dispose();
       hover.dispose();
@@ -1177,12 +1235,65 @@ export function SourceEditor({
       editor.current?.focus();
     }
   }, [navigation, activePath]);
+
+  useEffect(() => {
+    const doc = documents.find((d) => d.path === activePath);
+    if (doc) {
+      const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+      setWordCount(words);
+      setLineEnding(doc.content.includes('\r\n') ? 'CRLF' : 'LF');
+    }
+  }, [activePath, documents]);
+
+  const handleGotoLine = () => {
+    const inst = editor.current;
+    if (!inst) return;
+    inst.focus();
+    void inst.getAction('editor.action.gotoLine')?.run();
+  };
+
+  useEffect(() => {
+    window.addEventListener('textra:goto-line', handleGotoLine);
+    return () => window.removeEventListener('textra:goto-line', handleGotoLine);
+  }, []);
+
   return (
     <div className="source-editor-shell">
       {formatToolbarVisible && (
         <EditorFormattingToolbar disabled={readOnly || !isTexPath(activePath)} />
       )}
       <div ref={container} className="source-editor" data-testid="source-editor" />
+      <div className="editor-status-bar" role="status" aria-label="Editor status">
+        <div className="editor-status-left">
+          <button
+            type="button"
+            className="editor-status-action"
+            title="Go to Line (Ctrl+G)"
+            onClick={handleGotoLine}
+          >
+            Ln {cursorPos.line}, Col {cursorPos.column}
+          </button>
+          <span className="editor-status-sep" aria-hidden="true">
+            •
+          </span>
+          <span className="editor-status-item">
+            {selectionStats
+              ? `${selectionStats.words} of ${wordCount} words (${selectionStats.chars} chars selected)`
+              : `${wordCount} words`}
+          </span>
+        </div>
+        <div className="editor-status-right">
+          <span className="editor-status-item">
+            {isTexPath(activePath)
+              ? 'LaTeX'
+              : /\.md$/i.test(activePath)
+                ? 'Markdown'
+                : 'Plain Text'}
+          </span>
+          <span className="editor-status-item">{lineEnding}</span>
+          <span className="editor-status-item">UTF-8</span>
+        </div>
+      </div>
     </div>
   );
 }

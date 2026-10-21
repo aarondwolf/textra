@@ -43,6 +43,8 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         'google',
         'openai',
         'anthropic',
+        'mistral',
+        'deepseek',
         'ollama-cloud',
         'ollama-local',
       ] as const;
@@ -201,8 +203,27 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await chat.getByRole('button', { name: 'Configure AI', exact: true }).click();
     const aiDialog = page.getByRole('dialog', { name: 'AI settings', exact: true });
     await expect(aiDialog).toBeVisible();
-    for (const name of ['Google Gemini', 'OpenAI', 'Anthropic', 'Ollama Cloud', 'Local Ollama'])
+    for (const name of [
+      'Google Gemini',
+      'OpenAI',
+      'Anthropic',
+      'Mistral',
+      'DeepSeek',
+      'Ollama Cloud',
+      'Local Ollama',
+    ])
       await expect(aiDialog.getByRole('region', { name, exact: true })).toBeVisible();
+    for (const name of ['Mistral', 'DeepSeek']) {
+      const card = aiDialog.getByRole('region', { name, exact: true });
+      await expect(card.getByLabel(`${name} API key`, { exact: true })).toHaveAttribute(
+        'type',
+        'password',
+      );
+      await expect(card.getByRole('link', { name: 'Get a key', exact: true })).toBeVisible();
+      await expect(
+        card.getByRole('button', { name: 'Save & load models', exact: true }),
+      ).toBeDisabled();
+    }
     const google = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
     await expect(aiDialog.getByRole('region', { name: 'Local Ollama', exact: true })).toContainText(
       'Not installed',

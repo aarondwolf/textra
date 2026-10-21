@@ -1,5 +1,16 @@
 # Decisions
 
+- 2026-10-21 AI catalogue/setup: add Mistral and DeepSeek using fixed official
+  endpoints and encrypted per-provider keys. Share the compatible wire transport,
+  preserve provider token fields and DeepSeek reasoning replay; keep one exact Chat
+  prompt for every route. Filter to text chat using capabilities/modalities where
+  present and model-family fallback for sparse listings/caches. Vision input with
+  text output remains eligible. Ollama metadata 404/405 permits name fallback; other
+  errors still surface. Existing cached specialist defaults repair without network
+  or credential changes. Setup cards remain catalogue driven, with concise copy.
+  API contracts verified against official Mistral Models/Chat, DeepSeek Models/
+  Chat/Thinking Mode, Ollama Show model details, and OpenAI Models documentation.
+
 - 2026-10-21 Agent multi-part reliability: replace the six-response/twelve-tool cap
   with 24 responses/64 tools. Each system prompt reports the remaining budget and
   asks for independent edits to be batched and a final response reserved. Error

@@ -1,5 +1,19 @@
 # Current state
 
+2026-10-21 AI setup/catalogue refactor: Mistral and DeepSeek added to the shared
+provider catalogue, encrypted settings and fixed-endpoint Chat/Agent routing.
+They share Chat Completions transport with OpenAI; max_tokens stays distinct from
+OpenAI's max_completion_tokens. DeepSeek reasoning_content is replayed for tools.
+Chat uses one unchanged CHAT_SYSTEM_PROMPT, tested verbatim across all seven wires.
+ai-models.ts centralizes text-model family/modality filtering and cache cleanup;
+Mistral completion_chat and Ollama /api/show completion capabilities refine discovery.
+Ollama checks four models at a time; 404/405 metadata endpoints use the ID fallback.
+Old cached specialist models are hidden and cannot be chosen for default/request;
+keys remain intact. Refresh models performs full capability discovery.
+Setup cards/copy are shorter; unused protocol metadata removed; Cancel replacement
+clears the abandoned key draft. Native Chat checks all seven cards and passes;
+verification details in TESTING.md. Launch npm run dev. Phase gates unchanged.
+
 2026-10-21 UI consistency and Agent reliability: action/menu buttons and native/model
 dropdowns use pill radii; Appearance select uses border-box paint with content insets.
 Native scrollbars share a 5px arrowless style; source and diff Monaco editors use

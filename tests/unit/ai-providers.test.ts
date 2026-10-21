@@ -7,6 +7,8 @@ import {
   type ProviderAccess,
   type ToolSpec,
 } from '../../src/main/services/ai-providers';
+import { CHAT_SYSTEM_PROMPT } from '../../src/main/services/ai-service';
+import { AI_PROVIDER_IDS } from '../../src/shared/ai';
 
 // Provider HTTP is stubbed; these tests pin each provider's wire format.
 interface Sent {
@@ -85,11 +87,22 @@ describe('model listing', () => {
           },
           { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
           { name: 'models/imagen-4', supportedGenerationMethods: ['generateContent'] },
+          {
+            name: 'models/gemini-voice-only',
+            supportedGenerationMethods: ['generateContent'],
+            outputModalities: ['AUDIO'],
+          },
+          {
+            name: 'models/gemini-text',
+            supportedGenerationMethods: ['generateContent'],
+            outputModalities: ['TEXT'],
+          },
         ],
       }),
     );
     expect(await listModels(access('google'), signal)).toEqual([
       { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+      { id: 'gemini-text', label: 'gemini-text' },
     ]);
     expect(sent[0].url).toBe(
       'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',
@@ -107,6 +120,9 @@ describe('model listing', () => {
           { id: 'whisper-1' },
           { id: 'gpt-image-1' },
           { id: 'gpt-5' },
+          { id: 'unrelated-service' },
+          { id: 'gpt-5-pro' },
+          { id: 'gpt-5-codex' },
         ],
       }),
     );
@@ -131,7 +147,9 @@ describe('model listing', () => {
   it('lists Ollama Cloud and local tags from their fixed hosts', async () => {
     const sent = stubFetch(
       jsonResponse({ models: [{ name: 'gpt-oss:120b', model: 'gpt-oss:120b' }] }),
+      jsonResponse({ capabilities: ['completion', 'tools'] }),
       jsonResponse({ models: [{ name: 'llama3.2:latest', model: 'llama3.2:latest' }] }),
+      jsonResponse({ capabilities: ['completion'] }),
     );
     expect(await listModels(access('ollama-cloud'), signal)).toEqual([
       { id: 'gpt-oss:120b', label: 'gpt-oss:120b' },
@@ -141,8 +159,62 @@ describe('model listing', () => {
     ]);
     expect(sent[0].url).toBe('https://ollama.com/api/tags');
     expect(sent[0].headers.get('authorization')).toBe('Bearer secret-key');
-    expect(sent[1].url).toBe('http://127.0.0.1:11434/api/tags');
-    expect(sent[1].headers.get('authorization')).toBeNull();
+    expect(sent[1].url).toBe('https://ollama.com/api/show');
+    expect(sent[1].body).toEqual({ model: 'gpt-oss:120b' });
+    expect(sent[2].url).toBe('http://127.0.0.1:11434/api/tags');
+    expect(sent[2].headers.get('authorization')).toBeNull();
+  });
+  it('filters Ollama embeddings including custom names by capability', async () => {
+    stubFetch(
+      jsonResponse({ models: [{ name: 'my-custom-model' }, { name: 'nomic-embed-text' }] }),
+      jsonResponse({ capabilities: ['embedding'] }),
+    );
+    expect(await listModels(access('ollama-local', null), signal)).toEqual([]);
+  });
+  it('uses the name fallback when an Ollama server lacks the metadata endpoint', async () => {
+    stubFetch(
+      jsonResponse({ models: [{ name: 'llama3.2' }, { name: 'embeddinggemma' }] }),
+      jsonResponse({}, 404),
+    );
+    expect(await listModels(access('ollama-cloud'), signal)).toEqual([
+      { id: 'llama3.2', label: 'llama3.2' },
+    ]);
+  });
+  it('lists only Mistral chat completions and DeepSeek text-output models', async () => {
+    const sent = stubFetch(
+      jsonResponse({
+        data: [
+          { id: 'mistral-small-latest', capabilities: { completion_chat: true } },
+          { id: 'codestral-latest', capabilities: { completion_chat: false } },
+          { id: 'mistral-embed', capabilities: { completion_chat: false } },
+          { id: 'mistral-ocr-latest', capabilities: { completion_chat: false } },
+        ],
+      }),
+      jsonResponse({
+        data: [
+          { id: 'deepseek-chat', name: 'DeepSeek Chat', output_modalities: ['text'] },
+          { id: 'deepseek-reasoner' },
+          { id: 'deepseek-future', output_modalities: ['audio'] },
+        ],
+      }),
+    );
+    expect(await listModels(access('mistral'), signal)).toEqual([
+      { id: 'mistral-small-latest', label: 'mistral-small-latest' },
+    ]);
+    expect(await listModels(access('deepseek'), signal)).toEqual([
+      { id: 'deepseek-chat', label: 'DeepSeek Chat' },
+      { id: 'deepseek-reasoner', label: 'deepseek-reasoner' },
+    ]);
+    expect(sent.map(({ url }) => url)).toEqual([
+      'https://api.mistral.ai/v1/models',
+      'https://api.deepseek.com/models',
+    ]);
+    expect(
+      sent.every(
+        ({ headers, redirect }) =>
+          headers.get('authorization') === 'Bearer secret-key' && redirect === 'error',
+      ),
+    ).toBe(true);
   });
   it('surfaces HTTP status and the provider message', async () => {
     stubFetch(jsonResponse({ error: { message: 'Incorrect API key' } }, 401));
@@ -154,6 +226,50 @@ describe('model listing', () => {
 });
 
 describe('streamed chat formats', () => {
+  it.each(AI_PROVIDER_IDS)(
+    'preserves the shared system instructions on the %s wire',
+    async (provider) => {
+      const event =
+        provider === 'google'
+          ? { candidates: [{ content: { role: 'model', parts: [{ text: 'OK' }] } }] }
+          : provider === 'anthropic'
+            ? { type: 'content_block_delta', delta: { type: 'text_delta', text: 'OK' } }
+            : { choices: [{ delta: { content: 'OK' } }] };
+      const ollama = provider.startsWith('ollama-');
+      const sent = stubFetch(
+        new Response(
+          ollama
+            ? '{"message":{"content":"OK"},"done":true}\n'
+            : `data: ${JSON.stringify(event)}\n\n`,
+          { headers: { 'content-type': 'text/event-stream' } },
+        ),
+      );
+      expect(
+        await streamChat(access(provider), 'fixture-model', {
+          ...chat,
+          system: CHAT_SYSTEM_PROMPT,
+        }),
+      ).toBe('OK');
+      const body = sent[0].body!;
+      const wireSystem =
+        provider === 'google'
+          ? (body.systemInstruction as { parts: { text: string }[] }).parts[0].text
+          : provider === 'anthropic'
+            ? body.system
+            : (body.messages as { content: string }[])[0].content;
+      expect(wireSystem).toBe(CHAT_SYSTEM_PROMPT);
+      expect(sent[0].redirect).toBe('error');
+      if (provider === 'mistral' || provider === 'deepseek') {
+        expect(body.max_tokens).toBe(chat.maxTokens);
+        expect(body).not.toHaveProperty('max_completion_tokens');
+        expect(sent[0].url).toBe(
+          provider === 'mistral'
+            ? 'https://api.mistral.ai/v1/chat/completions'
+            : 'https://api.deepseek.com/chat/completions',
+        );
+      }
+    },
+  );
   it('streams OpenAI Chat Completions server-sent events', async () => {
     const sent = stubFetch(
       streamResponse([
@@ -239,6 +355,44 @@ describe('agent tool-calling formats', () => {
     { role: 'tool', results: [{ id: 'call_1', name: 'read_current_file', result: { text: 'x' } }] },
   ];
   const request = { system: 'Edit.', items, tools, maxTokens: 100, signal };
+
+  it.each(['mistral', 'deepseek'] as const)(
+    'routes %s tools and preserves DeepSeek reasoning for replay',
+    async (provider) => {
+      const message = {
+        content: '',
+        reasoning_content: 'opaque-provider-metadata',
+        tool_calls: [
+          {
+            id: 'abc123def',
+            type: 'function',
+            function: { name: 'read_current_file', arguments: '{}' },
+          },
+        ],
+      };
+      const sent = stubFetch(
+        jsonResponse({ choices: [{ message }] }),
+        jsonResponse({ choices: [{ message: { content: 'Done.' } }] }),
+      );
+      const turn = await agentTurn(access(provider), 'fixture-model', request);
+      await agentTurn(access(provider), 'fixture-model', {
+        ...request,
+        items: [
+          { role: 'user', text: 'Fix it.' },
+          { role: 'assistant', text: turn.text, calls: turn.calls, raw: turn.raw },
+          {
+            role: 'tool',
+            results: [{ id: 'abc123def', name: 'read_current_file', result: { text: 'x' } }],
+          },
+        ],
+      });
+      expect(turn.calls).toEqual([{ id: 'abc123def', name: 'read_current_file', args: {} }]);
+      expect(sent[0].body).toMatchObject({ max_tokens: 100, tools: [{ type: 'function' }] });
+      const replay = (sent[1].body!.messages as Record<string, unknown>[])[2];
+      if (provider === 'deepseek') expect(replay.reasoning_content).toBe(message.reasoning_content);
+      else expect(replay).not.toHaveProperty('reasoning_content');
+    },
+  );
 
   it('uses OpenAI function tools and parses JSON arguments', async () => {
     const sent = stubFetch(

@@ -29,7 +29,7 @@ refreshes stable output paths in the viewer. No credentials in portable settings
 AI chat is not a prerequisite for editing. Main's AIService owns per-provider
 safeStorage-encrypted keys, cached model lists, provider and overall default models, and the
 single in-flight request; ai-providers.ts holds the fixed-endpoint wire adapters (Gemini via
-`@google/genai`, OpenAI Chat Completions, Anthropic Messages, Ollama `/api/chat` for
+`@google/genai`, shared OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, Ollama `/api/chat` for
 ollama.com and 127.0.0.1:11434). Preload exposes settings views without keys, provider
 save/remove/refresh/default calls, local Ollama status/start, bounded text conversation,
 cancellation, and fixed provider links.
@@ -49,6 +49,14 @@ without HTML injection. The chat follows arriving text only while the reader is 
 
 Models are provider-qualified `{ provider, model }` refs. Main accepts only models present in
 the provider's cached listing. Both modes share the selected model.
+Model discovery filters text chat capabilities (Mistral completion_chat, Ollama
+/api/show completion, output modalities when supplied), with provider-family
+fallbacks for sparse catalogues. ai-models.ts also filters old cached catalogues
+and repairs defaults without a network request. Ollama metadata requests run in
+batches of four under the existing listing deadline; 404/405 falls back to names.
+CHAT_SYSTEM_PROMPT is shared verbatim by every Chat adapter. Compatible providers
+share listing/chat/tool transport; token field differences stay in main. DeepSeek
+reasoning metadata is retained for tool replay, outside displayed response text.
 The concise Chat prompt labels actionable fixes; the renderer offers an explicit
 Implement Suggested Fix action that switches modes and submits the existing conversation
 with a short implementation instruction. It uses the normal Agent scope/review path.

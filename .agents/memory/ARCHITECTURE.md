@@ -1,7 +1,16 @@
 # Architecture memory
 
-Chat and Agent share the same seven allowed Google models, both defaulting to
-Gemini 3.5 Flash Lite. GeminiService owns the encrypted key and serializes all provider
+AI providers include Mistral (api.mistral.ai/v1) and DeepSeek (api.deepseek.com).
+Both reuse the OpenAI-compatible listing/chat/tool transport with provider-specific
+token fields. DeepSeek raw reasoning metadata survives tool replay. One Chat system
+prompt is sent unchanged through every adapter. ai-models.ts owns text-model policy:
+capability/modality checks at discovery plus family filtering when loading cached
+models and validating defaults/requests. Ollama /api/show runs four at a time under
+the listing timeout; missing metadata endpoints fall back to ID filtering. Only the
+chosen provider/key/model IDs are sent during discovery; no document content.
+
+Chat and Agent share the chosen provider-qualified text model. AIService owns
+the encrypted provider keys and serializes all provider
 operations. BoundedAgentService has no filesystem dependency: only staged pathless
 read_current_file/insert_text/replace_range, 64 tools, 24 API calls,
 90-second deadline (180 seconds for Local Ollama). Remaining budgets are supplied
@@ -14,11 +23,11 @@ checks the old live buffer after await, applies approvals through a guarded undo
 editor event and echoes the new snapshot. Rejections skip text; the last decision
 closes review. No agent saves. Auto-save pauses during review and the normal guarded
 save resumes for approved text after review ends. Model menu and Chat/Agent toggle replace the
-previous locked label; mode switches preserve the transcript and use the mode's default model.
+previous locked label; mode switches preserve the transcript and selected model.
 
 Chat asks for concise replies and marks actionable fixes with **Suggested fix:**.
 A completed latest marked reply exposes an explicit Implement Suggested Fix action:
-switch to Agent/default model and send the existing transcript plus a simple request.
+switch to Agent and send the existing transcript plus a simple request.
 Agent still requires an active .tex context and review. Its first-selection notice
 fades after five seconds and stores only a seen flag in profile localStorage.
 Agent read line tables include Unicode endColumn; invalid insertions return precise

@@ -35,6 +35,7 @@ import {
   streamChat,
   type ProviderAccess,
 } from './ai-providers';
+import { cleanModelList } from './ai-models';
 
 export class AIError extends Error {
   constructor(
@@ -89,6 +90,8 @@ const PREFERRED: Record<AIProviderId, RegExp[]> = {
   google: [/^gemini-[\d.]+-flash-lite$/, /^gemini-[\d.]+-flash$/, /gemini/],
   openai: [/^gpt-[\d.]+-mini$/, /^gpt-[\d.]+$/, /^gpt-/],
   anthropic: [/haiku/, /sonnet/],
+  mistral: [/^mistral-small-latest$/, /^mistral-medium-latest$/, /mistral/],
+  deepseek: [/^deepseek-chat$/, /flash/, /deepseek/],
   'ollama-cloud': [],
   'ollama-local': [],
 };
@@ -308,6 +311,7 @@ export class AIService {
   private update(change: (settings: StoredSettings) => void): Promise<AISettings> {
     const run = this.queue.then(async () => {
       const settings = await this.read();
+      this.normalize(settings);
       change(settings);
       this.normalize(settings);
       await this.write(settings);
@@ -318,6 +322,12 @@ export class AIService {
   }
   /** Keeps the overall default pointing at a usable model. */
   private normalize(settings: StoredSettings): void {
+    for (const id of AI_PROVIDER_IDS) {
+      const stored = settings.providers[id];
+      if (!stored) continue;
+      stored.models = cleanModelList(id, stored.models);
+      stored.defaultModel = pickDefault(id, stored.models, stored.defaultModel);
+    }
     const current = settings.defaultModel;
     const provider = current ? settings.providers[current.provider] : undefined;
     if (
@@ -397,7 +407,7 @@ export class AIService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
-      const models = await this.list(access, controller.signal);
+      const models = cleanModelList(access.provider, await this.list(access, controller.signal));
       if (!models.length)
         throw new AIError(
           'AI_NO_MODELS',
@@ -557,7 +567,9 @@ export class AIService {
   /** Resolves a renderer-chosen model to stored credentials; only listed models are allowed. */
   private async resolve(value: unknown): Promise<{ access: ProviderAccess; model: string }> {
     const ref = this.modelArgument(value);
-    const stored = (await this.read()).providers[ref.provider];
+    const settings = await this.read();
+    this.normalize(settings);
+    const stored = settings.providers[ref.provider];
     if (!isConfigured(ref.provider, stored))
       throw new AIError(
         'AI_KEY_REQUIRED',

@@ -3,13 +3,19 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   AIService,
+  CHAT_SYSTEM_PROMPT,
   type ChatGenerate,
   type KeyCipher,
   type ModelLister,
   type OllamaLauncher,
 } from '../../src/main/services/ai-service';
 import { ProviderHTTPError } from '../../src/main/services/ai-providers';
-import type { AIModelInfo, AIProviderId } from '../../src/shared/ai';
+import {
+  AI_PROVIDER_IDS,
+  AI_PROVIDERS,
+  type AIModelInfo,
+  type AIProviderId,
+} from '../../src/shared/ai';
 
 // Reversible fixture cipher only; production uses OS-account encryption (safeStorage).
 const cipher: KeyCipher = {
@@ -30,6 +36,8 @@ const MODELS: Record<AIProviderId, AIModelInfo[]> = {
     { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
     { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
   ],
+  mistral: [{ id: 'mistral-small-latest', label: 'Mistral Small' }],
+  deepseek: [{ id: 'deepseek-chat', label: 'DeepSeek Chat' }],
   'ollama-cloud': [{ id: 'gpt-oss:120b', label: 'gpt-oss:120b' }],
   'ollama-local': [{ id: 'llama3.2:latest', label: 'llama3.2' }],
 };
@@ -73,9 +81,51 @@ describe('multi-provider AI settings and requests', () => {
       'google',
       'openai',
       'anthropic',
+      'mistral',
+      'deepseek',
       'ollama-cloud',
       'ollama-local',
     ]);
+  });
+
+  it.each(AI_PROVIDER_IDS)(
+    'sends the exact same chat instructions through %s',
+    async (provider) => {
+      const settings = await service.saveProvider(
+        AI_PROVIDERS[provider].needsKey ? { provider, apiKey: 'fixture-key' } : { provider },
+      );
+      const model = settings.providers.find(({ id }) => id === provider)!.defaultModel!;
+      await service.send({ ...question, model: { provider, model } });
+      expect(chat.mock.calls.at(-1)?.[2].system).toBe(CHAT_SYSTEM_PROMPT);
+      expect(chat.mock.calls.at(-1)?.[0].provider).toBe(provider);
+      expect(chat.mock.calls.at(-1)?.[1]).toBe(model);
+    },
+  );
+
+  it('filters an old cached catalogue and repairs defaults without networking or deleting keys', async () => {
+    await service.saveProvider({ provider: 'openai', apiKey: 'secret' });
+    const filename = join(directory, 'ai.json');
+    const raw = JSON.parse(await readFile(filename, 'utf8')) as {
+      defaultModel: { provider: string; model: string };
+      providers: { openai: { models: AIModelInfo[]; defaultModel: string; encryptedKey: string } };
+    };
+    raw.providers.openai.models.push({ id: 'gpt-image-1', label: 'Image' });
+    raw.providers.openai.defaultModel = 'gpt-image-1';
+    raw.defaultModel = { provider: 'openai', model: 'gpt-image-1' };
+    await writeFile(filename, JSON.stringify(raw));
+    list.mockClear();
+    const settings = await service.settings();
+    expect(settings.providers.find(({ id }) => id === 'openai')!.models).toEqual(MODELS.openai);
+    expect(settings.defaultModel).toEqual({ provider: 'openai', model: 'gpt-5-mini' });
+    expect(list).not.toHaveBeenCalled();
+    await expect(
+      service.setDefaultModel({ provider: 'openai', model: 'gpt-image-1' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(
+      service.send({ ...question, model: { provider: 'openai', model: 'gpt-image-1' } }),
+    ).rejects.toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
+    expect(chat).not.toHaveBeenCalled();
+    expect(await readFile(filename, 'utf8')).toContain(raw.providers.openai.encryptedKey);
   });
 
   it('tests a key by listing models, encrypts it, and picks sensible defaults', async () => {

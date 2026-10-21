@@ -35,10 +35,12 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-right: 6px;
+  padding: 2px 6px 6px 3px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .ai-settings-dialog h3 {
-  margin: 18px 0 10px;
+  margin: 14px 0 8px;
   font-family: var(--font-serif);
   font-size: 15px;
   font-weight: 500;
@@ -102,14 +104,14 @@
 .ai-provider-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 .ai-provider-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--surface);
@@ -119,7 +121,7 @@
 }
 .ai-provider-card header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }

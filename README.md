@@ -2,7 +2,7 @@
 
 A modern, local-first LaTeX desktop IDE. Your documents stay ordinary files on
 your computer. Editing and local compilation never require an account; AI is
-optional. AI chat works with your own Google, OpenAI, Anthropic or Ollama Cloud key, or
+optional. AI chat works with your own Google, OpenAI, Anthropic, Mistral, DeepSeek or Ollama Cloud key, or
 with a local Ollama server.
 
 ![Native TeXtra editing and PDF preview](docs/screenshot.png)
@@ -103,16 +103,23 @@ waits for pending writes (and submits a typed but unsaved API key) before closin
 The **AI Chat** rail tab opens a conversational debugger. Until a provider is connected it
 shows a single **Configure AI** button that opens the **AI settings** dialog (also reachable
 from the chat header **Settings** button and **Settings → AI Chat**). The dialog has one card
-per provider: **Google Gemini**, **OpenAI**, **Anthropic**, **Ollama Cloud** and **Local Ollama**.
+per provider: **Google Gemini**, **OpenAI**, **Anthropic**, **Mistral**, **DeepSeek**,
+**Ollama Cloud** and **Local Ollama**.
 **Save & load models** tests a key by listing that provider's models, then saves the
 encrypted key with the model list. **Local Ollama** pings `127.0.0.1:11434`, shows whether it
 is running, offers **Start Ollama** (runs the installed `ollama serve`) or a download link, and
 needs no key. Each connected card has its own default model, **Refresh**, **Replace key** and
 **Remove**; the top of the dialog sets the overall default model used for new chats and Agent.
 The composer's model button opens a searchable list grouped by provider (type to filter by
-model name, id or provider; arrows and Enter choose). The chosen model stays selected across
+model name, id or provider; arrows and Enter choose). Lists are limited to text chat
+models: capability metadata is used where available, with model-family filtering
+for providers that omit it. Vision input models that produce text remain available;
+image/audio generation, embeddings and other specialist endpoints are excluded.
+Refresh models updates capability checks. The chosen model stays selected across
 Chat and Agent. Requests are sent in each provider's own format: Gemini generateContent,
-OpenAI Chat Completions, Anthropic Messages, and Ollama's native `/api/chat`.
+OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, and Ollama's native `/api/chat`.
+Every provider receives the same Chat system instructions; routing changes only
+the endpoint and request format.
 **New chat** clears prior conversation context and retries while preserving unsent draft text.
 Settings can enable automatic
 Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five

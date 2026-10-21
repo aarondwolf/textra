@@ -120,7 +120,7 @@ function ProviderCard({
     }
   }
 
-  const local = provider.id === 'ollama-local';
+  const local = info.local;
   const running = Boolean(ollama?.running);
   let pill: { text: string; tone: 'ok' | 'warn' | 'off' };
   if (local)
@@ -151,10 +151,7 @@ function ProviderCard({
       aria-label={info.label}
     >
       <header>
-        <div>
-          <h4>{info.label}</h4>
-          <small>{info.protocol}</small>
-        </div>
+        <h4>{info.label}</h4>
         <span className="ai-provider-pill" data-tone={pill.tone}>
           {pill.text}
         </span>
@@ -177,7 +174,7 @@ function ProviderCard({
               Download Ollama
             </button>
           )}
-          <small>TeXtra checks 127.0.0.1:11434 every few seconds.</small>
+          <small>Run models on this computer.</small>
         </div>
       )}
       {local && running && !provider.configured && (
@@ -218,14 +215,20 @@ function ProviderCard({
               {busy === 'save' ? 'Testing…' : 'Save & load models'}
             </button>
             {editing && (
-              <button type="button" disabled={Boolean(busy)} onClick={() => setEditing(false)}>
+              <button
+                type="button"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  setApiKey('');
+                  setEditing(false);
+                }}
+              >
                 Cancel
               </button>
             )}
           </div>
-          <small>
-            The key is tested by listing your models, then encrypted with your OS account.{' '}
-            {info.links.keys && (
+          {info.links.keys && (
+            <small>
               <a
                 href={info.links.keys}
                 onClick={(event) => {
@@ -235,8 +238,8 @@ function ProviderCard({
               >
                 Get a key
               </a>
-            )}
-          </small>
+            </small>
+          )}
         </form>
       )}
 
@@ -374,10 +377,7 @@ export function AISettingsDialog({
               <X size={18} />
             </Dialog.Close>
           </div>
-          <Dialog.Description>
-            Connect one or more providers. TeXtra lists each provider’s models and sends requests in
-            that provider’s own format.
-          </Dialog.Description>
+          <Dialog.Description>Connect a provider, then choose a model.</Dialog.Description>
           <div className="ai-settings-scroll">
             {error && (
               <div className="ai-settings-failure">
@@ -395,7 +395,7 @@ export function AISettingsDialog({
                 <section className="ai-settings-default" aria-label="Default model">
                   <div>
                     <h3>Default model</h3>
-                    <p>Used for new chats and Agent requests. You can switch models in the chat.</p>
+                    <p>Used for Chat and Agent. Only text chat models are listed.</p>
                   </div>
                   <ModelPicker
                     settings={settings}
@@ -435,15 +435,14 @@ export function AISettingsDialog({
                   <span>
                     Automatically send Problems prompts
                     <small>
-                      Clicking Ask in Chat sends the selected error and nearby source to the chosen
-                      model immediately. Off by default so you can review the snippet first.
+                      Ask in Chat sends the selected error and nearby source immediately. Leave off
+                      to review before sending.
                     </small>
                   </span>
                 </label>
                 <p className="ai-settings-note">
-                  Only the conversation and snippets you send are shared, and only with the provider
-                  of the model you choose. Local Ollama never leaves this computer. Keys are
-                  encrypted with your OS account and stored apart from portable settings.
+                  Keys are encrypted on this computer. Sent messages and source go to your chosen
+                  provider; Local Ollama stays on this computer.
                 </p>
                 {message && (
                   <p role="alert" className="ai-error">

@@ -1,8 +1,10 @@
-/** Every provider TeXtra knows how to call. Each one has its own request format. */
+/** Supported providers and their setup details; transport stays in main. */
 export const AI_PROVIDER_IDS = [
   'google',
   'openai',
   'anthropic',
+  'mistral',
+  'deepseek',
   'ollama-cloud',
   'ollama-local',
 ] as const;
@@ -11,8 +13,6 @@ export type AIProviderLink = 'keys' | 'limits' | 'download';
 export interface AIProviderInfo {
   id: AIProviderId;
   label: string;
-  /** Short wire-format description shown on the provider card. */
-  protocol: string;
   needsKey: boolean;
   keyLabel: string;
   links: Partial<Record<AIProviderLink, string>>;
@@ -23,7 +23,6 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
   google: {
     id: 'google',
     label: 'Google Gemini',
-    protocol: 'Gemini API (generateContent)',
     needsKey: true,
     keyLabel: 'Google AI Studio API key',
     links: {
@@ -35,7 +34,6 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
   openai: {
     id: 'openai',
     label: 'OpenAI',
-    protocol: 'OpenAI Chat Completions',
     needsKey: true,
     keyLabel: 'OpenAI API key',
     links: {
@@ -47,7 +45,6 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
   anthropic: {
     id: 'anthropic',
     label: 'Anthropic',
-    protocol: 'Anthropic Messages API',
     needsKey: true,
     keyLabel: 'Anthropic API key',
     links: {
@@ -56,10 +53,31 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
     },
     local: false,
   },
+  mistral: {
+    id: 'mistral',
+    label: 'Mistral',
+    needsKey: true,
+    keyLabel: 'Mistral API key',
+    links: {
+      keys: 'https://console.mistral.ai/api-keys',
+      limits: 'https://console.mistral.ai/limits',
+    },
+    local: false,
+  },
+  deepseek: {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    needsKey: true,
+    keyLabel: 'DeepSeek API key',
+    links: {
+      keys: 'https://platform.deepseek.com/api_keys',
+      limits: 'https://platform.deepseek.com/usage',
+    },
+    local: false,
+  },
   'ollama-cloud': {
     id: 'ollama-cloud',
     label: 'Ollama Cloud',
-    protocol: 'Ollama API (ollama.com)',
     needsKey: true,
     keyLabel: 'Ollama API key',
     links: { keys: 'https://ollama.com/settings/keys', limits: 'https://ollama.com/settings' },
@@ -68,7 +86,6 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
   'ollama-local': {
     id: 'ollama-local',
     label: 'Local Ollama',
-    protocol: 'Ollama API (this computer)',
     needsKey: false,
     keyLabel: '',
     links: { download: 'https://ollama.com/download' },

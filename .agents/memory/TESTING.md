@@ -1,5 +1,22 @@
 # Test evidence
 
+2026-10-21 text-model discovery and Mistral/DeepSeek: full Windows suite covered
+411 cases: 410 passed initially, one real BibTeX pipeline hit its existing 15s
+deadline during concurrent build load. Serial rerun of latex.test.ts passes all
+7 cases. Final focused provider/service tests pass 54/54 after tightening cached
+default validation; earlier Agent/provider/service run passes 124/124. All seven
+Chat routes are tested for identical system text at service and HTTP boundaries.
+Discovery fixtures cover output modalities, Mistral chat capabilities, Ollama custom
+embedding names/metadata fallback, and cache/default cleanup without key/network
+changes. Mistral/DeepSeek fixed URLs, auth, streaming, token fields and DeepSeek
+tool-reasoning replay are mocked; no live keys/provider quota used.
+Native Chat (32.4s) and shell (1.1m) pass serially; all seven setup cards checked,
+Mistral/DeepSeek password/link/save controls verified, onboarding screenshot reviewed.
+Typecheck/lint and final production build pass (transient Windows output lock
+resolved on retry). Changed-file formatting passes; global format check flags only
+untouched docs/ROADMAP.md and sandbox/issues.md. No phase gates advanced.
+Launch: npm run dev.
+
 2026-10-21 UI consistency/Agent budget: Windows unit/integration 391/391 pass
 with normal permissions, including real MiKTeX and filesystem boundary checks.
 Sandbox first run: 368 pass/22 fail/1 skip due to denied hard links, junctions

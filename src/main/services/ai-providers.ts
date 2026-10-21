@@ -1,10 +1,11 @@
 import { GoogleGenAI, type Content, type Part } from '@google/genai';
 import type { AIMessage } from '../../shared/api';
 import { OLLAMA_LOCAL_URL, type AIModelInfo, type AIProviderId } from '../../shared/ai';
+import { cleanModelList, hasTextOutput, isTextModelId } from './ai-models';
 
 /**
  * Wire-format adapters. Each provider speaks its own protocol: Gemini uses
- * generateContent, OpenAI uses Chat Completions, Anthropic uses Messages, and
+ * generateContent, OpenAI/Mistral/DeepSeek use Chat Completions, Anthropic uses Messages, and
  * Ollama (cloud or local) uses its native /api/chat. Endpoints are fixed here;
  * no provider-selected or renderer-selected URL is ever requested.
  */
@@ -62,6 +63,21 @@ export class ProviderHTTPError extends Error {
 const OUTPUT_LIMIT = 32_000;
 const GOOGLE_URL = 'https://generativelanguage.googleapis.com/';
 const OPENAI_URL = 'https://api.openai.com/v1';
+const COMPATIBLE_URLS = {
+  openai: OPENAI_URL,
+  mistral: 'https://api.mistral.ai/v1',
+  deepseek: 'https://api.deepseek.com',
+} as const;
+function compatibleBase(provider: AIProviderId): string {
+  if (provider === 'openai' || provider === 'mistral' || provider === 'deepseek')
+    return COMPATIBLE_URLS[provider];
+  throw new Error('Unsupported Chat Completions provider.');
+}
+function completionLimit(access: ProviderAccess, maxTokens: number): Record<string, number> {
+  return access.provider === 'openai'
+    ? { max_completion_tokens: Math.max(maxTokens, 8192) }
+    : { max_tokens: maxTokens };
+}
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
 const OLLAMA_CLOUD_URL = 'https://ollama.com';
@@ -75,7 +91,7 @@ function ollamaBase(provider: AIProviderId): string {
 }
 function headers(access: ProviderAccess): Record<string, string> {
   const result: Record<string, string> = { 'content-type': 'application/json' };
-  if (access.provider === 'openai' || access.provider === 'ollama-cloud')
+  if (access.provider in COMPATIBLE_URLS || access.provider === 'ollama-cloud')
     result.authorization = `Bearer ${requireKey(access)}`;
   if (access.provider === 'anthropic') {
     result['x-api-key'] = requireKey(access);
@@ -190,22 +206,11 @@ function collector(request: ChatRequest) {
 
 // ----- Model listing -----
 
-const NON_CHAT_OPENAI =
-  /embedding|tts|whisper|dall-e|davinci|babbage|moderation|image|audio|realtime|transcribe|search|computer-use|sora|codex/i;
-const NON_CHAT_GOOGLE = /embed|imagen|veo|aqa|tts|audio|image|live|robotics|computer-use|lyria/i;
-
 function sortByLabel(models: AIModelInfo[]): AIModelInfo[] {
   return models.sort((left, right) =>
     left.label.localeCompare(right.label, undefined, { numeric: true }),
   );
 }
-function unique(models: AIModelInfo[]): AIModelInfo[] {
-  const seen = new Set<string>();
-  return models
-    .filter(({ id }) => id && id.length <= 200 && !seen.has(id) && seen.add(id))
-    .slice(0, 500);
-}
-
 export async function listModels(
   access: ProviderAccess,
   signal: AbortSignal,
@@ -224,7 +229,12 @@ export async function listModels(
             ? item.supportedGenerationMethods
             : [];
           const id = item.name.replace(/^models\//, '');
-          if (!methods.includes('generateContent') || NON_CHAT_GOOGLE.test(id)) continue;
+          if (
+            !methods.includes('generateContent') ||
+            !isTextModelId('google', id) ||
+            !hasTextOutput(item.outputModalities ?? item.output_modalities)
+          )
+            continue;
           models.push({
             id,
             label: typeof item.displayName === 'string' && item.displayName ? item.displayName : id,
@@ -233,26 +243,39 @@ export async function listModels(
         pageToken = typeof value.nextPageToken === 'string' ? value.nextPageToken : '';
         if (!pageToken) break;
       }
-      return unique(models);
+      return cleanModelList(access.provider, models);
     }
-    case 'openai': {
-      const value = await json(`${OPENAI_URL}/models`, access, signal);
+    case 'openai':
+    case 'mistral':
+    case 'deepseek': {
+      const value = await json(`${compatibleBase(access.provider)}/models`, access, signal);
       const data = Array.isArray(value.data) ? value.data : [];
       return sortByLabel(
-        unique(
+        cleanModelList(
+          access.provider,
           data
             .filter(
-              (item): item is { id: string } =>
-                record(item) && typeof item.id === 'string' && !NON_CHAT_OPENAI.test(item.id),
+              (item): item is Record<string, unknown> & { id: string } =>
+                record(item) &&
+                typeof item.id === 'string' &&
+                isTextModelId(access.provider, item.id) &&
+                hasTextOutput(item.output_modalities) &&
+                item.archived !== true &&
+                (access.provider !== 'mistral' ||
+                  (record(item.capabilities) && item.capabilities.completion_chat === true)),
             )
-            .map(({ id }) => ({ id, label: id })),
+            .map((item) => ({
+              id: item.id,
+              label: typeof item.name === 'string' ? item.name : item.id,
+            })),
         ),
       );
     }
     case 'anthropic': {
       const value = await json(`${ANTHROPIC_URL}/models?limit=1000`, access, signal);
       const data = Array.isArray(value.data) ? value.data : [];
-      return unique(
+      return cleanModelList(
+        access.provider,
         data
           .filter((item): item is Record<string, unknown> & { id: string } =>
             Boolean(record(item) && typeof item.id === 'string'),
@@ -270,14 +293,40 @@ export async function listModels(
     case 'ollama-local': {
       const value = await json(`${ollamaBase(access.provider)}/api/tags`, access, signal);
       const data = Array.isArray(value.models) ? value.models : [];
-      return sortByLabel(
-        unique(
-          data
-            .map((item) => (record(item) ? (item.model ?? item.name) : undefined))
-            .filter((id): id is string => typeof id === 'string')
-            .map((id) => ({ id, label: id.replace(/:latest$/, '') })),
-        ),
+      const candidates = cleanModelList(
+        access.provider,
+        data
+          .map((item) => (record(item) ? (item.model ?? item.name) : undefined))
+          .filter((id): id is string => typeof id === 'string')
+          .map((id) => ({ id, label: id.replace(/:latest$/, '') })),
       );
+      const models: AIModelInfo[] = [];
+      // Query small batches; only model names are shared, never document content.
+      for (let index = 0; index < candidates.length; index += 4) {
+        const batch = await Promise.all(
+          candidates.slice(index, index + 4).map(async (model) => {
+            try {
+              const details = await json(
+                `${ollamaBase(access.provider)}/api/show`,
+                access,
+                signal,
+                { model: model.id },
+              );
+              return Array.isArray(details.capabilities) &&
+                !details.capabilities.includes('completion')
+                ? null
+                : model;
+            } catch (error) {
+              // Older/cloud servers may not expose metadata. Keep the ID fallback.
+              if (error instanceof ProviderHTTPError && [404, 405].includes(error.status))
+                return model;
+              throw error;
+            }
+          }),
+        );
+        models.push(...batch.filter((model): model is AIModelInfo => model !== null));
+      }
+      return sortByLabel(models);
     }
   }
 }
@@ -300,7 +349,12 @@ function googleClient(access: ProviderAccess): GoogleGenAI {
   return new GoogleGenAI({
     apiKey: requireKey(access),
     vertexai: false,
-    httpOptions: { baseUrl: GOOGLE_URL, timeout: 120_000, retryOptions: { attempts: 1 } },
+    httpOptions: {
+      baseUrl: GOOGLE_URL,
+      timeout: 120_000,
+      retryOptions: { attempts: 1 },
+      fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }),
+    },
   });
 }
 
@@ -329,19 +383,26 @@ export async function streamChat(
       }
       return output.text;
     }
-    case 'openai': {
-      const response = await request(`${OPENAI_URL}/chat/completions`, access, signal, {
-        model,
-        stream: true,
-        max_completion_tokens: Math.max(chat.maxTokens, 8192),
-        messages: [
-          { role: 'system', content: chat.system },
-          ...chat.messages.map(({ role, text }) => ({
-            role: role === 'model' ? 'assistant' : 'user',
-            content: text,
-          })),
-        ],
-      });
+    case 'openai':
+    case 'mistral':
+    case 'deepseek': {
+      const response = await request(
+        `${compatibleBase(access.provider)}/chat/completions`,
+        access,
+        signal,
+        {
+          model,
+          stream: true,
+          ...completionLimit(access, chat.maxTokens),
+          messages: [
+            { role: 'system', content: chat.system },
+            ...chat.messages.map(({ role, text }) => ({
+              role: role === 'model' ? 'assistant' : 'user',
+              content: text,
+            })),
+          ],
+        },
+      );
       for await (const event of sse(response, signal)) {
         if (!record(event)) continue;
         if (record(event.error))
@@ -493,7 +554,7 @@ async function googleTurn(
   return fromGoogleContent(response.candidates?.[0]?.content);
 }
 
-async function openaiTurn(
+async function compatibleTurn(
   access: ProviderAccess,
   model: string,
   agent: AgentRequest,
@@ -505,6 +566,11 @@ async function openaiTurn(
       messages.push({
         role: 'assistant',
         content: item.text || null,
+        ...(access.provider === 'deepseek' &&
+        record(item.raw) &&
+        typeof item.raw.reasoning_content === 'string'
+          ? { reasoning_content: item.raw.reasoning_content }
+          : {}),
         ...(item.calls.length
           ? {
               tool_calls: item.calls.map((call, index) => ({
@@ -523,15 +589,20 @@ async function openaiTurn(
           content: JSON.stringify(result.result),
         });
   }
-  const value = await json(`${OPENAI_URL}/chat/completions`, access, agent.signal, {
-    model,
-    messages,
-    max_completion_tokens: Math.max(agent.maxTokens, 8192),
-    tools: agent.tools.map(({ name, description, parameters }) => ({
-      type: 'function',
-      function: { name, description, parameters },
-    })),
-  });
+  const value = await json(
+    `${compatibleBase(access.provider)}/chat/completions`,
+    access,
+    agent.signal,
+    {
+      model,
+      messages,
+      ...completionLimit(access, agent.maxTokens),
+      tools: agent.tools.map(({ name, description, parameters }) => ({
+        type: 'function',
+        function: { name, description, parameters },
+      })),
+    },
+  );
   const choice = Array.isArray(value.choices) ? value.choices[0] : undefined;
   const message = record(choice) && record(choice.message) ? choice.message : {};
   const calls: ToolCall[] = (Array.isArray(message.tool_calls) ? message.tool_calls : [])
@@ -541,7 +612,11 @@ async function openaiTurn(
       name: record(call.function) ? String(call.function.name ?? '') : '',
       args: record(call.function) ? parseArguments(call.function.arguments) : null,
     }));
-  return { text: typeof message.content === 'string' ? message.content : '', calls };
+  return {
+    text: typeof message.content === 'string' ? message.content : '',
+    calls,
+    ...(access.provider === 'deepseek' ? { raw: message } : {}),
+  };
 }
 
 async function anthropicTurn(
@@ -658,7 +733,9 @@ export async function agentTurn(
     case 'google':
       return googleTurn(access, model, agent);
     case 'openai':
-      return openaiTurn(access, model, agent);
+    case 'mistral':
+    case 'deepseek':
+      return compatibleTurn(access, model, agent);
     case 'anthropic':
       return anthropicTurn(access, model, agent);
     case 'ollama-cloud':

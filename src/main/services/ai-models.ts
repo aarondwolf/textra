@@ -18,6 +18,8 @@ export function isTextModelId(provider: AIProviderId, id: string): boolean {
       return /^claude-/i.test(id);
     case 'mistral':
       return true; // Discovery checks completion_chat explicitly.
+    case 'codestral':
+      return /^codestral(?:-|$)/i.test(id);
     case 'deepseek':
       return /^deepseek-/i.test(id);
     case 'openrouter':

@@ -125,10 +125,23 @@
   justify-content: space-between;
   gap: 8px;
 }
-.ai-provider-card h4 {
+.ai-provider-card h4,
+.ai-provider-card h5 {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
+}
+.ai-provider-subcard {
+  margin-top: 2px;
+  padding: 10px 12px;
+  background: var(--raised);
+}
+.ai-provider-subcard h5 {
+  font-size: 12px;
+}
+.ai-provider-subcard .ai-settings-note {
+  margin: 0;
+  font-size: 11px;
 }
 .ai-provider-card small {
   color: var(--muted);

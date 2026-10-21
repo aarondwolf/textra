@@ -1,5 +1,19 @@
 # Test evidence
 
+2026-10-21 nested Codestral: full Windows suite 421/421 passes (33 files, 31.56s)
+with normal permissions. New fixtures cover separate Mistral/Codestral credentials
+and removal, Codestral-only dedicated catalogue, explicit non-chat exclusion,
+fixed host/auth, Chat prompt parity and Agent tools. Typecheck/lint/build pass.
+Initial sandbox focused run hit one temporary settings atomic-rename EPERM; normal
+suite resolves it. Initial lint raced a concurrently deleted test fixture; serial
+rerun passes. Native Chat passes (34.8s): Codestral is nested in Mistral, root grid
+stays at eight cards, own key/default/connect/remove flow works with Mistral unset.
+Native shell also passes (49.0s). Reviewed disconnected/connected Codestral native
+PNGs. Provider IPC/HTTP are mocks,
+no live Codestral key or quota used. Changed-file formatting/diff checks pass;
+global formatting still flags only untouched docs/ROADMAP.md and sandbox/issues.md.
+GitHub explicitly deferred by owner. Launch npm run dev; no phase gates advanced.
+
 2026-10-21 OpenRouter: all 416 Windows unit/integration tests pass (33 files,
 28.77s) with normal permissions. Initial focused sandbox run 128/129 passed,
 with a temporary atomic-rename EPERM; full rerun resolves it. New coverage pins

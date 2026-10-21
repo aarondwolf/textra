@@ -1,5 +1,14 @@
 # Decisions
 
+- 2026-10-21 owner defers GitHub and requests Codestral nested in Mistral. Dedicated
+  codestral credential profile uses codestral.mistral.ai/v1 with independent key,
+  listing/default/removal and shared Chat/Agent instructions. Keep normal Mistral
+  Codestral availability as-is. Catalogue parent metadata controls visual nesting;
+  child setup works with the parent unconfigured. No fallback between endpoints
+  or credentials. Mistral's official Codestral endpoint announcement and current
+  Codestral model page establish dedicated endpoint + chat/tool format; no live
+  provider key used for verification.
+
 - 2026-10-21 OpenRouter/GitHub: OpenRouter uses its authenticated account catalogue
   to validate the key and respect provider/privacy preferences, text-only models,
   fixed selected model, require_parameters=true and allow_fallbacks=false. Shared

@@ -76,6 +76,25 @@ const chat = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('model listing', () => {
+  it('lists only Codestral chat models from its dedicated service', async () => {
+    const sent = stubFetch(
+      jsonResponse({
+        data: [
+          { id: 'codestral-latest', capabilities: { completion_chat: true } },
+          { id: 'codestral-2508' },
+          { id: 'codestral-fim-only', capabilities: { completion_chat: false } },
+          { id: 'mistral-small-latest', capabilities: { completion_chat: true } },
+        ],
+      }),
+    );
+    expect((await listModels(access('codestral'), signal)).map(({ id }) => id)).toEqual([
+      'codestral-2508',
+      'codestral-latest',
+    ]);
+    expect(sent[0].url).toBe('https://codestral.mistral.ai/v1/models');
+    expect(sent[0].headers.get('authorization')).toBe('Bearer secret-key');
+    expect(sent[0].redirect).toBe('error');
+  });
   it('uses the authenticated OpenRouter catalogue and text-output metadata', async () => {
     const sent = stubFetch(
       jsonResponse({
@@ -289,13 +308,15 @@ describe('streamed chat formats', () => {
             : (body.messages as { content: string }[])[0].content;
       expect(wireSystem).toBe(CHAT_SYSTEM_PROMPT);
       expect(sent[0].redirect).toBe('error');
-      if (provider === 'mistral' || provider === 'deepseek') {
+      if (provider === 'mistral' || provider === 'codestral' || provider === 'deepseek') {
         expect(body.max_tokens).toBe(chat.maxTokens);
         expect(body).not.toHaveProperty('max_completion_tokens');
         expect(sent[0].url).toBe(
           provider === 'mistral'
             ? 'https://api.mistral.ai/v1/chat/completions'
-            : 'https://api.deepseek.com/chat/completions',
+            : provider === 'codestral'
+              ? 'https://codestral.mistral.ai/v1/chat/completions'
+              : 'https://api.deepseek.com/chat/completions',
         );
       }
       if (provider === 'openrouter') {
@@ -439,7 +460,7 @@ describe('agent tool-calling formats', () => {
     expect(sent[0].body).not.toHaveProperty('models');
   });
 
-  it.each(['mistral', 'deepseek'] as const)(
+  it.each(['mistral', 'codestral', 'deepseek'] as const)(
     'routes %s tools and preserves DeepSeek reasoning for replay',
     async (provider) => {
       const message = {

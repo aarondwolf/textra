@@ -1,18 +1,29 @@
 # Current state
 
+2026-10-21 Codestral: dedicated nested setup card inside Mistral, backed by its
+own encrypted codestral provider profile at codestral.mistral.ai/v1. Catalogue
+parent metadata drives nesting; child form/default/refresh/remove/draft saves
+work independently of the general Mistral connection. Listing accepts Codestral
+IDs only, excludes explicit non-chat capabilities, and never falls back to the
+general Mistral key/host. Chat/Agent transport and system instructions are shared.
+Full Windows suite 421/421 passes with normal permissions; see TESTING.md for
+native/static evidence. GitHub is explicitly deferred by owner; no pending choice.
+Launch npm run dev. Next: native/provider validation as recorded, remaining
+roadmap gates and optional future GitHub work only when requested.
+
 2026-10-21 OpenRouter: encrypted setup card, authenticated /models/user text-only
 catalogue respecting account preferences, shared Chat/Agent transport and prompts.
 Requests set require_parameters=true/allow_fallbacks=false; automatic auto/free
 router IDs are excluded. Agent reasoning_details/reasoning survive replay.
 Full tests 416/416 pass with normal Windows permissions; typecheck/lint/build pass.
-GitHub portion remains INCOMPLETE pending the owner's answer to the in-chat choice:
+GitHub portion was deferred by the owner after the in-chat choice:
 GitHub Models retired 2026-07-30 (official docs); do not implement its old PAT endpoint.
 Recommended alternative: official Copilot SDK, sign-in or fine-grained PAT with
 Copilot Requests; disable built-in tools/discovery and preserve TeXtra prompts,
 bounded staging and approval. This needs its own runtime integration, not another
 Chat Completions URL. No Copilot dependency or credentials added yet.
-Next: obtain GitHub scope choice, implement/verify isolated SDK adapter if selected,
-then live-provider verification with user-supplied setup. Launch npm run dev.
+No GitHub work remains active. Future live-provider verification uses user-supplied
+setup. Launch npm run dev.
 
 2026-10-21 AI setup/catalogue refactor: Mistral and DeepSeek added to the shared
 provider catalogue, encrypted settings and fixed-endpoint Chat/Agent routing.

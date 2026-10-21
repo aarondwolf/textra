@@ -105,6 +105,10 @@ shows a single **Configure AI** button that opens the **AI settings** dialog (al
 from the chat header **Settings** button and **Settings → AI Chat**). The dialog has one card
 per provider: **Google Gemini**, **OpenAI**, **Anthropic**, **Mistral**, **DeepSeek**,
 **OpenRouter**, **Ollama Cloud** and **Local Ollama**.
+Mistral also contains a **Codestral** sub-card for its dedicated service, with a
+separate encrypted Codestral key, model list and default. It can connect even if
+the general Mistral card is not configured. Codestral models available through a
+normal Mistral key remain selectable through the general Mistral connection.
 **Save & load models** tests a key by listing that provider's models, then saves the
 encrypted key with the model list. **Local Ollama** pings `127.0.0.1:11434`, shows whether it
 is running, offers **Start Ollama** (runs the installed `ollama serve`) or a download link, and

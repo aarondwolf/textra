@@ -55,7 +55,11 @@ fallbacks for sparse catalogues. ai-models.ts also filters old cached catalogues
 and repairs defaults without a network request. Ollama metadata requests run in
 batches of four under the existing listing deadline; 404/405 falls back to names.
 CHAT_SYSTEM_PROMPT is shared verbatim by every Chat adapter. Compatible providers
-share listing/chat/tool transport; token field differences stay in main. OpenRouter
+include a dedicated Codestral profile at codestral.mistral.ai/v1. It has its own
+encrypted key and Codestral-only model list, nested in Mistral through catalogue
+parent metadata. Child setup and draft saves are independent of the parent.
+Compatible providers share listing/chat/tool transport; token field differences
+stay in main. OpenRouter
 uses /models/user?output_modalities=text, checks architecture.output_modalities,
 and excludes automatic multi-model router IDs. Requests use require_parameters=true
 and allow_fallbacks=false; reasoning_details/reasoning survive tool replay. DeepSeek

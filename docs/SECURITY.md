@@ -21,7 +21,7 @@ and compile trusted projects only. External installation is not automatic.
 Optional AI chat transmits only user-submitted conversations and Problems snippets to the
 fixed endpoint of the selected model's provider from the main process:
 generativelanguage.googleapis.com, api.openai.com, api.anthropic.com, api.mistral.ai,
-api.deepseek.com, openrouter.ai, ollama.com, or the
+codestral.mistral.ai, api.deepseek.com, openrouter.ai, ollama.com, or the
 loopback Ollama server at 127.0.0.1:11434. Redirects are refused. Only text chat models returned by
 that provider's own model listing are accepted; there is no automatic fallback provider,
 source discovery, or execution. OpenRouter is an explicitly selected

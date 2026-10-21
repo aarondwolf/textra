@@ -67,6 +67,7 @@ const OPENAI_URL = 'https://api.openai.com/v1';
 const COMPATIBLE_URLS = {
   openai: OPENAI_URL,
   mistral: 'https://api.mistral.ai/v1',
+  codestral: 'https://codestral.mistral.ai/v1',
   deepseek: 'https://api.deepseek.com',
   openrouter: 'https://openrouter.ai/api/v1',
 } as const;
@@ -74,6 +75,7 @@ function compatibleBase(provider: AIProviderId): string {
   if (
     provider === 'openai' ||
     provider === 'mistral' ||
+    provider === 'codestral' ||
     provider === 'deepseek' ||
     provider === 'openrouter'
   )
@@ -260,6 +262,7 @@ export async function listModels(
     }
     case 'openai':
     case 'mistral':
+    case 'codestral':
     case 'deepseek': {
       const value = await json(`${compatibleBase(access.provider)}/models`, access, signal);
       const data = Array.isArray(value.data) ? value.data : [];
@@ -275,7 +278,10 @@ export async function listModels(
                 hasTextOutput(item.output_modalities) &&
                 item.archived !== true &&
                 (access.provider !== 'mistral' ||
-                  (record(item.capabilities) && item.capabilities.completion_chat === true)),
+                  (record(item.capabilities) && item.capabilities.completion_chat === true)) &&
+                (access.provider !== 'codestral' ||
+                  !record(item.capabilities) ||
+                  item.capabilities.completion_chat !== false),
             )
             .map((item) => ({
               id: item.id,
@@ -424,6 +430,7 @@ export async function streamChat(
     }
     case 'openai':
     case 'mistral':
+    case 'codestral':
     case 'openrouter':
     case 'deepseek': {
       const response = await request(
@@ -784,6 +791,7 @@ export async function agentTurn(
       return googleTurn(access, model, agent);
     case 'openai':
     case 'mistral':
+    case 'codestral':
     case 'openrouter':
     case 'deepseek':
       return compatibleTurn(access, model, agent);

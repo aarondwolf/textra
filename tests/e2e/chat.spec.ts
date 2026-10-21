@@ -44,6 +44,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         'openai',
         'anthropic',
         'mistral',
+        'codestral',
         'deepseek',
         'openrouter',
         'ollama-cloud',
@@ -150,13 +151,35 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         return { ok: true, value: undefined };
       });
       ipcMain.handle('textra:ai:provider:save', (_event, request: { provider: string }) => {
+        if (request.provider === 'codestral') {
+          state.settings = {
+            ...state.settings,
+            configured: true,
+            defaultModel: { provider: 'codestral', model: 'codestral-latest' },
+            providers: state.settings.providers.map((provider) =>
+              provider.id === 'codestral'
+                ? {
+                    ...provider,
+                    configured: true,
+                    defaultModel: 'codestral-latest',
+                    models: [{ id: 'codestral-latest', label: 'Codestral' }],
+                  }
+                : provider,
+            ),
+          };
+          return { ok: true, value: state.settings };
+        }
         ++state.keyTests;
         if (request.provider !== 'google' || state.keyTests === 1)
           return { ok: false, error: 'The test key was rejected.' };
         state.settings = connectGoogle(state.settings);
         return { ok: true, value: state.settings };
       });
-      ipcMain.handle('textra:ai:provider:remove', () => {
+      ipcMain.handle('textra:ai:provider:remove', (_event, request: { provider: string }) => {
+        if (request.provider === 'codestral') {
+          state.settings = unconfigured();
+          return { ok: true, value: state.settings };
+        }
         // Simulate native confirmation cancellation, then confirmation on retry.
         if (++state.keyDeletions === 1) return { ok: true, value: null };
         state.settings = { ...unconfigured(), autoSendProblems: state.settings.autoSendProblems };
@@ -209,6 +232,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       'OpenAI',
       'Anthropic',
       'Mistral',
+      'Codestral',
       'DeepSeek',
       'OpenRouter',
       'Ollama Cloud',
@@ -221,11 +245,35 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         'type',
         'password',
       );
-      await expect(card.getByRole('link', { name: 'Get a key', exact: true })).toBeVisible();
+      const form = card.locator(':scope > form');
+      await expect(form.getByRole('link', { name: 'Get a key', exact: true })).toBeVisible();
       await expect(
-        card.getByRole('button', { name: 'Save & load models', exact: true }),
+        form.getByRole('button', { name: 'Save & load models', exact: true }),
       ).toBeDisabled();
     }
+    const mistral = aiDialog.getByRole('region', { name: 'Mistral', exact: true });
+    const codestral = mistral.getByRole('region', { name: 'Codestral', exact: true });
+    await expect(codestral).toHaveClass(/ai-provider-subcard/);
+    await expect(aiDialog.locator('.ai-provider-grid > .ai-provider-card')).toHaveCount(8);
+    await expect(codestral.getByLabel('Codestral API key', { exact: true })).toHaveAttribute(
+      'type',
+      'password',
+    );
+    await expect(
+      codestral.getByRole('button', { name: 'Save & load models', exact: true }),
+    ).toBeDisabled();
+    await codestral.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('codestral-subcard.png') });
+    await codestral.getByLabel('Codestral API key', { exact: true }).fill('codestral-fixture-key');
+    await codestral.getByRole('button', { name: 'Save & load models', exact: true }).click();
+    await expect(codestral.locator(':scope > header')).toContainText('Connected');
+    await expect(mistral.locator(':scope > header')).toContainText('Not set up');
+    await expect(
+      codestral.getByRole('button', { name: 'Codestral default model: Codestral', exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('codestral-connected.png') });
+    await codestral.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(codestral.getByLabel('Codestral API key', { exact: true })).toHaveValue('');
     const google = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
     await expect(aiDialog.getByRole('region', { name: 'Local Ollama', exact: true })).toContainText(
       'Not installed',

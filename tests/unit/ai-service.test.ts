@@ -37,6 +37,7 @@ const MODELS: Record<AIProviderId, AIModelInfo[]> = {
     { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
   ],
   mistral: [{ id: 'mistral-small-latest', label: 'Mistral Small' }],
+  codestral: [{ id: 'codestral-latest', label: 'Codestral' }],
   deepseek: [{ id: 'deepseek-chat', label: 'DeepSeek Chat' }],
   openrouter: [{ id: 'openai/gpt-5-mini', label: 'OpenAI: GPT-5 Mini' }],
   'ollama-cloud': [{ id: 'gpt-oss:120b', label: 'gpt-oss:120b' }],
@@ -83,6 +84,7 @@ describe('multi-provider AI settings and requests', () => {
       'openai',
       'anthropic',
       'mistral',
+      'codestral',
       'deepseek',
       'openrouter',
       'ollama-cloud',
@@ -103,6 +105,23 @@ describe('multi-provider AI settings and requests', () => {
       expect(chat.mock.calls.at(-1)?.[1]).toBe(model);
     },
   );
+  it('keeps Codestral credentials and removal independent from the Mistral connection', async () => {
+    await service.saveProvider({ provider: 'mistral', apiKey: 'mistral-secret' });
+    await service.saveProvider({ provider: 'codestral', apiKey: 'codestral-secret' });
+    await service.send({
+      ...question,
+      model: { provider: 'codestral', model: 'codestral-latest' },
+    });
+    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'codestral', key: 'codestral-secret' });
+    await service.send({
+      ...question,
+      model: { provider: 'mistral', model: 'mistral-small-latest' },
+    });
+    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'mistral', key: 'mistral-secret' });
+    const removed = await service.removeProvider({ provider: 'codestral' });
+    expect(removed.providers.find(({ id }) => id === 'mistral')!.configured).toBe(true);
+    expect(removed.providers.find(({ id }) => id === 'codestral')!.configured).toBe(false);
+  });
 
   it('filters an old cached catalogue and repairs defaults without networking or deleting keys', async () => {
     await service.saveProvider({ provider: 'openai', apiKey: 'secret' });

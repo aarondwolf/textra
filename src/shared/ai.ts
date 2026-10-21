@@ -4,6 +4,7 @@ export const AI_PROVIDER_IDS = [
   'openai',
   'anthropic',
   'mistral',
+  'codestral',
   'deepseek',
   'openrouter',
   'ollama-cloud',
@@ -17,6 +18,8 @@ export interface AIProviderInfo {
   needsKey: boolean;
   keyLabel: string;
   setupHint?: string;
+  /** Setup cards can nest a dedicated credential profile inside its vendor card. */
+  parent?: AIProviderId;
   links: Partial<Record<AIProviderLink, string>>;
   /** True when requests never leave this computer. */
   local: boolean;
@@ -63,6 +66,20 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
     links: {
       keys: 'https://console.mistral.ai/api-keys',
       limits: 'https://console.mistral.ai/limits',
+    },
+    local: false,
+  },
+  codestral: {
+    id: 'codestral',
+    label: 'Codestral',
+    needsKey: true,
+    keyLabel: 'Codestral API key',
+    setupHint:
+      'Use a key for the dedicated Codestral service. This connection is separate from Mistral above.',
+    parent: 'mistral',
+    links: {
+      keys: 'https://console.mistral.ai/codestral',
+      limits: 'https://console.mistral.ai/codestral',
     },
     local: false,
   },

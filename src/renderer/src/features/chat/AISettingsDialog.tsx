@@ -51,6 +51,10 @@ function ProviderCard({
   registerDraft: (provider: AIProviderId, save: (() => Promise<boolean>) | null) => void;
 }) {
   const info = AI_PROVIDERS[provider.id];
+  const Heading = info.parent ? 'h5' : 'h4';
+  const subproviders = settings.providers.filter(
+    (candidate) => AI_PROVIDERS[candidate.id].parent === provider.id,
+  );
   const keyId = useId();
   const [apiKey, setApiKey] = useState('');
   const [editing, setEditing] = useState(false);
@@ -146,12 +150,12 @@ function ProviderCard({
 
   return (
     <section
-      className="ai-provider-card"
+      className={`ai-provider-card${info.parent ? ' ai-provider-subcard' : ''}`}
       data-configured={provider.configured}
       aria-label={info.label}
     >
       <header>
-        <h4>{info.label}</h4>
+        <Heading>{info.label}</Heading>
         <span className="ai-provider-pill" data-tone={pill.tone}>
           {pill.text}
         </span>
@@ -312,6 +316,16 @@ function ProviderCard({
           {status}
         </p>
       )}
+      {subproviders.map((subprovider) => (
+        <ProviderCard
+          key={subprovider.id}
+          provider={subprovider}
+          settings={settings}
+          ollama={ollama}
+          onOllamaStatus={onOllamaStatus}
+          registerDraft={registerDraft}
+        />
+      ))}
     </section>
   );
 }
@@ -412,16 +426,18 @@ export function AISettingsDialog({
                 </section>
                 <h3>Providers</h3>
                 <div className="ai-provider-grid">
-                  {settings.providers.map((provider) => (
-                    <ProviderCard
-                      key={provider.id}
-                      provider={provider}
-                      settings={settings}
-                      ollama={ollama}
-                      onOllamaStatus={setOllama}
-                      registerDraft={registerDraft}
-                    />
-                  ))}
+                  {settings.providers
+                    .filter((provider) => !AI_PROVIDERS[provider.id].parent)
+                    .map((provider) => (
+                      <ProviderCard
+                        key={provider.id}
+                        provider={provider}
+                        settings={settings}
+                        ollama={ollama}
+                        onOllamaStatus={setOllama}
+                        registerDraft={registerDraft}
+                      />
+                    ))}
                 </div>
                 <label className="ai-auto-send">
                   <input

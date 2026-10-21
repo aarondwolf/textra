@@ -1,11 +1,16 @@
 # Architecture memory
 
+Codestral is a separate credential profile at codestral.mistral.ai/v1. It reuses
+Chat Completions transport and shared prompts but accepts only Codestral model IDs.
+AI_PROVIDERS.codestral.parent='mistral' renders its own ProviderCard nested inside
+Mistral; no key sharing or parent-configured prerequisite. GitHub explicitly deferred.
+
 OpenRouter shares Chat Completions transport at openrouter.ai/api/v1. Catalogue
 uses authenticated /models/user?output_modalities=text and strict architecture
 text-output filtering; auto/free routers are excluded. Routing requires supported
 parameters, disables provider fallback, and preserves reasoning blocks for tools.
-The provider card explains downstream routing. GitHub Models has retired; pending
-owner scope choice is a separate Copilot SDK adapter, not a legacy Models endpoint.
+The provider card explains downstream routing. GitHub Models has retired; a future
+Copilot SDK adapter is explicitly deferred, not a pending scope choice.
 
 AI providers include Mistral (api.mistral.ai/v1) and DeepSeek (api.deepseek.com).
 Both reuse the OpenAI-compatible listing/chat/tool transport with provider-specific

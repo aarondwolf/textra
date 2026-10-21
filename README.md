@@ -2,7 +2,7 @@
 
 A modern, local-first LaTeX desktop IDE. Your documents stay ordinary files on
 your computer. Editing and local compilation never require an account; AI is
-optional. AI chat works with your own Google, OpenAI, Anthropic, Mistral, DeepSeek or Ollama Cloud key, or
+optional. AI chat works with your own Google, OpenAI, Anthropic, Mistral, DeepSeek, OpenRouter or Ollama Cloud key, or
 with a local Ollama server.
 
 ![Native TeXtra editing and PDF preview](docs/screenshot.png)
@@ -104,7 +104,7 @@ The **AI Chat** rail tab opens a conversational debugger. Until a provider is co
 shows a single **Configure AI** button that opens the **AI settings** dialog (also reachable
 from the chat header **Settings** button and **Settings → AI Chat**). The dialog has one card
 per provider: **Google Gemini**, **OpenAI**, **Anthropic**, **Mistral**, **DeepSeek**,
-**Ollama Cloud** and **Local Ollama**.
+**OpenRouter**, **Ollama Cloud** and **Local Ollama**.
 **Save & load models** tests a key by listing that provider's models, then saves the
 encrypted key with the model list. **Local Ollama** pings `127.0.0.1:11434`, shows whether it
 is running, offers **Start Ollama** (runs the installed `ollama serve`) or a download link, and
@@ -120,6 +120,11 @@ Chat and Agent. Requests are sent in each provider's own format: Gemini generate
 OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, and Ollama's native `/api/chat`.
 Every provider receives the same Chat system instructions; routing changes only
 the endpoint and request format.
+OpenRouter lists text models from its authenticated account catalogue, respecting
+your account's provider/privacy preferences. It routes submitted text to the
+selected model's hosting provider. TeXtra disables automatic provider fallback and
+requires tool parameters to be supported in Agent mode. Dynamic auto/free router
+entries are excluded so you choose an explicit model.
 **New chat** clears prior conversation context and retries while preserving unsent draft text.
 Settings can enable automatic
 Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five

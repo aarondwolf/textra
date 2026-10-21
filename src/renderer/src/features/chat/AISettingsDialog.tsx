@@ -156,6 +156,7 @@ function ProviderCard({
           {pill.text}
         </span>
       </header>
+      {info.setupHint && <p className="ai-settings-note">{info.setupHint}</p>}
 
       {local && !running && ollama && (
         <div className="ai-provider-row">

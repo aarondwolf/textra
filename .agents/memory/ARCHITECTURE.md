@@ -1,5 +1,12 @@
 # Architecture memory
 
+OpenRouter shares Chat Completions transport at openrouter.ai/api/v1. Catalogue
+uses authenticated /models/user?output_modalities=text and strict architecture
+text-output filtering; auto/free routers are excluded. Routing requires supported
+parameters, disables provider fallback, and preserves reasoning blocks for tools.
+The provider card explains downstream routing. GitHub Models has retired; pending
+owner scope choice is a separate Copilot SDK adapter, not a legacy Models endpoint.
+
 AI providers include Mistral (api.mistral.ai/v1) and DeepSeek (api.deepseek.com).
 Both reuse the OpenAI-compatible listing/chat/tool transport with provider-specific
 token fields. DeepSeek raw reasoning metadata survives tool replay. One Chat system

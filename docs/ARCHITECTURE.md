@@ -55,7 +55,10 @@ fallbacks for sparse catalogues. ai-models.ts also filters old cached catalogues
 and repairs defaults without a network request. Ollama metadata requests run in
 batches of four under the existing listing deadline; 404/405 falls back to names.
 CHAT_SYSTEM_PROMPT is shared verbatim by every Chat adapter. Compatible providers
-share listing/chat/tool transport; token field differences stay in main. DeepSeek
+share listing/chat/tool transport; token field differences stay in main. OpenRouter
+uses /models/user?output_modalities=text, checks architecture.output_modalities,
+and excludes automatic multi-model router IDs. Requests use require_parameters=true
+and allow_fallbacks=false; reasoning_details/reasoning survive tool replay. DeepSeek
 reasoning metadata is retained for tool replay, outside displayed response text.
 The concise Chat prompt labels actionable fixes; the renderer offers an explicit
 Implement Suggested Fix action that switches modes and submits the existing conversation

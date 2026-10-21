@@ -76,6 +76,36 @@ const chat = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('model listing', () => {
+  it('uses the authenticated OpenRouter catalogue and text-output metadata', async () => {
+    const sent = stubFetch(
+      jsonResponse({
+        data: [
+          {
+            id: 'anthropic/claude-sonnet',
+            name: 'Claude Sonnet',
+            architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+          },
+          { id: 'vendor/generator', architecture: { output_modalities: ['image'] } },
+          { id: 'vendor/mixed', architecture: { output_modalities: ['text', 'image'] } },
+          { id: 'vendor/unknown' },
+          { id: 'openrouter/auto', architecture: { output_modalities: ['text'] } },
+          { id: 'openrouter/free', architecture: { output_modalities: ['text'] } },
+        ],
+      }),
+    );
+    expect(await listModels(access('openrouter'), signal)).toEqual([
+      { id: 'anthropic/claude-sonnet', label: 'Claude Sonnet' },
+    ]);
+    expect(sent[0].url).toBe('https://openrouter.ai/api/v1/models/user?output_modalities=text');
+    expect(sent[0].headers.get('authorization')).toBe('Bearer secret-key');
+    expect(sent[0].redirect).toBe('error');
+  });
+  it('does not accept an OpenRouter key based on the public catalogue', async () => {
+    const sent = stubFetch(jsonResponse({ error: { message: 'Invalid key' } }, 401));
+    await expect(listModels(access('openrouter'), signal)).rejects.toMatchObject({ status: 401 });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toContain('/models/user');
+  });
   it('lists Gemini chat models with the key in a header', async () => {
     const sent = stubFetch(
       jsonResponse({
@@ -268,6 +298,14 @@ describe('streamed chat formats', () => {
             : 'https://api.deepseek.com/chat/completions',
         );
       }
+      if (provider === 'openrouter') {
+        expect(sent[0].url).toBe('https://openrouter.ai/api/v1/chat/completions');
+        expect(body).toMatchObject({
+          max_tokens: chat.maxTokens,
+          modalities: ['text'],
+          provider: { require_parameters: true, allow_fallbacks: false },
+        });
+      }
     },
   );
   it('streams OpenAI Chat Completions server-sent events', async () => {
@@ -355,6 +393,51 @@ describe('agent tool-calling formats', () => {
     { role: 'tool', results: [{ id: 'call_1', name: 'read_current_file', result: { text: 'x' } }] },
   ];
   const request = { system: 'Edit.', items, tools, maxTokens: 100, signal };
+  it('preserves OpenRouter reasoning blocks and requires tool-capable routing', async () => {
+    const reasoning_details = [
+      { type: 'reasoning.encrypted', data: 'opaque', signature: 'sig', index: 0 },
+    ];
+    const sent = stubFetch(
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: '',
+              reasoning_details,
+              tool_calls: [
+                {
+                  id: 'read1',
+                  type: 'function',
+                  function: { name: 'read_current_file', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      jsonResponse({ choices: [{ message: { content: 'Done.' } }] }),
+    );
+    const turn = await agentTurn(access('openrouter'), 'anthropic/claude-sonnet', request);
+    await agentTurn(access('openrouter'), 'anthropic/claude-sonnet', {
+      ...request,
+      items: [
+        { role: 'user', text: 'Fix it.' },
+        { role: 'assistant', text: turn.text, calls: turn.calls, raw: turn.raw },
+        {
+          role: 'tool',
+          results: [{ id: 'read1', name: 'read_current_file', result: { text: 'x' } }],
+        },
+      ],
+    });
+    expect((sent[1].body!.messages as Record<string, unknown>[])[2].reasoning_details).toEqual(
+      reasoning_details,
+    );
+    expect(sent[0].body).toMatchObject({
+      provider: { require_parameters: true, allow_fallbacks: false },
+      tools: [{ type: 'function' }],
+    });
+    expect(sent[0].body).not.toHaveProperty('models');
+  });
 
   it.each(['mistral', 'deepseek'] as const)(
     'routes %s tools and preserves DeepSeek reasoning for replay',

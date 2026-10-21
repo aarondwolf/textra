@@ -1,5 +1,19 @@
 # Current state
 
+2026-10-21 OpenRouter: encrypted setup card, authenticated /models/user text-only
+catalogue respecting account preferences, shared Chat/Agent transport and prompts.
+Requests set require_parameters=true/allow_fallbacks=false; automatic auto/free
+router IDs are excluded. Agent reasoning_details/reasoning survive replay.
+Full tests 416/416 pass with normal Windows permissions; typecheck/lint/build pass.
+GitHub portion remains INCOMPLETE pending the owner's answer to the in-chat choice:
+GitHub Models retired 2026-07-30 (official docs); do not implement its old PAT endpoint.
+Recommended alternative: official Copilot SDK, sign-in or fine-grained PAT with
+Copilot Requests; disable built-in tools/discovery and preserve TeXtra prompts,
+bounded staging and approval. This needs its own runtime integration, not another
+Chat Completions URL. No Copilot dependency or credentials added yet.
+Next: obtain GitHub scope choice, implement/verify isolated SDK adapter if selected,
+then live-provider verification with user-supplied setup. Launch npm run dev.
+
 2026-10-21 AI setup/catalogue refactor: Mistral and DeepSeek added to the shared
 provider catalogue, encrypted settings and fixed-endpoint Chat/Agent routing.
 They share Chat Completions transport with OpenAI; max_tokens stays distinct from

@@ -38,6 +38,7 @@ const MODELS: Record<AIProviderId, AIModelInfo[]> = {
   ],
   mistral: [{ id: 'mistral-small-latest', label: 'Mistral Small' }],
   deepseek: [{ id: 'deepseek-chat', label: 'DeepSeek Chat' }],
+  openrouter: [{ id: 'openai/gpt-5-mini', label: 'OpenAI: GPT-5 Mini' }],
   'ollama-cloud': [{ id: 'gpt-oss:120b', label: 'gpt-oss:120b' }],
   'ollama-local': [{ id: 'llama3.2:latest', label: 'llama3.2' }],
 };
@@ -83,6 +84,7 @@ describe('multi-provider AI settings and requests', () => {
       'anthropic',
       'mistral',
       'deepseek',
+      'openrouter',
       'ollama-cloud',
       'ollama-local',
     ]);

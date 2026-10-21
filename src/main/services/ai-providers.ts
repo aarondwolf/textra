@@ -5,7 +5,8 @@ import { cleanModelList, hasTextOutput, isTextModelId } from './ai-models';
 
 /**
  * Wire-format adapters. Each provider speaks its own protocol: Gemini uses
- * generateContent, OpenAI/Mistral/DeepSeek use Chat Completions, Anthropic uses Messages, and
+ * generateContent, OpenAI/Mistral/DeepSeek/OpenRouter use Chat Completions,
+ * Anthropic uses Messages, and
  * Ollama (cloud or local) uses its native /api/chat. Endpoints are fixed here;
  * no provider-selected or renderer-selected URL is ever requested.
  */
@@ -67,11 +68,22 @@ const COMPATIBLE_URLS = {
   openai: OPENAI_URL,
   mistral: 'https://api.mistral.ai/v1',
   deepseek: 'https://api.deepseek.com',
+  openrouter: 'https://openrouter.ai/api/v1',
 } as const;
 function compatibleBase(provider: AIProviderId): string {
-  if (provider === 'openai' || provider === 'mistral' || provider === 'deepseek')
+  if (
+    provider === 'openai' ||
+    provider === 'mistral' ||
+    provider === 'deepseek' ||
+    provider === 'openrouter'
+  )
     return COMPATIBLE_URLS[provider];
   throw new Error('Unsupported Chat Completions provider.');
+}
+function routingOptions(access: ProviderAccess): Record<string, unknown> {
+  return access.provider === 'openrouter'
+    ? { provider: { require_parameters: true, allow_fallbacks: false }, modalities: ['text'] }
+    : {};
 }
 function completionLimit(access: ProviderAccess, maxTokens: number): Record<string, number> {
   return access.provider === 'openai'
@@ -93,6 +105,7 @@ function headers(access: ProviderAccess): Record<string, string> {
   const result: Record<string, string> = { 'content-type': 'application/json' };
   if (access.provider in COMPATIBLE_URLS || access.provider === 'ollama-cloud')
     result.authorization = `Bearer ${requireKey(access)}`;
+  if (access.provider === 'openrouter') result['X-OpenRouter-Title'] = 'TeXtra';
   if (access.provider === 'anthropic') {
     result['x-api-key'] = requireKey(access);
     result['anthropic-version'] = ANTHROPIC_VERSION;
@@ -271,6 +284,32 @@ export async function listModels(
         ),
       );
     }
+    case 'openrouter': {
+      // The public catalogue does not validate keys or respect account preferences.
+      const value = await json(
+        `${compatibleBase(access.provider)}/models/user?output_modalities=text`,
+        access,
+        signal,
+      );
+      return sortByLabel(
+        cleanModelList(
+          access.provider,
+          (Array.isArray(value.data) ? value.data : [])
+            .filter(
+              (item): item is Record<string, unknown> & { id: string } =>
+                record(item) &&
+                typeof item.id === 'string' &&
+                record(item.architecture) &&
+                Array.isArray(item.architecture.output_modalities) &&
+                hasTextOutput(item.architecture.output_modalities),
+            )
+            .map((item) => ({
+              id: item.id,
+              label: typeof item.name === 'string' ? item.name : item.id,
+            })),
+        ),
+      );
+    }
     case 'anthropic': {
       const value = await json(`${ANTHROPIC_URL}/models?limit=1000`, access, signal);
       const data = Array.isArray(value.data) ? value.data : [];
@@ -385,6 +424,7 @@ export async function streamChat(
     }
     case 'openai':
     case 'mistral':
+    case 'openrouter':
     case 'deepseek': {
       const response = await request(
         `${compatibleBase(access.provider)}/chat/completions`,
@@ -394,6 +434,7 @@ export async function streamChat(
           model,
           stream: true,
           ...completionLimit(access, chat.maxTokens),
+          ...routingOptions(access),
           messages: [
             { role: 'system', content: chat.system },
             ...chat.messages.map(({ role, text }) => ({
@@ -571,6 +612,14 @@ async function compatibleTurn(
         typeof item.raw.reasoning_content === 'string'
           ? { reasoning_content: item.raw.reasoning_content }
           : {}),
+        ...(access.provider === 'openrouter' && record(item.raw)
+          ? {
+              ...(Array.isArray(item.raw.reasoning_details)
+                ? { reasoning_details: item.raw.reasoning_details }
+                : {}),
+              ...(typeof item.raw.reasoning === 'string' ? { reasoning: item.raw.reasoning } : {}),
+            }
+          : {}),
         ...(item.calls.length
           ? {
               tool_calls: item.calls.map((call, index) => ({
@@ -597,6 +646,7 @@ async function compatibleTurn(
       model,
       messages,
       ...completionLimit(access, agent.maxTokens),
+      ...routingOptions(access),
       tools: agent.tools.map(({ name, description, parameters }) => ({
         type: 'function',
         function: { name, description, parameters },
@@ -615,7 +665,7 @@ async function compatibleTurn(
   return {
     text: typeof message.content === 'string' ? message.content : '',
     calls,
-    ...(access.provider === 'deepseek' ? { raw: message } : {}),
+    ...(access.provider === 'deepseek' || access.provider === 'openrouter' ? { raw: message } : {}),
   };
 }
 
@@ -734,6 +784,7 @@ export async function agentTurn(
       return googleTurn(access, model, agent);
     case 'openai':
     case 'mistral':
+    case 'openrouter':
     case 'deepseek':
       return compatibleTurn(access, model, agent);
     case 'anthropic':

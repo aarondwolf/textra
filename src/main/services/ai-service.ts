@@ -92,6 +92,7 @@ const PREFERRED: Record<AIProviderId, RegExp[]> = {
   anthropic: [/haiku/, /sonnet/],
   mistral: [/^mistral-small-latest$/, /^mistral-medium-latest$/, /mistral/],
   deepseek: [/^deepseek-chat$/, /flash/, /deepseek/],
+  openrouter: [/^google\/gemini-[\d.]+-flash-lite$/, /^openai\/gpt-[\d.]+-mini$/],
   'ollama-cloud': [],
   'ollama-local': [],
 };

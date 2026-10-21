@@ -5,6 +5,7 @@ export const AI_PROVIDER_IDS = [
   'anthropic',
   'mistral',
   'deepseek',
+  'openrouter',
   'ollama-cloud',
   'ollama-local',
 ] as const;
@@ -15,6 +16,7 @@ export interface AIProviderInfo {
   label: string;
   needsKey: boolean;
   keyLabel: string;
+  setupHint?: string;
   links: Partial<Record<AIProviderLink, string>>;
   /** True when requests never leave this computer. */
   local: boolean;
@@ -72,6 +74,18 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
     links: {
       keys: 'https://platform.deepseek.com/api_keys',
       limits: 'https://platform.deepseek.com/usage',
+    },
+    local: false,
+  },
+  openrouter: {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    needsKey: true,
+    keyLabel: 'OpenRouter API key',
+    setupHint: 'Routes messages through OpenRouter to the selected model’s provider.',
+    links: {
+      keys: 'https://openrouter.ai/settings/keys',
+      limits: 'https://openrouter.ai/settings/credits',
     },
     local: false,
   },

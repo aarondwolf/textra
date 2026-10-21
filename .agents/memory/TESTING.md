@@ -1,5 +1,18 @@
 # Test evidence
 
+2026-10-21 OpenRouter: all 416 Windows unit/integration tests pass (33 files,
+28.77s) with normal permissions. Initial focused sandbox run 128/129 passed,
+with a temporary atomic-rename EPERM; full rerun resolves it. New coverage pins
+authenticated account catalogue, strict output modalities and router exclusions,
+401 failure without public catalogue fallback, exact shared system prompt,
+provider routing flags, and ordered Agent reasoning replay. Typecheck/lint/build
+pass; changed-file Prettier/diff checks pass. Global format check still flags only
+untouched docs/ROADMAP.md and sandbox/issues.md. Native Chat passes (30.6s) with
+eight cards/OpenRouter password/key/save controls; native shell passes (50.3s).
+Provider HTTP is mocked; no live
+OpenRouter key/quota used. GitHub SDK implementation awaits owner scope choice.
+Launch npm run dev; no phase gates advanced.
+
 2026-10-21 text-model discovery and Mistral/DeepSeek: full Windows suite covered
 411 cases: 410 passed initially, one real BibTeX pipeline hit its existing 15s
 deadline during concurrent build load. Serial rerun of latex.test.ts passes all

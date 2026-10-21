@@ -1,5 +1,15 @@
 # Decisions
 
+- 2026-10-21 OpenRouter/GitHub: OpenRouter uses its authenticated account catalogue
+  to validate the key and respect provider/privacy preferences, text-only models,
+  fixed selected model, require_parameters=true and allow_fallbacks=false. Shared
+  prompts and encrypted storage remain. Preserve reasoning_details/reasoning on
+  Agent tool replay. GitHub Models retired July 30, 2026 per
+  https://docs.github.com/en/github-models. Asked owner whether to integrate the
+  official Copilot SDK or defer GitHub; no answer at checkpoint. Recommend SDK
+  sign-in or fine-grained PAT with Copilot Requests, explicit tool allowlists,
+  main-owned isolated runtime and identical TeXtra prompts. No retired provider card.
+
 - 2026-10-21 AI catalogue/setup: add Mistral and DeepSeek using fixed official
   endpoints and encrypted per-provider keys. Share the compatible wire transport,
   preserve provider token fields and DeepSeek reasoning replay; keep one exact Chat

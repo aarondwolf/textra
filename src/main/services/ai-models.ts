@@ -20,6 +20,8 @@ export function isTextModelId(provider: AIProviderId, id: string): boolean {
       return true; // Discovery checks completion_chat explicitly.
     case 'deepseek':
       return /^deepseek-/i.test(id);
+    case 'openrouter':
+      return id.includes('/') && !/^openrouter\/(auto|free)(?::|$)/i.test(id);
     default:
       return !/(?:^|\/)(?:bge|all-minilm|mxbai|snowflake-arctic)(?:[-:/]|$)/i.test(id);
   }

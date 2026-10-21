@@ -45,6 +45,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         'anthropic',
         'mistral',
         'deepseek',
+        'openrouter',
         'ollama-cloud',
         'ollama-local',
       ] as const;
@@ -209,11 +210,12 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       'Anthropic',
       'Mistral',
       'DeepSeek',
+      'OpenRouter',
       'Ollama Cloud',
       'Local Ollama',
     ])
       await expect(aiDialog.getByRole('region', { name, exact: true })).toBeVisible();
-    for (const name of ['Mistral', 'DeepSeek']) {
+    for (const name of ['Mistral', 'DeepSeek', 'OpenRouter']) {
       const card = aiDialog.getByRole('region', { name, exact: true });
       await expect(card.getByLabel(`${name} API key`, { exact: true })).toHaveAttribute(
         'type',

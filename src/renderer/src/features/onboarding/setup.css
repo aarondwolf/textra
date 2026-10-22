@@ -73,6 +73,27 @@
   flex-wrap: wrap;
   margin: 12px 0;
 }
+.setup-actions input[type='color'] {
+  display: block;
+  width: 76px;
+  height: 42px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--raised);
+  cursor: pointer;
+}
+.setup-actions input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.setup-actions input[type='color']::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-surface) - 3px);
+}
+.setup-actions input[type='color']::-moz-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-surface) - 3px);
+}
 .setup-dialog button:not(.icon-button) {
   font: inherit;
   font-size: 12px;
@@ -131,6 +152,12 @@
   flex: none;
   color: var(--muted);
   font-size: 11px;
+}
+.editor-session-toggle {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  margin: 8px 0;
 }
 .texlab-toggle input {
   appearance: none;

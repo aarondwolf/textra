@@ -31,6 +31,8 @@ export default defineConfig({
         'react',
         'react-dom/client',
         'zustand',
+        // useChat pulls in the AI SDK core, which fails to load as raw modules.
+        '@ai-sdk/react',
         '@radix-ui/react-dialog',
         '@phosphor-icons/react',
         // Every Monaco entry point must be pre-bundled together. Contributions imported

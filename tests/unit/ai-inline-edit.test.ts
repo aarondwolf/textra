@@ -122,6 +122,39 @@ describe('main-owned inline edits', () => {
     await cancelled;
     expect(generate.mock.calls[0][2].signal.aborted).toBe(true);
   });
+  it('streams cumulative raw output and normalizes only the final result', async () => {
+    const chunks: string[] = [];
+    generate.mockImplementationOnce(async (_access, _model, sent) => {
+      sent.onText?.('```latex\n  new');
+      sent.onText?.('```latex\n  new\n```');
+      return '```latex\n  new\n```';
+    });
+    const result = await edits.request(request, (text) => chunks.push(text));
+    expect(chunks).toEqual(['```latex\n  new', '```latex\n  new\n```']);
+    expect(result.text).toBe('  new');
+  });
+  it('rejects oversized streamed output before publishing it', async () => {
+    const chunk = vi.fn();
+    generate.mockImplementationOnce(async (_access, _model, sent) => {
+      sent.onText?.('x'.repeat(32_001));
+      return 'unused';
+    });
+    await expect(edits.request(request, chunk)).rejects.toMatchObject({
+      code: 'AI_INLINE_EDIT_OUTPUT',
+    });
+    expect(chunk).not.toHaveBeenCalled();
+  });
+  it('ignores late chunks from aborted or completed generators', async () => {
+    let send: ((text: string) => void) | undefined;
+    generate.mockImplementationOnce(async (_access, _model, sent) => {
+      send = sent.onText;
+      return 'finished';
+    });
+    const chunk = vi.fn();
+    await edits.request(request, chunk);
+    send?.('late');
+    expect(chunk).not.toHaveBeenCalled();
+  });
   it('reports busy without interrupting foreground Chat/Agent work', async () => {
     let finish!: () => void;
     let started!: () => void;

@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
+import { Check, Copy } from '../../icons';
 import './markdown.css';
 
 export interface MarkdownPreviewProps {
@@ -7,6 +8,8 @@ export interface MarkdownPreviewProps {
   /** Optional label shown above the preview, normally the file's project-relative path. */
   path?: string;
   className?: string;
+  /** Show an always-visible copy control on fenced code blocks. */
+  copyCode?: boolean;
 }
 
 type ListKind = 'ordered' | 'unordered';
@@ -158,13 +161,52 @@ export function renderMarkdownInline(source: string): ReactNode[] {
   return nodes;
 }
 
-function Block({ block }: { block: MarkdownBlock }) {
-  if (block.kind === 'code') {
-    return (
+function CodeBlock({ block, copyCode }: { block: TextBlock; copyCode: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
+  return (
+    <div className="markdown-preview-code-wrap">
       <pre className="markdown-preview-code" data-language={block.language || undefined}>
         <code>{block.text}</code>
       </pre>
-    );
+      {copyCode && (
+        <>
+          <button
+            className="markdown-preview-code-copy"
+            type="button"
+            aria-label={copied ? 'Copied code' : 'Copy code'}
+            title={copied ? 'Copied' : 'Copy code'}
+            onClick={() => {
+              setCopyError('');
+              void window.textra
+                .copyText(block.text)
+                .then((result) => {
+                  if (result.ok) setCopied(true);
+                  else setCopyError(result.error);
+                })
+                .catch(() => setCopyError('Could not copy this code. Try again.'));
+            }}
+          >
+            {copied ? (
+              <Check size={14} aria-hidden="true" />
+            ) : (
+              <Copy size={14} aria-hidden="true" />
+            )}
+          </button>
+          {copyError && (
+            <span role="alert" className="markdown-preview-copy-error">
+              {copyError}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Block({ block, copyCode }: { block: MarkdownBlock; copyCode: boolean }) {
+  if (block.kind === 'code') {
+    return <CodeBlock block={block} copyCode={copyCode} />;
   }
   if (block.kind === 'list') {
     const List = block.listKind === 'ordered' ? 'ol' : 'ul';
@@ -184,7 +226,12 @@ function Block({ block }: { block: MarkdownBlock }) {
 }
 
 /** A dependency-free, read-only Markdown preview intended for project documentation. */
-export function MarkdownPreview({ source, path, className }: MarkdownPreviewProps) {
+export function MarkdownPreview({
+  source,
+  path,
+  className,
+  copyCode = false,
+}: MarkdownPreviewProps) {
   const blocks = parseMarkdownBlocks(source);
   return (
     <section
@@ -196,7 +243,7 @@ export function MarkdownPreview({ source, path, className }: MarkdownPreviewProp
         {blocks.length ? (
           blocks.map((block, index) => (
             <Fragment key={`${block.kind}-${index}`}>
-              <Block block={block} />
+              <Block block={block} copyCode={copyCode} />
             </Fragment>
           ))
         ) : (

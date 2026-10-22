@@ -55,8 +55,7 @@ function resolve(
     provider?.enabled !== false &&
     info &&
     supportsAIRole(info, role) &&
-    isModelVisible(rule, info.id) &&
-    (role !== 'agent' || provider?.supportsTools !== false),
+    isModelVisible(rule, info.id),
   );
   return { model, available };
 }

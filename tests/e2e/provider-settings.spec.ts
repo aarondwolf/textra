@@ -42,7 +42,7 @@ test('custom provider saves locally, filters exact models, resets defaults and s
         settings: {
           configured: false,
           autoSendProblems: false,
-          roleDefaults: { chat: null, agent: null, completion: null, inlineCompletion: null },
+          roleDefaults: { assistant: null, completion: null, inlineCompletion: null },
           completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
           providers: [
             {
@@ -105,9 +105,8 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       );
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
-    await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
-    const ai = page.getByRole('dialog', { name: 'AI settings', exact: true });
+    await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
+    const ai = settings.locator('.ai-settings-inline');
     await expect(ai.locator('.ai-provider-connection')).toHaveCount(0);
     await ai.getByRole('button', { name: 'Add provider', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Add provider', exact: true });
@@ -118,7 +117,10 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     await expect(key).toHaveAttribute('type', 'password');
     await expect(key).toHaveValue('');
     await expect(
-      editor.getByRole('checkbox', { name: 'Supports tool calls for Agent', exact: true }),
+      editor.getByRole('checkbox', {
+        name: 'Supports tool calls (lets the assistant read and propose document edits)',
+        exact: true,
+      }),
     ).not.toBeChecked();
     await editor.getByLabel('Connection name', { exact: true }).fill('Lab server');
     const endpoint = editor.getByLabel('Endpoint', { exact: true });
@@ -131,14 +133,14 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     });
     await defaultModel.selectOption('chat-a');
     const chatFilter = editor.getByRole('group', {
-      name: 'Chat, Agent and inline completion',
+      name: 'Assistant and inline completion',
       exact: true,
     });
     const autoFilter = editor.getByRole('group', { name: 'Automatic completion', exact: true });
     await chatFilter.getByRole('combobox').selectOption('include');
     await chatFilter
       .getByRole('textbox', {
-        name: 'Search chat, agent and inline completion models',
+        name: 'Search assistant and inline completion models',
         exact: true,
       })
       .fill('chat-a');
@@ -150,7 +152,7 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       .fill('code-a');
     await editor.getByRole('button', { name: 'Save Lab server', exact: true }).click();
     const row = ai.getByRole('region', { name: 'Lab server', exact: true });
-    await expect(row).toContainText('1 chat · 2 automatic');
+    await expect(row).toContainText('1 assistant · 2 automatic');
     await expect(row).toContainText('http://127.0.0.1:9999/v1');
     let state = await snapshot();
     expect(state.refreshes).toBe(0);
@@ -189,8 +191,10 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     state = await snapshot();
     expect(state.configurations.at(-1)?.defaultModel).toBeNull();
     const enabled = row.getByRole('switch', { name: 'Lab server enabled', exact: true });
-    await enabled.uncheck();
-    await expect(row).toContainText('Silenced');
+    // The switch is controlled by the saved settings, so its state changes after the save.
+    await enabled.click();
+    await expect(enabled).not.toBeChecked();
+    await expect(row).toContainText('Disabled');
     state = await snapshot();
     expect(state.configurations.at(-1)).toMatchObject({
       enabled: false,
@@ -199,12 +203,13 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     });
     expect(state.settings.providers[0].models).toHaveLength(3);
     expect(state.refreshes).toBe(1);
-    await enabled.check();
-    await expect(row).toContainText('1 chat · 2 automatic');
+    await enabled.click();
+    await expect(enabled).toBeChecked();
+    await expect(row).toContainText('1 assistant · 2 automatic');
     await row.getByRole('button', { name: 'Edit Lab server', exact: true }).click();
     await chatFilter
       .getByRole('button', {
-        name: 'Reset Chat, Agent and inline completion visibility',
+        name: 'Reset Assistant and inline completion visibility',
         exact: true,
       })
       .click();
@@ -212,7 +217,7 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       .getByRole('button', { name: 'Reset Automatic completion visibility', exact: true })
       .click();
     await editor.getByRole('button', { name: 'Save Lab server', exact: true }).click();
-    await expect(row).toContainText('2 chat · 3 automatic');
+    await expect(row).toContainText('2 assistant · 3 automatic');
     state = await snapshot();
     expect(state.configurations.at(-1)?.filters).toEqual({
       chat: { mode: 'all', models: [] },

@@ -4,8 +4,8 @@ import { _electron as electron, expect, test, type ElectronApplication } from '@
 import type { Result } from '../../src/shared/api';
 import type {
   AIAgentDocument,
-  AIAgentRequest,
-  AIAgentResult,
+  AIAssistantRequest,
+  AIAssistantResult,
   AIEditProposal,
   AIAgentReviewRequest,
   AIAgentReviewResult,
@@ -16,8 +16,8 @@ interface AgentTestState {
   contextId: string;
   generation: number;
   proposal: AIEditProposal | null;
-  requests: AIAgentRequest[];
-  chatModels: string[];
+  requests: AIAssistantRequest[];
+  cancelled: string[];
   hold: boolean;
   holdReview: boolean;
   limited: boolean;
@@ -26,7 +26,7 @@ interface AgentTestState {
   releaseReview: (() => void) | null;
 }
 
-test('native agent stages active-file edits for review, applies undoably, and rejects stale context', async () => {
+test('native assistant answers, stages active-file edits for review, applies undoably, and rejects stale context', async () => {
   test.setTimeout(180000);
   const root = join(process.cwd(), 'test-results', 'agent');
   await mkdir(root, { recursive: true });
@@ -67,7 +67,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
         generation: 0,
         proposal: null,
         requests: [],
-        chatModels: [],
+        cancelled: [],
         hold: false,
         holdReview: false,
         limited: false,
@@ -78,11 +78,10 @@ test('native agent stages active-file edits for review, applies undoably, and re
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest = state;
       for (const channel of [
         'textra:ai:settings',
-        'textra:ai:send',
-        'textra:ai:cancel',
+        'textra:ai:assistant:run',
+        'textra:ai:assistant:cancel',
         'textra:ai:link',
         'textra:agent:document',
-        'textra:agent:run',
         'textra:agent:accept',
         'textra:agent:review',
         'textra:agent:reject',
@@ -94,8 +93,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
           configured: true,
           autoSendProblems: false,
           roleDefaults: {
-            chat: { provider: 'google', model: 'gemini-3.5-flash-lite' },
-            agent: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+            assistant: { provider: 'google', model: 'gemini-3.5-flash-lite' },
             completion: null,
             inlineCompletion: null,
           },
@@ -119,20 +117,10 @@ test('native agent stages active-file edits for review, applies undoably, and re
           ),
         },
       }));
-      ipcMain.handle(
-        'textra:ai:send',
-        (_event, request: { model: { provider: string; model: string } }) => {
-          state.chatModels.push(`${request.model.provider}:${request.model.model}`);
-          return {
-            ok: true,
-            value:
-              state.chatModels.length === 1
-                ? 'Chat answer only; no edits proposed.'
-                : '**Suggested fix:** Replace Original text. with Revised text. Keep all other source unchanged.',
-          };
-        },
-      );
-      ipcMain.handle('textra:ai:cancel', () => ({ ok: true, value: undefined }));
+      ipcMain.handle('textra:ai:assistant:cancel', (_event, request: { requestId: string }) => {
+        state.cancelled.push(request.requestId);
+        return { ok: true, value: undefined };
+      });
       ipcMain.handle('textra:ai:link', (_event, request: { provider: string; link: string }) => {
         state.linksOpened.push(`${request.provider}:${request.link}`);
         return { ok: true, value: undefined };
@@ -156,15 +144,39 @@ test('native agent stages active-file edits for review, applies undoably, and re
         };
       });
       ipcMain.handle(
-        'textra:agent:run',
+        'textra:ai:assistant:run',
         (
-          _event,
-          request: AIAgentRequest,
-        ): Result<AIAgentResult> | Promise<Result<AIAgentResult>> => {
+          event,
+          request: AIAssistantRequest,
+        ): Result<AIAssistantResult> | Promise<Result<AIAssistantResult>> => {
           state.requests.push(request);
+          const send = (value: unknown) => event.sender.send('textra:ai:assistant:event', value);
           if (state.limited) return { ok: false, code: 'AI_RATE_LIMIT', error: 'Quota exceeded' };
+          // A failed turn stays pending and merges with the next question; use its last part.
+          const latest = request.messages.at(-1)?.text.split('\n\n').at(-1) ?? '';
+          // A plain answer: no document access was used or needed.
+          if (!request.contextId || /^(Explain|Suggest)/.test(latest)) {
+            const text = /^Suggest/.test(latest)
+              ? 'Replace Original text. with Revised text. Keep all other source unchanged.'
+              : 'Answer only; no edits proposed.';
+            send({ requestId: request.requestId, type: 'text', text: text.slice(0, 6) });
+            send({ requestId: request.requestId, type: 'text', text });
+            return {
+              ok: true,
+              value: {
+                text,
+                proposal: null,
+                documentAccess: request.contextId ? 'authorized' : 'none',
+              },
+            };
+          }
           if (!state.document || request.contextId !== state.contextId)
             return { ok: false, error: 'The active document changed.' };
+          send({
+            requestId: request.requestId,
+            type: 'status',
+            message: 'Reading the active document',
+          });
           const proposal: AIEditProposal = {
             ...state.document,
             id: `proposal-${state.requests.length}`,
@@ -175,9 +187,13 @@ test('native agent stages active-file edits for review, applies undoably, and re
             summary: 'Replace the sentence in the active file.',
           };
           state.proposal = proposal;
-          const result: Result<AIAgentResult> = {
+          const result: Result<AIAssistantResult> = {
             ok: true,
-            value: { text: 'Review this proposed correction.', proposal },
+            value: {
+              text: 'Review this proposed correction.',
+              proposal,
+              documentAccess: 'authorized',
+            },
           };
           if (state.hold)
             return new Promise((resolve) => {
@@ -278,10 +294,13 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    const chat = page.getByRole('region', { name: 'AI debugging chat', exact: true });
+    const chat = page.getByRole('region', { name: 'AI assistant', exact: true });
     const modelButton = chat.getByRole('button', { name: /^Model: / });
     const models = chat.getByRole('listbox', { name: 'Model', exact: true });
     await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
+    // One assistant: there is no Chat/Agent mode selector.
+    await expect(chat.getByRole('button', { name: 'Agent', exact: true })).toHaveCount(0);
+    await expect(chat.locator('.ai-context-chip')).toContainText('main.tex');
     await modelButton.click();
     await expect(models.getByRole('option', { name: /Gemini 3.5 Flash Lite/ })).toHaveAttribute(
       'aria-selected',
@@ -290,28 +309,16 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await expect(models.getByRole('option')).toHaveCount(3);
     await models.getByRole('option', { name: /Gemini 3.8 Flash/ }).click();
     await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
-    await chat
-      .getByRole('textbox', { name: 'Message AI', exact: true })
-      .fill('Explain this document.');
-    await chat.getByRole('button', { name: 'Send message', exact: true }).click();
-    await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    await expect(
-      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
-    ).toHaveCount(0);
-    await chat.getByRole('button', { name: 'Agent', exact: true }).click();
-    await expect(chat.locator('.ai-agent-notice')).toBeVisible();
-    await expect(chat.locator('.ai-agent-notice')).toHaveCount(0, { timeout: 7500 });
-    await expect(chat.getByRole('log')).toContainText('Explain this document.');
-    await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    // Agent keeps its independent saved default.
-    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
-    const agentInput = chat.getByRole('textbox', { name: 'Agent request', exact: true });
+    const input = chat.getByRole('textbox', { name: 'Message the assistant', exact: true });
     const send = chat.getByRole('button', { name: 'Send message', exact: true });
+    await input.fill('Explain this document.');
+    await send.click();
+    await expect(chat.getByRole('log')).toContainText('Answer only; no edits proposed.');
     const review = page.getByRole('region', { name: 'Review agent changes', exact: true });
     const approveAll = chat.getByRole('button', { name: 'Approve all', exact: true });
     const reject = chat.getByRole('button', { name: 'Reject all', exact: true });
     const editorLines = page.locator('.source-editor .view-lines');
-    await agentInput.fill('Revise the sentence.');
+    await input.fill('Revise the sentence.');
     await send.click();
     await expect(review).toBeVisible();
     await expect(
@@ -327,9 +334,10 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await page.screenshot({ path: test.info().outputPath('agent-review.png') });
     await reject.click();
     await expect(review).toHaveCount(0);
+    await expect(chat.getByRole('log')).toContainText('Changes rejected');
     await expect(editorLines).toContainText(/Original\s*text\./);
     expect(await readFile(mainFile, 'utf8')).toBe(original);
-    await agentInput.fill('Apply a reviewed correction.');
+    await input.fill('Apply a reviewed correction.');
     await send.click();
     await expect(review).toBeVisible();
     await review.getByRole('button', { name: 'Approve change 1', exact: true }).click();
@@ -343,6 +351,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     expect(await readFile(mainFile, 'utf8')).toBe(original);
     await review.getByRole('button', { name: 'Reject change 1', exact: true }).click();
     await expect(review).toHaveCount(0);
+    await expect(chat.getByRole('log')).toContainText('Some changes applied');
     await expect(editorLines).toContainText(/Revised\s*text\./);
     await expect(editorLines).toContainText(/Original\s*note\./);
     await expect(editorLines).not.toContainText(/Revised\s*note\./);
@@ -352,7 +361,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await editor.focus();
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     await expect(editorLines).toContainText(/Original\s*text\./);
-    await agentInput.fill('Approve all changes immediately.');
+    await input.fill('Approve all changes immediately.');
     await send.click();
     await expect(review).toBeVisible();
     await approveAll.click();
@@ -367,7 +376,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.holdReview = true;
     });
-    await agentInput.fill('Hold approval while I change the active file.');
+    await input.fill('Hold approval while I change the active file.');
     await send.click();
     await expect(review).toBeVisible();
     await review.getByRole('button', { name: 'Approve change 1', exact: true }).click();
@@ -391,9 +400,10 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.hold = true;
     });
-    await agentInput.fill('Hold this proposal while I change files.');
+    await input.fill('Hold this proposal while I change files.');
     await send.click();
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toBeVisible();
+    await expect(chat.getByRole('log')).toContainText('Reading the active document');
     await page.getByRole('button', { name: 'File Explorer', exact: true }).click();
     await page.getByRole('button', { name: 'Open other.tex', exact: true }).click();
     await expect(editorLines).toContainText(/Other\s*file/);
@@ -413,86 +423,78 @@ test('native agent stages active-file edits for review, applies undoably, and re
       state.hold = false;
     });
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await expect(agentInput).toBeEnabled();
+    await expect(input).toBeEnabled();
     await expect(review).toHaveCount(0);
+    await expect(chat.getByRole('alert')).toContainText('active file changed');
     expect(await readFile(otherFile, 'utf8')).toBe('% Other file must remain unchanged.\n');
 
+    // Without an eligible document the assistant still answers, with no document context.
     await page.getByRole('button', { name: 'File Explorer', exact: true }).click();
     await page.getByRole('button', { name: 'Open notes.md', exact: true }).click();
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await expect(agentInput).toBeDisabled();
-    await expect(send).toBeDisabled();
-    await expect(chat).toContainText('Open an active .tex file to use Agent.');
+    await expect(input).toBeEnabled();
+    await expect(chat.locator('.ai-context-chip')).toContainText('No document');
+    await input.fill('What does this warning mean?');
+    await send.click();
+    await expect(chat.getByRole('article', { name: 'Assistant response' }).last()).toContainText(
+      'Answer only; no edits proposed.',
+    );
+    await expect(chat.getByRole('button', { name: 'Send message', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'File Explorer', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.limited = true;
     });
-    await agentInput.fill('Exercise the provider rate limit.');
+    await input.fill('Exercise the provider rate limit.');
     await send.click();
-    await expect(chat.getByRole('alert')).toContainText('rate or Agent budget limit');
+    await expect(chat.getByRole('alert')).toContainText('rate or quota limit');
     await chat.getByRole('button', { name: 'View Google Gemini limits', exact: true }).click();
-    const state = await application.evaluate(() => {
-      const state = (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest;
-      return {
-        requests: state.requests,
-        chatModels: state.chatModels,
-        linksOpened: state.linksOpened,
-      };
-    });
-    expect(state.chatModels).toEqual(['google:gemini-3.8-flash']);
-    expect(state.requests).toHaveLength(6);
-    expect(state.requests[0].messages).toEqual([
-      { role: 'user', text: 'Explain this document.' },
-      { role: 'model', text: 'Chat answer only; no edits proposed.' },
-    ]);
-    expect(
-      state.requests.every(
-        (request) =>
-          request.model.provider === 'google' && request.model.model === 'gemini-3.5-flash-lite',
-      ),
-    ).toBe(true);
-    expect(state.linksOpened).toEqual(['google:limits']);
-    await chat.getByRole('button', { name: 'Chat', exact: true }).click();
-    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.8 Flash');
-    await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
-    await chat.getByRole('button', { name: 'Agent', exact: true }).click();
-    await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
-    await expect(chat.getByRole('log')).toContainText('Chat answer only; no edits proposed.');
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.limited = false;
     });
-    await chat.getByRole('button', { name: 'Chat', exact: true }).click();
-    await chat
-      .getByRole('textbox', { name: 'Message AI', exact: true })
-      .fill('Suggest a concrete correction.');
+    // The former "Implement Suggested Fix" handoff is an ordinary follow-up instruction.
+    await input.fill('Suggest a concrete correction.');
     await send.click();
-    const implement = chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true });
-    await expect(implement).toBeEnabled();
-    await implement.click();
+    await expect(chat.getByRole('log')).toContainText('Replace Original text.');
+    await input.fill('Apply that suggested fix.');
+    await send.click();
     await expect(review).toBeVisible();
-    await expect(chat.getByRole('button', { name: 'Agent', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    const handoff = await application.evaluate(() => {
+    const state = await application.evaluate(() => {
       const state = (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest;
-      return { request: state.requests.at(-1), document: state.document };
+      return { requests: state.requests, linksOpened: state.linksOpened, document: state.document };
     });
-    expect(handoff.request?.prompt).toBe('Implement the suggested fix above.');
-    expect(handoff.request?.model).toEqual({ provider: 'google', model: 'gemini-3.5-flash-lite' });
-    expect(handoff.request?.messages?.at(-1)).toEqual({
+    expect(state.linksOpened).toEqual(['google:limits']);
+    expect(
+      state.requests.every(
+        (request) =>
+          request.model.provider === 'google' && request.model.model === 'gemini-3.8-flash',
+      ),
+    ).toBe(true);
+    expect(state.requests[0].messages).toEqual([{ role: 'user', text: 'Explain this document.' }]);
+    // Review outcomes are application-owned context: a rejected proposal is never "applied".
+    expect(state.requests[2].messages[3]).toEqual({
       role: 'model',
-      text: '**Suggested fix:** Replace Original text. with Revised text. Keep all other source unchanged.',
+      text: 'Review this proposed correction.',
+      review: 'rejected',
     });
-    expect(handoff.document?.path).toBe('main.tex');
-    expect(handoff.document?.content).toBe(original);
+    expect(state.requests[3].messages.at(-2)).toMatchObject({ review: 'partial' });
+    const plain = state.requests.find((request) =>
+      request.messages.at(-1)?.text.includes('What does this warning mean?'),
+    );
+    expect(plain?.contextId).toBeUndefined();
+    const handoff = state.requests.at(-1)!;
+    expect(handoff.contextId).toBeTruthy();
+    expect(handoff.messages.at(-2)).toEqual({
+      role: 'model',
+      text: 'Replace Original text. with Revised text. Keep all other source unchanged.',
+    });
+    expect(state.document?.path).toBe('main.tex');
+    expect(state.document?.content).toBe(original);
     expect(await readFile(mainFile, 'utf8')).toBe(original);
     await reject.click();
     await expect(review).toHaveCount(0);
-    await expect(chat.locator('.ai-agent-notice')).toHaveCount(0);
-    await agentInput.fill('Review a proposal before an external change.');
+    await input.fill('Review a proposal before an external change.');
     await send.click();
     await expect(review).toBeVisible();
     await writeFile(mainFile, `${original}% External edit during review.\n`);
@@ -504,7 +506,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     });
     await page
       .getByRole('dialog', { name: 'External change detected', exact: true })
-      .getByRole('button', { name: 'Close TeXtra buffer', exact: true })
+      .getByRole('button', { name: 'Discard and close tab', exact: true })
       .click();
     await reject.click();
     await expect(review).toHaveCount(0);
@@ -521,7 +523,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await expect(chat.locator('.ai-agent-notice')).toHaveCount(0);
+    await expect(chat.locator('.ai-context-chip')).toContainText('main.tex');
     await application.close();
     application = await electron.launch({ args: ['.'], env: environment });
     // Windows may still release Chromium profile handles after the first process exits.
@@ -534,8 +536,7 @@ test('native agent stages active-file edits for review, applies undoably, and re
           configured: true,
           autoSendProblems: false,
           roleDefaults: {
-            chat: { provider: 'google', model: 'gemini-3.5-flash-lite' },
-            agent: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+            assistant: { provider: 'google', model: 'gemini-3.5-flash-lite' },
             completion: null,
             inlineCompletion: null,
           },
@@ -561,15 +562,11 @@ test('native agent stages active-file edits for review, applies undoably, and re
       }));
     });
     await restarted.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    const restoredChat = restarted.getByRole('region', { name: 'AI debugging chat', exact: true });
+    const restoredChat = restarted.getByRole('region', { name: 'AI assistant', exact: true });
+    // Workspace model choices are temporary; the saved Assistant default returns on restart.
     await expect(restoredChat.getByRole('button', { name: /^Model: / })).toHaveAccessibleName(
       'Model: Gemini 3.5 Flash Lite',
     );
-    await restoredChat.getByRole('button', { name: 'Agent', exact: true }).click();
-    await expect(restoredChat.getByRole('button', { name: /^Model: / })).toHaveAccessibleName(
-      'Model: Gemini 3.5 Flash Lite',
-    );
-    await expect(restoredChat.locator('.ai-agent-notice')).toHaveCount(0);
   } finally {
     if (application) {
       await application

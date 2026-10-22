@@ -10,7 +10,7 @@ function settings(): AISettings {
   return {
     configured: true,
     autoSendProblems: false,
-    roleDefaults: { chat: null, agent: null, completion: null, inlineCompletion: null },
+    roleDefaults: { assistant: null, completion: null, inlineCompletion: null },
     completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
     providers: [
       {
@@ -50,7 +50,7 @@ function settings(): AISettings {
 describe('role model visibility', () => {
   it('applies independent exact-ID groups and excludes FIM-only models from inline edits', () => {
     const value = settings();
-    expect(modelGroups(value, undefined, 'chat')[0]).toMatchObject({
+    expect(modelGroups(value, undefined, 'assistant')[0]).toMatchObject({
       label: 'Lab server',
       models: [{ id: 'chat' }],
     });
@@ -60,36 +60,39 @@ describe('role model visibility', () => {
     expect(modelGroups(value, undefined, 'completion')[0].models.map((model) => model.id)).toEqual([
       'fim',
     ]);
-    expect(findModel(value, { provider: 'custom', model: 'hidden' }, 'agent')).toBeNull();
+    expect(findModel(value, { provider: 'custom', model: 'hidden' }, 'assistant')).toBeNull();
     expect(
-      modelUnavailableReason(value, { provider: 'custom', model: 'hidden' }, 'agent'),
+      modelUnavailableReason(value, { provider: 'custom', model: 'hidden' }, 'assistant'),
     ).toContain('hidden');
     expect(findModel(value, { provider: 'custom', model: 'fim' }, 'inlineCompletion')).toBeNull();
     expect(
       modelUnavailableReason(value, { provider: 'custom', model: 'fim' }, 'inlineCompletion'),
     ).toContain('does not support');
   });
-  it('silences without deleting catalog data and removes unsupported Agent connections', () => {
+  it('silences without deleting catalog data and keeps text-only Assistant connections', () => {
     const value = settings();
     value.providers[0].enabled = false;
     expect(modelGroups(value)).toEqual([]);
-    expect(findModel(value, { provider: 'custom', model: 'chat' }, 'chat')).toBeNull();
-    expect(modelUnavailableReason(value, { provider: 'custom', model: 'chat' }, 'chat')).toContain(
-      'silenced',
-    );
+    expect(findModel(value, { provider: 'custom', model: 'chat' }, 'assistant')).toBeNull();
+    expect(
+      modelUnavailableReason(value, { provider: 'custom', model: 'chat' }, 'assistant'),
+    ).toContain('silenced');
     expect(value.providers[0].models).toHaveLength(3);
     value.providers[0].enabled = true;
+    // Without tool support the Assistant still answers in text, so the model stays listed.
     value.providers[0].supportsTools = false;
-    expect(modelGroups(value, undefined, 'agent')).toEqual([]);
-    expect(modelUnavailableReason(value, { provider: 'custom', model: 'chat' }, 'agent')).toContain(
-      'Tool calls are disabled',
-    );
+    expect(modelGroups(value, undefined, 'assistant')[0].models.map((model) => model.id)).toEqual([
+      'chat',
+    ]);
     expect(
-      modelUnavailableReason(value, { provider: 'custom', model: 'removed' }, 'chat'),
+      modelUnavailableReason(value, { provider: 'custom', model: 'chat' }, 'assistant'),
+    ).toBeNull();
+    expect(
+      modelUnavailableReason(value, { provider: 'custom', model: 'removed' }, 'assistant'),
     ).toContain('missing');
-    expect(modelUnavailableReason(value, { provider: 'openai', model: 'chat' }, 'chat')).toContain(
-      'removed',
-    );
+    expect(
+      modelUnavailableReason(value, { provider: 'openai', model: 'chat' }, 'assistant'),
+    ).toContain('removed');
     expect(modelGroups(value, undefined, 'inlineCompletion')[0].models).toHaveLength(1);
   });
   it('supports include/exclude resets and hides legacy dedicated profiles', () => {
@@ -98,7 +101,7 @@ describe('role model visibility', () => {
       chat: { mode: 'all', models: ['hidden'] },
       completion: { mode: 'all', models: [] },
     };
-    expect(modelGroups(value, undefined, 'chat')[0].models.map((model) => model.id)).toEqual([
+    expect(modelGroups(value, undefined, 'assistant')[0].models.map((model) => model.id)).toEqual([
       'chat',
       'hidden',
     ]);

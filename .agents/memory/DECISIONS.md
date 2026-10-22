@@ -1,5 +1,30 @@
 # Decisions
 
+- 2026-10-22 Settings integration & dialog consolidation:
+  Rather than maintaining standalone dialogs or DOM portal container hacks that duplicate
+  settings UI across the app, all settings entry points route directly to the appropriate section
+  in `SetupDialog` via `textra:open-settings` with `{ detail: { section } }`. Specifically:
+  - Chat panel gear icon, empty-state "Configure AI", and model warning "Edit providers"
+    open `SetupDialog` to `section: 'ai'`.
+  - `AISettingsDialog` is converted into an inline panel embedded directly in `SetupDialog`
+    under the `ai` section without outer modal dialog primitives.
+  - Compile dropdown "Manage recipes…" and Command Palette "Manage compile recipes" open
+    `SetupDialog` to `section: 'compilation'`, embedding `CompileRecipeEditor` directly in
+    settings rather than launching a standalone `RecipeDialog`.
+
+- 2026-10-22 UI/UX audit, Build tab refactor, and Settings customization:
+  The Compile tab is renamed to "Build". The header houses identical copies of the primary
+  compile button group and problems badge side-by-side. The recipe editor is simplified into
+  an open section rather than an enclosed card, with a modal ToolEditorDialog for step editing,
+  faded "+ Add" step trigger, and "Save" / "Save As" flow. Outline and Notes in the Writing
+  panel are vertically split and resizable with Notes defaulting compact. Document formatting
+  via latexindent is placed in the Writing header beside Focus. Snippets sections start collapsed
+  by default with lock controls and user preference toggles. Minimap minimum line threshold
+  is removed (default remains off). Custom themes and UI/editor fonts are saved in preferences
+  and dynamically apply CSS variables and Monaco options. Clicking a PDF in the file tree
+  ensures the preview panel opens and displays the document. Tooltips are added to all icon buttons
+  and tab header heights are unified at 40px with 24px buttons.
+
 - 2026-10-21 approved provider/inline redesign: keep native Monaco, without
   monacopilot. Ctrl+I becomes explicit prompted insertion/selection replacement
   with preview, 4k instruction/16k selection/4096 output tokens/32k characters/60s.
@@ -194,3 +219,35 @@
   then the including file's directory (src/shared/tex-structure.ts, document-model.ts).
   Files stays unfiltered per the earlier explorer decision. Owner pinned (not approved yet)
   replacing the rail with a labelled segmented control; see ROADMAP.md.
+- 2026-10-21: AI generation moved to the Vercel AI SDK (ai 7.0.148, @ai-sdk/react 4.0.152,
+  zod 4.6.7, pinned exactly). Native SDK providers for OpenAI (Chat Completions only), Google,
+  Anthropic, Mistral, DeepSeek and OpenRouter; @ai-sdk/openai-compatible for Ollama and custom.
+  No gateway or hosted backend. TeXtra keeps credentials, discovery, deadlines, staging, review
+  and Electron security; the SDK owns orchestration, transcripts and metadata replay.
+- 2026-10-21: One assistant replaces Chat/Agent. Manual Send authorizes on-demand document
+  access through an opaque context ID; automatic Problems prompts stay tool-free. Implement
+  Suggested Fix is replaced by an ordinary follow-up. Review outcomes (applied/partial/rejected)
+  are application-owned enum values on stored model turns and become fixed notes in context.
+- 2026-10-21: Unknown tool names stay fatal (as before) even though the SDK would otherwise
+  report them back to the model; invalid arguments to known tools stay recoverable.
+- 2026-10-22: Keep the SDK-backed assistant's explicit Chat/Agent switch. Chat is the
+  default and never receives document context or tools; Problems' Ask in AI stays Chat.
+  Selecting Agent and sending explicitly authorizes the active document snapshot. Include
+  that snapshot as untrusted context to remove a serial initial read call; tool edits still
+  require the model's tool request and a later response. Cancel running requests on document
+  sync only when they captured the affected document. During per-hunk review, renderer may
+  proceed on its active snapshot while main validates the opaque context on each action.
+- 2026-10-22: Normalize SDK errors at the assistant runner boundary so HTTP 5xx responses
+  keep their status and safe provider message instead of appearing as network failures.
+  Disable automatic stream retries for bounded foreground requests. Gemini 3.5 Flash-Lite
+  uses minimal thinking for Chat and low for Agent; other Google model defaults remain intact.
+- 2026-10-22: Keep adjacent user submissions as distinct UI and stored transcript turns after
+  failures. Coalesce adjacent same-role messages only when preparing provider requests, where
+  alternating-role formats require it. Render user Markdown with the existing HTML-free preview.
+- 2026-10-22: Preserve SDK reasoning deltas as a separate optional display part. Show provider-
+  exposed thought text in a faded, collapsed panel; keep it out of provider transcripts and
+  persisted chats. Request Google thought output only for Gemini 2.5/3 model IDs. Put an always-
+  visible copy control on fenced code blocks in user and assistant chat messages.
+- 2026-10-21: Settings v5: Assistant takes the saved Chat model, else Agent (an obsolete
+  Codestral ref is skipped). Unavailable selections are preserved, never substituted. A running
+  assistant request is cancelled when its connection's tool capability changes.

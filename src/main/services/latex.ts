@@ -25,7 +25,17 @@ export class BuildError extends Error {
   }
 }
 
-const names = ['pdflatex', 'xelatex', 'lualatex', 'latexmk', 'bibtex', 'biber', 'synctex'] as const;
+const names = [
+  'pdflatex',
+  'xelatex',
+  'lualatex',
+  'latexmk',
+  'bibtex',
+  'biber',
+  'synctex',
+  'chktex',
+  'latexindent',
+] as const;
 const MAX_LOG = 2_000_000;
 const MAX_PDF = 64 * 1024 * 1024;
 
@@ -45,12 +55,17 @@ export async function findExecutable(name: string): Promise<string | null> {
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     const clean = directory.replace(/^"|"$/g, '');
     if (!isAbsolute(clean)) continue;
-    const file = join(clean, process.platform === 'win32' ? `${name}.exe` : name);
-    try {
-      await access(file, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
-      if ((await stat(file)).isFile()) return await realpath(file);
-    } catch {
-      /* Try the next absolute PATH entry. */
+    const candidates = [join(clean, process.platform === 'win32' ? `${name}.exe` : name)];
+    if (name === 'latexindent') {
+      candidates.push(join(clean, 'latexindent.pl'), join(clean, 'latexindent'));
+    }
+    for (const file of candidates) {
+      try {
+        await access(file, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
+        if ((await stat(file)).isFile()) return await realpath(file);
+      } catch {
+        /* Try the next candidate or PATH entry. */
+      }
     }
   }
   return null;

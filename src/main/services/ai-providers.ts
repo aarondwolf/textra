@@ -1,4 +1,12 @@
-import type { GoogleGenAI, Content, Part } from '@google/genai';
+import { streamText } from 'ai';
+import {
+  ProviderHTTPError,
+  resolveSDKModel,
+  sdkProviderOptions,
+  sanitizedSDKError,
+  SDK_MAX_RETRIES,
+} from './ai-sdk-runtime';
+export { ProviderHTTPError } from './ai-sdk-runtime';
 import type { AIMessage } from '../../shared/api';
 import {
   OLLAMA_LOCAL_URL,
@@ -10,11 +18,11 @@ import { cleanModelList, hasTextOutput, isTextModelId } from './ai-models';
 import { validateAIEndpoint } from './ai-endpoints';
 
 /**
- * Wire-format adapters. Each provider speaks its own protocol: Gemini uses
- * generateContent, OpenAI/Mistral/DeepSeek/OpenRouter use Chat Completions,
- * Anthropic uses Messages, and
- * Ollama (cloud or local) uses its native /api/chat. Endpoints are fixed here;
- * no provider-selected or renderer-selected URL is ever requested.
+ * Provider access. Generation (chat, assistant tools, Ctrl+I and chat-based completion) goes
+ * through the Vercel AI SDK model factory in ai-sdk-runtime.ts. This file keeps only what the
+ * SDK does not own: model discovery and the two native fill-in-the-middle adapters (Mistral
+ * Codestral FIM and verified local Ollama generate). Endpoints come from main-validated
+ * configuration; no provider-selected or renderer-selected URL is ever requested.
  */
 export interface ProviderAccess {
   provider: AIProviderId;
@@ -37,44 +45,6 @@ export interface ChatRequest {
   maxOutputLines?: number;
   onFinishReason?: (reason: string) => void;
 }
-export interface ToolSpec {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-export interface ToolCall {
-  /** Provider call id when the protocol has one (OpenAI, Anthropic, sometimes Gemini). */
-  id?: string;
-  name: string;
-  args: unknown;
-}
-export type AgentItem =
-  | { role: 'user'; text: string }
-  /** raw keeps the provider's own message so signatures and blocks replay unchanged. */
-  | { role: 'assistant'; text: string; calls: ToolCall[]; raw?: unknown }
-  | { role: 'tool'; results: { id?: string; name: string; result: Record<string, unknown> }[] };
-export interface AgentTurn {
-  text: string;
-  calls: ToolCall[];
-  raw?: unknown;
-}
-export interface AgentRequest {
-  system: string;
-  items: AgentItem[];
-  tools: ToolSpec[];
-  maxTokens: number;
-  signal: AbortSignal;
-}
-
-export class ProviderHTTPError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly detail: string,
-  ) {
-    super(`Provider returned HTTP ${status}`);
-  }
-}
-
 const OUTPUT_LIMIT = 32_000;
 const GOOGLE_URL = 'https://generativelanguage.googleapis.com/';
 const OPENAI_URL = 'https://api.openai.com/v1';
@@ -99,20 +69,6 @@ function compatibleBase(access: ProviderAccess): string {
   )
     return COMPATIBLE_URLS[provider];
   throw new Error('Unsupported Chat Completions provider.');
-}
-function routingOptions(access: ProviderAccess): Record<string, unknown> {
-  return access.provider === 'openrouter'
-    ? { provider: { require_parameters: true, allow_fallbacks: false }, modalities: ['text'] }
-    : {};
-}
-function completionLimit(
-  access: ProviderAccess,
-  maxTokens: number,
-  exact = false,
-): Record<string, number> {
-  return access.provider === 'openai'
-    ? { max_completion_tokens: exact ? maxTokens : Math.max(maxTokens, 8192) }
-    : { max_tokens: maxTokens };
 }
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -217,18 +173,6 @@ async function* lines(response: Response, signal: AbortSignal): AsyncGenerator<s
     if (buffer.trim()) yield buffer;
   } finally {
     await reader.cancel().catch(() => undefined);
-  }
-}
-async function* sse(response: Response, signal: AbortSignal): AsyncGenerator<unknown> {
-  for await (const line of lines(response, signal)) {
-    if (!line.startsWith('data:')) continue;
-    const data = line.slice(5).trim();
-    if (!data || data === '[DONE]') continue;
-    try {
-      yield JSON.parse(data);
-    } catch {
-      /* Ignore keep-alive or malformed events. */
-    }
   }
 }
 function collector(request: ChatRequest) {
@@ -476,152 +420,59 @@ export async function ollamaVersion(signal: AbortSignal): Promise<string | null>
 
 // ----- Conversational chat (streamed) -----
 
-async function googleClient(access: ProviderAccess): Promise<GoogleGenAI> {
-  const { GoogleGenAI } = await import('@google/genai');
-  return new GoogleGenAI({
-    apiKey: requireKey(access),
-    vertexai: false,
-    httpOptions: {
-      baseUrl: access.endpoint ? validateAIEndpoint(access.endpoint) + '/' : GOOGLE_URL,
-      timeout: 120_000,
-      retryOptions: { attempts: 1 },
-      fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }),
-    },
-  });
-}
-
+/** Plain-text streaming through the SDK model factory. No tools and no retries. */
 export async function streamChat(
   access: ProviderAccess,
   model: string,
   chat: ChatRequest,
 ): Promise<string> {
   const output = collector(chat);
-  const { signal } = chat;
-  switch (access.provider) {
-    case 'google': {
-      const stream = await (
-        await googleClient(access)
-      ).models.generateContentStream({
-        model,
-        contents: chat.messages.map(({ role, text }) => ({ role, parts: [{ text }] })),
-        config: {
-          abortSignal: signal,
-          maxOutputTokens: chat.maxTokens,
-          automaticContinuation: false,
-          systemInstruction: chat.system,
-        },
-      });
-      for await (const chunk of stream) {
-        signal.throwIfAborted();
-        const reason = chunk.candidates?.[0]?.finishReason;
-        if (reason) chat.onFinishReason?.(reason);
-        if (output.add(chunk.text)) break;
-      }
-      return output.text;
-    }
-    case 'openai':
-    case 'mistral':
-    case 'codestral':
-    case 'openrouter':
-    case 'custom':
-    case 'deepseek': {
-      const response = await request(`${compatibleBase(access)}/chat/completions`, access, signal, {
-        model,
-        stream: true,
-        ...completionLimit(access, chat.maxTokens, chat.exactTokenBudget),
-        ...routingOptions(access),
-        messages: [
-          { role: 'system', content: chat.system },
-          ...chat.messages.map(({ role, text }) => ({
-            role: role === 'model' ? 'assistant' : 'user',
-            content: text,
-          })),
-        ],
-      });
-      for await (const event of sse(response, signal)) {
-        if (!record(event)) continue;
-        if (record(event.error))
-          throw new ProviderHTTPError(500, String(event.error.message ?? 'Stream error.'));
-        const choice = Array.isArray(event.choices) ? event.choices[0] : undefined;
-        if (record(choice) && typeof choice.finish_reason === 'string')
-          chat.onFinishReason?.(choice.finish_reason);
-        if (record(choice) && record(choice.delta) && output.add(choice.delta.content)) break;
-      }
-      return output.text;
-    }
-    case 'anthropic': {
-      const response = await request(
-        `${access.endpoint ? validateAIEndpoint(access.endpoint) : ANTHROPIC_URL}/messages`,
-        access,
-        signal,
-        {
-          model,
-          stream: true,
-          max_tokens: chat.maxTokens,
-          system: chat.system,
-          messages: chat.messages.map(({ role, text }) => ({
-            role: role === 'model' ? 'assistant' : 'user',
-            content: text,
-          })),
-        },
-      );
-      for await (const event of sse(response, signal)) {
-        if (!record(event)) continue;
-        if (
-          event.type === 'message_delta' &&
-          record(event.delta) &&
-          typeof event.delta.stop_reason === 'string'
-        )
-          chat.onFinishReason?.(event.delta.stop_reason);
-        if (event.type === 'error')
-          throw new ProviderHTTPError(
-            record(event.error) && event.error.type === 'overloaded_error' ? 529 : 500,
-            record(event.error) ? String(event.error.message ?? '') : '',
-          );
-        if (
-          event.type === 'content_block_delta' &&
-          record(event.delta) &&
-          event.delta.type === 'text_delta' &&
-          output.add(event.delta.text)
-        )
-          break;
-      }
-      return output.text;
-    }
-    case 'ollama-cloud':
-    case 'ollama-local': {
-      const response = await request(`${ollamaBase(access)}/api/chat`, access, signal, {
-        model,
-        stream: true,
-        ...(chat.exactTokenBudget ? { keep_alive: '5m' } : {}),
-        options: { num_predict: chat.maxTokens },
-        messages: [
-          { role: 'system', content: chat.system },
-          ...chat.messages.map(({ role, text }) => ({
-            role: role === 'model' ? 'assistant' : 'user',
-            content: text,
-          })),
-        ],
-      });
-      for await (const line of lines(response, signal)) {
-        if (!line.trim()) continue;
-        let event: unknown;
+  const controller = new AbortController();
+  const signal = AbortSignal.any([chat.signal, controller.signal]);
+  let callbackError: unknown;
+  try {
+    const result = streamText({
+      model: await resolveSDKModel(access, model, { signal }),
+      system: chat.system,
+      messages: chat.messages.map(({ role, text }) => ({
+        role: role === 'model' ? ('assistant' as const) : ('user' as const),
+        content: text,
+      })),
+      maxOutputTokens:
+        access.provider === 'openai' && !chat.exactTokenBudget
+          ? Math.max(chat.maxTokens, 8192)
+          : chat.maxTokens,
+      providerOptions: sdkProviderOptions(access),
+      abortSignal: signal,
+      maxRetries: SDK_MAX_RETRIES,
+    });
+    for await (const part of result.fullStream) {
+      chat.signal.throwIfAborted();
+      if (part.type === 'error') throw part.error;
+      if (part.type === 'text-delta') {
+        let done: boolean;
         try {
-          event = JSON.parse(line);
-        } catch {
-          continue;
+          done = output.add(part.text);
+        } catch (error) {
+          // Caller-owned limits (for example the inline edit output bound) keep their errors.
+          callbackError = error;
+          controller.abort();
+          throw error;
         }
-        if (!record(event)) continue;
-        if (typeof event.done_reason === 'string') chat.onFinishReason?.(event.done_reason);
-        if (typeof event.error === 'string') throw new ProviderHTTPError(500, event.error);
-        if (record(event.message) && output.add(event.message.content)) break;
-        if (event.done === true) break;
+        if (done) {
+          controller.abort();
+          return output.text;
+        }
       }
-      return output.text;
+      if (part.type === 'finish') chat.onFinishReason?.(part.finishReason);
     }
+    chat.signal.throwIfAborted();
+    return output.text;
+  } catch (error) {
+    if (callbackError !== undefined) throw callbackError;
+    throw sanitizedSDKError(error, chat.signal);
   }
 }
-
 // ----- Insertion-only editor completion -----
 
 export const COMPLETION_SYSTEM_PROMPT =
@@ -729,292 +580,4 @@ export async function completionGenerate(
     onFinishReason: (finishReason) => completion.onResultMeta?.({ finishReason }),
     signal,
   });
-}
-
-// ----- Agent turns with tool calling (not streamed) -----
-
-function parseArguments(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  if (!value.trim()) return {};
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
-/** Converts the neutral transcript to Gemini contents, replaying raw model content as sent. */
-export function toGoogleContents(items: AgentItem[]): Content[] {
-  return items.map((item): Content => {
-    if (item.role === 'user') return { role: 'user', parts: [{ text: item.text }] };
-    if (item.role === 'assistant') {
-      if (item.raw) return item.raw as Content;
-      const parts: Part[] = item.text ? [{ text: item.text }] : [];
-      for (const call of item.calls)
-        parts.push({
-          functionCall: {
-            name: call.name,
-            args: record(call.args) ? call.args : {},
-            ...(call.id ? { id: call.id } : {}),
-          },
-        });
-      return { role: 'model', parts };
-    }
-    return {
-      role: 'user',
-      parts: item.results.map(({ id, name, result }) => ({
-        functionResponse: { name, ...(id ? { id } : {}), response: result },
-      })),
-    };
-  });
-}
-/** Reads text and function calls from Gemini content, keeping it raw for replay. */
-export function fromGoogleContent(content: Content | undefined): AgentTurn {
-  if (!content?.parts?.length) return { text: '', calls: [] };
-  let text = '';
-  const calls: ToolCall[] = [];
-  for (const part of content.parts) {
-    if (part.text && !part.thought) text += part.text;
-    if (part.functionCall)
-      calls.push({
-        ...(part.functionCall.id ? { id: part.functionCall.id } : {}),
-        name: part.functionCall.name ?? '',
-        args: part.functionCall.args,
-      });
-  }
-  // Preserve the provider's complete content, including thought signatures.
-  return { text, calls, raw: content };
-}
-
-async function googleTurn(
-  access: ProviderAccess,
-  model: string,
-  agent: AgentRequest,
-): Promise<AgentTurn> {
-  const response = await (
-    await googleClient(access)
-  ).models.generateContent({
-    model,
-    contents: toGoogleContents(agent.items),
-    config: {
-      abortSignal: agent.signal,
-      maxOutputTokens: agent.maxTokens,
-      automaticContinuation: false,
-      tools: [
-        {
-          functionDeclarations: agent.tools.map(({ name, description, parameters }) => ({
-            name,
-            description,
-            parametersJsonSchema: parameters,
-          })),
-        },
-      ],
-      systemInstruction: agent.system,
-    },
-  });
-  return fromGoogleContent(response.candidates?.[0]?.content);
-}
-
-async function compatibleTurn(
-  access: ProviderAccess,
-  model: string,
-  agent: AgentRequest,
-): Promise<AgentTurn> {
-  const messages: unknown[] = [{ role: 'system', content: agent.system }];
-  for (const item of agent.items) {
-    if (item.role === 'user') messages.push({ role: 'user', content: item.text });
-    else if (item.role === 'assistant')
-      messages.push({
-        role: 'assistant',
-        content: item.text || null,
-        ...(access.provider === 'deepseek' &&
-        record(item.raw) &&
-        typeof item.raw.reasoning_content === 'string'
-          ? { reasoning_content: item.raw.reasoning_content }
-          : {}),
-        ...(access.provider === 'openrouter' && record(item.raw)
-          ? {
-              ...(Array.isArray(item.raw.reasoning_details)
-                ? { reasoning_details: item.raw.reasoning_details }
-                : {}),
-              ...(typeof item.raw.reasoning === 'string' ? { reasoning: item.raw.reasoning } : {}),
-            }
-          : {}),
-        ...(item.calls.length
-          ? {
-              tool_calls: item.calls.map((call, index) => ({
-                id: call.id ?? `call_${index}`,
-                type: 'function',
-                function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
-              })),
-            }
-          : {}),
-      });
-    else
-      for (const [index, result] of item.results.entries())
-        messages.push({
-          role: 'tool',
-          tool_call_id: result.id ?? `call_${index}`,
-          content: JSON.stringify(result.result),
-        });
-  }
-  const value = await json(`${compatibleBase(access)}/chat/completions`, access, agent.signal, {
-    model,
-    messages,
-    ...completionLimit(access, agent.maxTokens),
-    ...routingOptions(access),
-    tools: agent.tools.map(({ name, description, parameters }) => ({
-      type: 'function',
-      function: { name, description, parameters },
-    })),
-  });
-  const choice = Array.isArray(value.choices) ? value.choices[0] : undefined;
-  const message = record(choice) && record(choice.message) ? choice.message : {};
-  const calls: ToolCall[] = (Array.isArray(message.tool_calls) ? message.tool_calls : [])
-    .filter(record)
-    .map((call) => ({
-      ...(typeof call.id === 'string' ? { id: call.id } : {}),
-      name: record(call.function) ? String(call.function.name ?? '') : '',
-      args: record(call.function) ? parseArguments(call.function.arguments) : null,
-    }));
-  return {
-    text: typeof message.content === 'string' ? message.content : '',
-    calls,
-    ...(access.provider === 'deepseek' || access.provider === 'openrouter' ? { raw: message } : {}),
-  };
-}
-
-async function anthropicTurn(
-  access: ProviderAccess,
-  model: string,
-  agent: AgentRequest,
-): Promise<AgentTurn> {
-  const messages: unknown[] = agent.items.map((item) => {
-    if (item.role === 'user') return { role: 'user', content: item.text };
-    if (item.role === 'assistant')
-      return {
-        role: 'assistant',
-        content: Array.isArray(item.raw)
-          ? item.raw
-          : [
-              ...(item.text ? [{ type: 'text', text: item.text }] : []),
-              ...item.calls.map((call, index) => ({
-                type: 'tool_use',
-                id: call.id ?? `toolu_${index}`,
-                name: call.name,
-                input: record(call.args) ? call.args : {},
-              })),
-            ],
-      };
-    return {
-      role: 'user',
-      content: item.results.map((result, index) => ({
-        type: 'tool_result',
-        tool_use_id: result.id ?? `toolu_${index}`,
-        content: JSON.stringify(result.result),
-      })),
-    };
-  });
-  const value = await json(
-    `${access.endpoint ? validateAIEndpoint(access.endpoint) : ANTHROPIC_URL}/messages`,
-    access,
-    agent.signal,
-    {
-      model,
-      max_tokens: agent.maxTokens,
-      system: agent.system,
-      messages,
-      tools: agent.tools.map(({ name, description, parameters }) => ({
-        name,
-        description,
-        input_schema: parameters,
-      })),
-    },
-  );
-  const blocks = (Array.isArray(value.content) ? value.content : []).filter(record);
-  let text = '';
-  const calls: ToolCall[] = [];
-  for (const block of blocks) {
-    if (block.type === 'text' && typeof block.text === 'string') text += block.text;
-    if (block.type === 'tool_use')
-      calls.push({
-        ...(typeof block.id === 'string' ? { id: block.id } : {}),
-        name: String(block.name ?? ''),
-        args: block.input,
-      });
-  }
-  return { text, calls, raw: blocks };
-}
-
-async function ollamaTurn(
-  access: ProviderAccess,
-  model: string,
-  agent: AgentRequest,
-): Promise<AgentTurn> {
-  const messages: unknown[] = [{ role: 'system', content: agent.system }];
-  for (const item of agent.items) {
-    if (item.role === 'user') messages.push({ role: 'user', content: item.text });
-    else if (item.role === 'assistant')
-      messages.push({
-        role: 'assistant',
-        content: item.text,
-        ...(item.calls.length
-          ? {
-              tool_calls: item.calls.map((call) => ({
-                function: { name: call.name, arguments: record(call.args) ? call.args : {} },
-              })),
-            }
-          : {}),
-      });
-    else
-      for (const result of item.results)
-        messages.push({
-          role: 'tool',
-          tool_name: result.name,
-          content: JSON.stringify(result.result),
-        });
-  }
-  const value = await json(`${ollamaBase(access)}/api/chat`, access, agent.signal, {
-    model,
-    stream: false,
-    messages,
-    options: { num_predict: agent.maxTokens },
-    tools: agent.tools.map(({ name, description, parameters }) => ({
-      type: 'function',
-      function: { name, description, parameters },
-    })),
-  });
-  const message = record(value.message) ? value.message : {};
-  const calls: ToolCall[] = (Array.isArray(message.tool_calls) ? message.tool_calls : [])
-    .filter(record)
-    .map((call) => ({
-      name: record(call.function) ? String(call.function.name ?? '') : '',
-      args: record(call.function) ? parseArguments(call.function.arguments) : null,
-    }));
-  return { text: typeof message.content === 'string' ? message.content : '', calls };
-}
-
-export async function agentTurn(
-  access: ProviderAccess,
-  model: string,
-  agent: AgentRequest,
-): Promise<AgentTurn> {
-  if (access.supportsTools === false)
-    throw new ProviderHTTPError(400, 'Tool calling is disabled for this provider.');
-  switch (access.provider) {
-    case 'google':
-      return googleTurn(access, model, agent);
-    case 'openai':
-    case 'mistral':
-    case 'codestral':
-    case 'openrouter':
-    case 'custom':
-    case 'deepseek':
-      return compatibleTurn(access, model, agent);
-    case 'anthropic':
-      return anthropicTurn(access, model, agent);
-    case 'ollama-cloud':
-    case 'ollama-local':
-      return ollamaTurn(access, model, agent);
-  }
 }

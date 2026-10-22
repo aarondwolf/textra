@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import type { AIMessage, AISettings, BuildRequest, BuildState, Result } from '../../src/shared/api';
-import type { AIProviderConfiguration, AIStoredChat } from '../../src/shared/ai';
+import type { AIAssistantResult, AIProviderConfiguration, AIStoredChat } from '../../src/shared/ai';
 
 interface ChatTestState {
   settings: AISettings;
@@ -13,6 +13,7 @@ interface ChatTestState {
   storedChats: AIStoredChat[];
   savedChats: Array<{ projectId: string; chat: AIStoredChat }>;
   requests: AIMessage[][];
+  contexts: (string | undefined)[];
   activeRequestId?: string;
   release: ((result: Result<string>) => void) | null;
 }
@@ -53,7 +54,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       const unconfigured = (): AISettings => ({
         configured: false,
         autoSendProblems: false,
-        roleDefaults: { chat: null, agent: null, completion: null, inlineCompletion: null },
+        roleDefaults: { assistant: null, completion: null, inlineCompletion: null },
         completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
         providers: providerIds.map((id) => ({
           id,
@@ -68,8 +69,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         ...settings,
         configured: true,
         roleDefaults: {
-          chat: { provider: 'google', model: 'gemini-3.5-flash-lite' },
-          agent: { provider: 'google', model: 'gemini-3.5-flash-lite' },
+          assistant: { provider: 'google', model: 'gemini-3.5-flash-lite' },
           completion: null,
           inlineCompletion: null,
         },
@@ -118,6 +118,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         ],
         savedChats: [],
         requests: [],
+        contexts: [],
         release: null,
       };
       (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest = state;
@@ -129,8 +130,8 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         'provider:remove',
         'auto-send',
         'ollama:status',
-        'send',
-        'cancel',
+        'assistant:run',
+        'assistant:cancel',
         'link',
       ]) {
         ipcMain.removeHandler(`textra:ai:${name}`);
@@ -206,26 +207,32 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         state.linksOpened.push(`${request.provider}:${request.link}`);
         return { ok: true, value: undefined };
       });
+      // The assistant run is mocked; text results are wrapped as plain answers.
+      const answer = (result: Result<string>): Result<AIAssistantResult> =>
+        result.ok
+          ? { ok: true, value: { text: result.value, proposal: null, documentAccess: 'none' } }
+          : result;
       ipcMain.handle(
-        'textra:ai:send',
-        (_event, request: { messages: AIMessage[]; requestId?: string }) => {
+        'textra:ai:assistant:run',
+        (_event, request: { messages: AIMessage[]; requestId: string; contextId?: string }) => {
           state.requests.push(request.messages);
+          state.contexts.push(request.contextId);
           state.activeRequestId = request.requestId;
           if (state.requests.length === 3)
-            return { ok: true, value: 'Retry succeeded. Check the missing brace.' };
-          return new Promise<Result<string>>((resolve) => {
-            state.release = resolve;
+            return answer({ ok: true, value: 'Retry succeeded. Check the missing brace.' });
+          return new Promise<Result<AIAssistantResult>>((resolve) => {
+            state.release = (result) => resolve(answer(result));
           });
         },
       );
-      ipcMain.handle('textra:ai:cancel', () => {
+      ipcMain.handle('textra:ai:assistant:cancel', () => {
         state.release?.({ ok: false, error: 'Cancelled', code: 'AI_CANCELLED' });
         state.release = null;
         return { ok: true, value: undefined };
       });
     });
     const chatRail = page.getByRole('button', { name: 'AI Chat', exact: true });
-    await expect(chatRail.locator('svg')).toHaveCount(1);
+    await expect(chatRail).toBeVisible();
     const railPlacement = await chatRail.evaluate((element) => {
       const settings = document.querySelector('[aria-label="Settings and TeX setup"]');
       return Boolean(
@@ -234,15 +241,15 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     });
     expect(railPlacement).toBe(true);
     await chatRail.click();
-    const chat = page.getByRole('region', { name: 'AI debugging chat', exact: true });
+    const chat = page.getByRole('region', { name: 'AI assistant', exact: true });
     await expect(chat.getByText('Set up AI', { exact: true })).toBeVisible();
     await expect(chat.getByRole('textbox')).toHaveCount(0);
     await chat.getByRole('button', { name: 'Configure AI', exact: true }).click();
-    const aiDialog = page.getByRole('dialog', { name: 'AI settings', exact: true });
+    const aiDialog = page.getByRole('dialog', { name: 'AI Settings', exact: true });
     await expect(aiDialog).toBeVisible();
     await expect(aiDialog.locator('.ai-provider-connection')).toHaveCount(0);
     await expect(
-      aiDialog.getByRole('button', { name: /^Automatic completion model:/ }),
+      aiDialog.getByRole('button', { name: /^Automatic completion.*model:/ }),
     ).toHaveCount(0);
     await aiDialog.getByRole('button', { name: 'Add provider', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Add provider', exact: true });
@@ -262,7 +269,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await keyInput.fill('AQ.fake-native-test-key');
     await providerEditor.getByRole('button', { name: 'Save Google Gemini', exact: true }).click();
     const google = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
-    await expect(google).toContainText('0 chat');
+    await expect(google).toContainText('0 assistant');
     expect(
       await application.evaluate(
         () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.keyTests,
@@ -280,20 +287,27 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       'Connection tested. Models refreshed.',
     );
     await providerEditor.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(google).toContainText('3 chat');
-    await google.getByRole('switch', { name: 'Google Gemini enabled', exact: true }).uncheck();
-    await expect(google).toContainText('Silenced');
-    await google.getByRole('switch', { name: 'Google Gemini enabled', exact: true }).check();
+    await expect(google).toContainText('3 assistant');
+    // The switch is controlled by the saved settings, so its state changes after the save.
+    const googleEnabled = google.getByRole('switch', {
+      name: 'Google Gemini enabled',
+      exact: true,
+    });
+    await googleEnabled.click();
+    await expect(googleEnabled).not.toBeChecked();
+    await expect(google).toContainText('Disabled');
+    await googleEnabled.click();
+    await expect(googleEnabled).toBeChecked();
     const autoSend = aiDialog.getByRole('checkbox', {
       name: /Automatically send Problems prompts/,
     });
     await expect(autoSend).not.toBeChecked();
     await expect(
-      aiDialog.getByRole('button', { name: /^Chat model: Gemini 3.5 Flash Lite/ }),
+      aiDialog.getByRole('button', { name: /^Assistant model: Gemini 3.5 Flash Lite/ }),
     ).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('chat-onboarding.png') });
     await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
-    const composer = chat.getByRole('textbox', { name: 'Message AI', exact: true });
+    const composer = chat.getByRole('textbox', { name: 'Message the assistant', exact: true });
     await expect(composer).toBeVisible();
     const headerHeights = await page.evaluate(() =>
       ['.ai-chat-header', '.editor-tab-strip', '.preview-header'].map(
@@ -341,16 +355,15 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
-    await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await expect(settings).toContainText('Connected: Google Gemini.');
-    await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
-    const googleCard = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
+    await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
+    const aiSettingsInline = settings.locator('.ai-settings-inline');
+    const googleCard = aiSettingsInline.getByRole('region', { name: 'Google Gemini', exact: true });
     const remove = googleCard.getByRole('button', { name: 'Delete Google Gemini', exact: true });
     await remove.click();
     await expect(googleCard).toBeVisible();
     await remove.click();
     await expect(googleCard).toHaveCount(0);
-    await aiDialog.getByRole('button', { name: 'Add provider', exact: true }).click();
+    await aiSettingsInline.getByRole('button', { name: 'Add provider', exact: true }).click();
     await chooser.getByRole('button', { name: 'Google Gemini', exact: true }).click();
     await providerEditor
       .getByLabel('Google AI Studio API key', { exact: true })
@@ -362,8 +375,8 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       'Connection tested. Models refreshed.',
     );
     await providerEditor.getByRole('button', { name: 'Save Google Gemini', exact: true }).click();
-    await expect(googleCard).toContainText('3 chat');
-    const settingAutoSend = aiDialog.getByRole('checkbox', {
+    await expect(googleCard).toContainText('3 assistant');
+    const settingAutoSend = aiSettingsInline.getByRole('checkbox', {
       name: /Automatically send Problems prompts/,
     });
     await expect(settingAutoSend).not.toBeChecked();
@@ -371,7 +384,6 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(settingAutoSend).toBeChecked();
     await settingAutoSend.click();
     await expect(settingAutoSend).not.toBeChecked();
-    await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
 
     // Removing a provider clears its temporary role binding. Reconnecting must
@@ -379,24 +391,45 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await model.click();
     await chat.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
     await page.keyboard.press('Enter');
-    await composer.fill('Why is my LaTeX brace missing?');
+    await composer.fill('Why is my LaTeX brace missing?\n\n```tex\n\\usepackage{lipsum}\n```');
     await expect(ask).toBeEnabled();
     await expect(ask).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await composer.press('Control+Enter');
     await expect(chat.getByRole('status')).toContainText('Thinking');
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toBeVisible();
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toHaveText('');
+    await expect(chat.locator('.ai-message-user pre code')).toHaveText('\\usepackage{lipsum}');
+    const userCodeCopy = chat.getByRole('article', { name: 'Your message' }).getByRole('button', {
+      name: 'Copy code',
+      exact: true,
+    });
+    await expect(userCodeCopy).toBeVisible();
+    await userCodeCopy.click();
+    expect(
+      await application.evaluate(
+        () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.copiedText,
+      ),
+    ).toBe('\\usepackage{lipsum}');
     await expect(chat.locator('.ai-chat-privacy')).toHaveCount(0);
     await expect(chat.locator('.ai-chat-empty')).toHaveCount(0);
     const streamedReply =
       '**Likely cause:** a missing `}`.\n\n```latex\n\\textbf{Fixed}\n```\n\n- Check braces\n- Compile again';
     await application.evaluate(({ BrowserWindow }, text) => {
       const state = (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest;
-      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:chunk', {
+      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:assistant:event', {
         requestId: state.activeRequestId,
+        type: 'text',
         text,
       });
     }, streamedReply);
+    await application.evaluate(({ BrowserWindow }) => {
+      const state = (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest;
+      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:assistant:event', {
+        requestId: state.activeRequestId,
+        type: 'reasoning',
+        text: 'I will check the brace structure before answering.',
+      });
+    });
     const history = chat.getByRole('log', { name: 'Conversation' });
     expect(
       await history.evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar').width),
@@ -404,15 +437,24 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(
       history.getByRole('article', { name: 'Response in progress', exact: true }),
     ).toBeVisible();
+    const streamingReasoning = history.locator('details.ai-reasoning');
+    await expect(streamingReasoning).toBeVisible();
+    await expect(streamingReasoning).not.toHaveJSProperty('open', true);
+    await expect(streamingReasoning).toContainText(
+      'I will check the brace structure before answering.',
+    );
     // Prove Markdown is rendered while the IPC response remains unresolved.
     await expect(history.locator('strong').filter({ hasText: 'Likely cause:' })).toBeVisible();
     await expect(history.locator('code').filter({ hasText: '}' }).first()).toBeVisible();
-    await expect(history.locator('pre code')).toHaveText('\\textbf{Fixed}');
+    await expect(history.locator('.ai-message-model pre code')).toHaveText('\\textbf{Fixed}');
+    await expect(
+      history.getByRole('article', { name: 'Response in progress' }).getByRole('button', {
+        name: 'Copy code',
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(history.getByRole('listitem')).toHaveText(['Check braces', 'Compile again']);
     await expect(history.getByRole('list')).toHaveCSS('list-style-type', 'disc');
-    await expect(
-      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
-    ).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('chat-streaming-markdown.png') });
     const completedReply = `${streamedReply}\n\n**Suggested fix:** Add the closing brace after the command argument.`;
     await application.evaluate((_electron, text) => {
@@ -424,10 +466,11 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(history).toContainText('Add the closing brace after the command argument.');
     await expect(history.getByRole('article', { name: 'Response in progress' })).toHaveCount(0);
     await expect(history.locator('strong').filter({ hasText: 'Likely cause:' })).toHaveCount(1);
-    await expect(
-      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
-    ).toBeDisabled();
     const assistant = history.getByRole('article', { name: 'Assistant response', exact: true });
+    await expect(assistant.locator('details.ai-reasoning')).not.toHaveJSProperty('open', true);
+    await expect(assistant.locator('details.ai-reasoning')).toContainText(
+      'I will check the brace structure before answering.',
+    );
     await expect(assistant).toHaveCSS('border-top-width', '0px');
     await expect(assistant).toHaveCSS('padding', '0px');
     await expect(assistant.getByText('Gemini', { exact: true })).toHaveCount(0);
@@ -443,18 +486,20 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.copiedText,
       ),
     ).toBe(completedReply);
-    await chat.getByRole('button', { name: 'Agent', exact: true }).click();
-    await expect(history).toContainText('Add the closing brace after the command argument.');
-    await expect(history).toContainText('Why is my LaTeX brace missing?');
-    await chat.getByRole('button', { name: 'Chat', exact: true }).click();
-    await expect(history).toContainText('Add the closing brace after the command argument.');
+    // Chat and Agent share the assistant; suggested fixes remain ordinary follow-ups.
+    await expect(chat.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
+    await expect(chat.getByRole('button', { name: 'Agent', exact: true })).toBeVisible();
+    await expect(
+      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
+    ).toHaveCount(0);
     await composer.fill('What should I check next?');
     await ask.click();
     await expect(chat.getByRole('button', { name: 'Cancel response', exact: true })).toBeVisible();
     await application.evaluate(({ BrowserWindow }) => {
       const state = (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest;
-      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:chunk', {
+      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:assistant:event', {
         requestId: state.activeRequestId,
+        type: 'text',
         text: 'Incomplete response before a quota error.',
       });
     });
@@ -470,9 +515,6 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     ).toContainText('Incomplete response before a quota error.');
     await chat.getByRole('button', { name: 'Retry response', exact: true }).click();
     await expect(history).toContainText('Retry succeeded. Check the missing brace.');
-    await expect(
-      chat.getByRole('button', { name: 'Implement Suggested Fix', exact: true }),
-    ).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('chat-conversation.png') });
     const requests = await application.evaluate(
       () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.requests,
@@ -491,8 +533,9 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(chat.getByRole('alert')).toContainText('Response cancelled');
     await application.evaluate(({ BrowserWindow }) => {
       const state = (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest;
-      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:chunk', {
+      BrowserWindow.getAllWindows()[0].webContents.send('textra:ai:assistant:event', {
         requestId: state.activeRequestId,
+        type: 'text',
         text: 'Late cancelled response must not appear.',
       });
     });
@@ -502,7 +545,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await chat.getByRole('button', { name: 'New chat', exact: true }).click();
     await expect(composer).toHaveValue('An unsent draft');
     await expect(history.locator('article')).toHaveCount(0);
-    await expect(history).toContainText('Let’s untangle that error.');
+    await expect(history).toContainText('Let’s untangle that LaTeX.');
     await expect(chat.getByRole('alert')).toHaveCount(0);
 
     await composer.fill('A fresh conversation question');
@@ -515,12 +558,14 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await application.evaluate(({ BrowserWindow }, staleRequestId) => {
       const state = (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest;
       const sender = BrowserWindow.getAllWindows()[0].webContents;
-      sender.send('textra:ai:chunk', {
+      sender.send('textra:ai:assistant:event', {
         requestId: staleRequestId,
+        type: 'text',
         text: 'Late cancelled response must not appear.',
       });
-      sender.send('textra:ai:chunk', {
+      sender.send('textra:ai:assistant:event', {
         requestId: state.activeRequestId,
+        type: 'text',
         text: 'Fresh response preview.',
       });
     }, cancelledRequestId);
@@ -643,12 +688,14 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(composer).toHaveValue(`Please review this before sharing.\n${draft}`);
     await composer.fill('');
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-    await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
-    await expect(settingAutoSend).not.toBeChecked();
-    await settingAutoSend.click();
-    await expect(settingAutoSend).toBeChecked();
-    await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
+    await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
+    const aiSettingsForPrefs = settings.locator('.ai-settings-inline');
+    const settingAutoSendInline = aiSettingsForPrefs.getByRole('checkbox', {
+      name: /Automatically send Problems prompts/,
+    });
+    await expect(settingAutoSendInline).not.toBeChecked();
+    await settingAutoSendInline.click();
+    await expect(settingAutoSendInline).toBeChecked();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await problem.getByRole('button', { name: 'Ask in Chat', exact: true }).click();
     await expect(chat.getByRole('status')).toContainText('Thinking');
@@ -656,6 +703,12 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.requests.at(-1),
     );
     expect(autoRequest).toEqual([{ role: 'user', text: draft }]);
+    // Automatically sent Problems prompts stay tool-free: no document context is attached.
+    expect(
+      await application.evaluate(() =>
+        (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.contexts.at(-1),
+      ),
+    ).toBeUndefined();
     await expect(composer).toHaveValue('');
     await chat.getByRole('button', { name: 'Cancel response', exact: true }).click();
     await expect(chat.getByRole('alert')).toContainText('Response cancelled');

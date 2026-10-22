@@ -16,6 +16,25 @@
   font-size: 12px;
   min-height: 0;
 }
+.ai-settings-inline {
+  position: relative;
+  z-index: auto;
+  inset: auto;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ai-settings-inline .ai-settings-scroll {
+  flex: none;
+  min-height: unset;
+  overflow: visible;
+  padding-right: 3px;
+  scrollbar-gutter: auto;
+}
 .ai-settings-heading,
 .ai-connections-heading {
   display: flex;
@@ -25,6 +44,9 @@
   flex-shrink: 0;
 }
 .ai-settings-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-family: var(--font-serif);
   font-size: 20px;
@@ -92,7 +114,7 @@
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
-  background: var(--raised);
+  background: transparent;
 }
 .ai-role-defaults > h3 {
   margin: 0 0 4px;
@@ -257,11 +279,57 @@
   display: grid;
   gap: 7px;
 }
+.ai-provider-key-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-provider-key-status {
+  color: var(--muted);
+}
+.ai-provider-key-actions > button {
+  flex: 1;
+  min-width: 0;
+}
+.ai-provider-key-link {
+  justify-self: start;
+}
+.ai-provider-default-model {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.ai-provider-default-model .field-label {
+  flex: 1;
+  min-width: 0;
+}
+.ai-provider-default-model > button {
+  flex: none;
+  margin-bottom: 1px;
+}
+.ai-provider-endpoint {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.ai-provider-endpoint .field-label {
+  flex: 1;
+  min-width: 0;
+}
+.ai-provider-endpoint > button {
+  flex: none;
+  margin-bottom: 1px;
+}
 .ai-provider-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+.ai-provider-fields > .text-button,
+.ai-visibility-editor > .text-button {
+  justify-self: start;
+  width: auto;
 }
 .ai-provider-row small {
   color: var(--muted);

@@ -10,10 +10,9 @@ const settings: AISettings = {
   configured: true,
   autoSendProblems: false,
   roleDefaults: {
-    chat: { provider: 'mistral', model: 'chat' },
-    agent: null,
+    assistant: { provider: 'mistral', model: 'chat' },
     completion: null,
-    inlineCompletion: null,
+    inlineCompletion: { provider: 'mistral', model: 'chat' },
   },
   completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
   providers: [
@@ -43,46 +42,53 @@ describe('temporary workspace role selections', () => {
   beforeEach(() => useAIRoleSelections.setState({ workspaces: {} }));
   it('uses independent saved defaults and isolates temporary workspace choices', () => {
     const select = useAIRoleSelections.getState().select;
-    select('one', 'agent', { provider: 'mistral', model: 'chat' });
-    select('one', 'chat', null);
-    expect(getAIRoleSelection('one', 'chat', settings)).toEqual({ model: null, available: false });
-    expect(getAIRoleSelection('one', 'agent', settings).available).toBe(true);
-    expect(getAIRoleSelection('two', 'chat', settings).available).toBe(true);
-    expect(getAIRoleSelection('two', 'agent', settings).model).toBeNull();
-    expect(settings.roleDefaults.agent).toBeNull();
+    select('one', 'inlineCompletion', null);
+    select('one', 'assistant', { provider: 'mistral', model: 'chat' });
+    expect(getAIRoleSelection('one', 'inlineCompletion', settings)).toEqual({
+      model: null,
+      available: false,
+    });
+    expect(getAIRoleSelection('one', 'assistant', settings).available).toBe(true);
+    expect(getAIRoleSelection('two', 'inlineCompletion', settings).available).toBe(true);
+    expect(getAIRoleSelection('two', 'completion', settings).model).toBeNull();
+    expect(settings.roleDefaults.inlineCompletion).not.toBeNull();
   });
   it('keeps an unavailable binding without substituting another model', () => {
     const missing = { provider: 'mistral' as const, model: 'removed' };
-    useAIRoleSelections.getState().select('one', 'chat', missing);
-    expect(getAIRoleSelection('one', 'chat', settings)).toEqual({
+    useAIRoleSelections.getState().select('one', 'assistant', missing);
+    expect(getAIRoleSelection('one', 'assistant', settings)).toEqual({
       model: missing,
       available: false,
     });
-    expect(useAIRoleSelections.getState().workspaces.one.chat).toEqual(missing);
+    expect(useAIRoleSelections.getState().workspaces.one.assistant).toEqual(missing);
     const restored = structuredClone(settings);
     restored.providers[0].models.push({ id: missing.model, label: 'Restored' });
-    expect(getAIRoleSelection('one', 'chat', restored)).toEqual({
+    expect(getAIRoleSelection('one', 'assistant', restored)).toEqual({
       model: missing,
       available: true,
     });
     useAIRoleSelections.setState({ workspaces: {} });
-    expect(getAIRoleSelection('one', 'chat', settings).model).toEqual(settings.roleDefaults.chat);
+    expect(getAIRoleSelection('one', 'assistant', settings).model).toEqual(
+      settings.roleDefaults.assistant,
+    );
   });
   it('filters role pickers and rejects incompatible temporary selections', () => {
-    expect(modelGroups(settings, undefined, 'chat')[0].models.map((model) => model.id)).toEqual([
-      'chat',
-    ]);
+    expect(
+      modelGroups(settings, undefined, 'assistant')[0].models.map((model) => model.id),
+    ).toEqual(['chat']);
     expect(
       modelGroups(settings, undefined, 'inlineCompletion')[0].models.map((model) => model.id),
     ).toEqual(['chat']);
-    useAIRoleSelections.getState().select('one', 'agent', { provider: 'mistral', model: 'fim' });
-    expect(getAIRoleSelection('one', 'agent', settings).available).toBe(false);
+    useAIRoleSelections
+      .getState()
+      .select('one', 'assistant', { provider: 'mistral', model: 'fim' });
+    expect(getAIRoleSelection('one', 'assistant', settings).available).toBe(false);
   });
   it('retains silenced and hidden bindings while blocking their use', () => {
     const silenced = structuredClone(settings);
     silenced.providers[0].enabled = false;
-    expect(getAIRoleSelection('one', 'chat', silenced)).toEqual({
-      model: settings.roleDefaults.chat,
+    expect(getAIRoleSelection('one', 'assistant', silenced)).toEqual({
+      model: settings.roleDefaults.assistant,
       available: false,
     });
     const hidden = structuredClone(settings);
@@ -90,10 +96,10 @@ describe('temporary workspace role selections', () => {
       chat: { mode: 'exclude', models: ['chat'] },
       completion: { mode: 'all', models: [] },
     };
-    expect(getAIRoleSelection('one', 'chat', hidden)).toEqual({
-      model: settings.roleDefaults.chat,
+    expect(getAIRoleSelection('one', 'assistant', hidden)).toEqual({
+      model: settings.roleDefaults.assistant,
       available: false,
     });
-    expect(modelGroups(hidden, undefined, 'chat')).toEqual([]);
+    expect(modelGroups(hidden, undefined, 'assistant')).toEqual([]);
   });
 });

@@ -344,7 +344,12 @@ void app.whenReady().then(() => {
   handleRequest<'requestAIInlineEdit'>('textra:ai:inline-edit:request', async (request) => {
     validateInlineEditRequest(request);
     await projects.resolvePath({ projectId: request.projectId, path: request.path });
-    return inlineEdits.request(request);
+    const receiver = requireWindow().webContents;
+    const requestId = request.requestId;
+    return inlineEdits.request(request, (text) => {
+      if (!receiver.isDestroyed())
+        receiver.send('textra:ai:inline-edit:chunk', { requestId, text: text.slice(0, 32_000) });
+    });
   });
   handleRequest<'cancelAIInlineEdit'>('textra:ai:inline-edit:cancel', (request) =>
     inlineEdits.cancel(request),
@@ -392,27 +397,19 @@ void app.whenReady().then(() => {
   handleRequest<'setAIAutoSend'>('textra:ai:auto-send', (request) => ai.setAutoSend(request));
   handle('textra:ai:ollama:status', 0, () => ai.ollamaStatus());
   handle('textra:ai:ollama:start', 0, () => ai.startOllama());
-  handleRequest<'sendAIMessage'>('textra:ai:send', (request) => {
-    const requestId = request?.requestId;
-    if (
-      requestId !== undefined &&
-      (typeof requestId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(requestId))
-    )
-      throw new AIError('INVALID_ARGUMENT', 'Provide a valid chat request identifier.');
-    const receiver = requireWindow().webContents;
-    return ai.send(
-      request,
-      requestId
-        ? (text) => {
-            if (!receiver.isDestroyed()) receiver.send('textra:ai:chunk', { requestId, text });
-          }
-        : undefined,
-    );
-  });
   handleRequest<'syncAIAgentDocument'>('textra:agent:document', (request) =>
     agentWorkspace.sync(request),
   );
-  handleRequest<'runAIAgent'>('textra:agent:run', (request) => agentWorkspace.run(request));
+  handleRequest<'runAIAssistant'>('textra:ai:assistant:run', (request) => {
+    const receiver = requireWindow().webContents;
+    return agentWorkspace.run(request, (event) => {
+      // Display-only events: bounded text and status, never tool payloads or provider data.
+      if (!receiver.isDestroyed()) receiver.send('textra:ai:assistant:event', event);
+    });
+  });
+  handleRequest<'cancelAIAssistant'>('textra:ai:assistant:cancel', (request) =>
+    agentWorkspace.cancel(request),
+  );
   handleRequest<'acceptAIAgentProposal'>('textra:agent:accept', (request) =>
     agentWorkspace.accept(request),
   );
@@ -422,10 +419,6 @@ void app.whenReady().then(() => {
   handleRequest<'reviewAIAgentProposal'>('textra:agent:review', (request) =>
     agentWorkspace.review(request),
   );
-  handle('textra:ai:cancel', 0, () => {
-    agent.cancel();
-    ai.cancel();
-  });
   handleRequest<'openAIProviderLink'>('textra:ai:link', (request) => {
     const url =
       request && isAIProviderId(request.provider) && typeof request.link === 'string'
@@ -645,21 +638,19 @@ void app.whenReady().then(() => {
   });
   handle('textra:help:texfaq', 1, async (value) => {
     if (typeof value !== 'string' || value.length > 512)
-      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX FAQ article.');
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported documentation article.');
     let url: URL;
     try {
       url = new URL(value);
     } catch {
-      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX FAQ article.');
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported documentation article.');
     }
-    if (
-      url.protocol !== 'https:' ||
-      url.hostname !== 'texfaq.org' ||
-      !/^\/FAQ-[A-Za-z0-9-]+$/.test(url.pathname) ||
-      url.search ||
-      url.hash
-    )
-      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported TeX FAQ article.');
+    const isTexFaq = url.hostname === 'texfaq.org' && /^\/FAQ-[A-Za-z0-9-]+$/.test(url.pathname);
+    const isOverleaf =
+      url.hostname === 'www.overleaf.com' &&
+      /^\/(learn|how-to)\/[A-Za-z0-9_%.:/-]+$/.test(url.pathname);
+    if (url.protocol !== 'https:' || (!isTexFaq && !isOverleaf) || url.search || url.hash)
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported documentation article.');
     await shell.openExternal(url.toString());
   });
   handle('textra:clipboard:copy', 1, (text) => {
@@ -753,6 +744,7 @@ void app.whenReady().then(() => {
       texlive: 'https://tug.org/texlive/acquire-netinstall.html',
       mactex: 'https://tug.org/mactex/',
       latexindent: 'https://latexindentpl.readthedocs.io/en/latest/',
+      chktexRules: 'https://www.nongnu.org/chktex/ChkTeX.pdf',
     };
     if (typeof target !== 'string' || !Object.hasOwn(links, target))
       throw new ProjectError('INVALID_ARGUMENT', 'Unknown setup destination.');

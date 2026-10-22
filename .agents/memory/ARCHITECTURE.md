@@ -52,7 +52,7 @@ chosen provider/key/model IDs are sent during discovery; no document content.
 Chat and Agent share the chosen provider-qualified text model. AIService owns
 the encrypted provider keys and serializes all provider
 operations. BoundedAgentService has no filesystem dependency: only staged pathless
-read_current_file/insert_text/replace_range, 64 tools, 24 API calls,
+read_current_file/insert_text/replace_range/delete_range, 64 tools, 24 API calls,
 90-second deadline (180 seconds for Local Ollama). Remaining budgets are supplied
 in each system prompt; cap errors identify the exhausted resource. AgentWorkspaceService validates canonical project paths and
 disk revisions before run/accept. Active buffer snapshots get opaque expiring
@@ -65,11 +65,18 @@ closes review. No agent saves. Auto-save pauses during review and the normal gua
 save resumes for approved text after review ends. Model menu and Chat/Agent toggle replace the
 previous locked label; mode switches preserve the transcript and selected model.
 
-Chat asks for concise replies and marks actionable fixes with **Suggested fix:**.
-A completed latest marked reply exposes an explicit Implement Suggested Fix action:
-switch to Agent and send the existing transcript plus a simple request.
-Agent still requires an active .tex context and review. Its first-selection notice
-fades after five seconds and stores only a seen flag in profile localStorage.
+The assistant exposes a Chat/Agent toggle and preserves the transcript and selected
+model across mode changes. Chat is the default, sends only the conversation, and is
+used for Problems' automatic Ask in AI draft. Agent requires an active .tex context;
+manual Send authorizes its captured snapshot, which is included as untrusted input so
+simple edits can stage without a separate initial read tool call. Main still validates
+the opaque context and staged changes. Document synchronization cancels only requests
+that captured that document, so unrelated Chat requests continue. The first-selection
+notice was removed with the earlier assistant consolidation.
+
+User transcript bubbles remain separate after failed turns; only the provider-bound
+conversation coalesces adjacent same-role messages. Both user and assistant content
+use the safe MarkdownPreview renderer, with no raw HTML interpretation.
 Agent read line tables include Unicode endColumn; invalid insertions return precise
 column bounds, avoiding repeated guessed positions without widening tool budgets.
 
@@ -121,3 +128,9 @@ ExternalEditorService watches renderer-open files with debounced native events a
 states. Once a workspace document receives one, it is write-locked until the user
 saves a create-only conflicted sibling snapshot or closes its buffer. Main suppresses
 its own successful atomic saves from watcher notifications.
+
+Provider reasoning deltas travel as a bounded display-only IPC event and SDK UI message part.
+The renderer shows optional reasoning collapsed by default, then omits it when preparing the
+next provider transcript and saving chat history. Google thinking output is requested only for
+Gemini 2.5/3 model IDs; absent reasoning is a normal response. Markdown chat rendering opts into
+always-visible fenced-code copy controls for both roles.

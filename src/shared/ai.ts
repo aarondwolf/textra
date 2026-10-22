@@ -181,7 +181,8 @@ export interface AIModelInfo {
   capabilities?: { chat: boolean; completion: boolean; transport: AICompletionTransport };
 }
 export type AICompletionTransport = 'chat' | 'mistral-fim' | 'ollama-generate';
-export const AI_ROLES = ['chat', 'agent', 'completion', 'inlineCompletion'] as const;
+/** Assistant answers questions and proposes edits; Ctrl+I and automatic completion stay separate. */
+export const AI_ROLES = ['assistant', 'completion', 'inlineCompletion'] as const;
 export type AIRole = (typeof AI_ROLES)[number];
 export type AICompletionRole = 'completion' | 'inlineCompletion';
 export function isLocalAIModel(model: AIModelRef): boolean {
@@ -245,7 +246,7 @@ export interface AIInlineEditResponse {
   text: string;
 }
 export function supportsAIRole(model: AIModelInfo, role: AIRole): boolean {
-  return role === 'chat' || role === 'agent' || role === 'inlineCompletion'
+  return role === 'assistant' || role === 'inlineCompletion'
     ? (model.capabilities?.chat ?? true)
     : (model.capabilities?.completion ?? true);
 }
@@ -259,7 +260,6 @@ export function sameModel(
 ) {
   return Boolean(left && right && left.provider === right.provider && left.model === right.model);
 }
-export type AIMode = 'chat' | 'agent';
 export const AGENT_SOURCE_LIMIT = 64_000;
 /** Immutable snapshot supplied by the editor, never a model-selected path. */
 export interface AIAgentDocument {
@@ -268,6 +268,7 @@ export interface AIAgentDocument {
   content: string;
   revision: string;
 }
+/** Opaque handle for the captured active document. Its contents are never sent automatically. */
 export interface AIAgentContext {
   contextId: string;
   path: string;
@@ -278,23 +279,35 @@ export interface AIEditProposal extends AIAgentDocument {
   modified: string;
   summary: string;
 }
-export interface AIAgentRequest {
-  contextId: string;
-  prompt: string;
-  model: AIModelRef;
+/** Application-owned record of what the user did with a proposal from that assistant turn. */
+export const AI_REVIEW_OUTCOMES = ['applied', 'partial', 'rejected'] as const;
+export type AIReviewOutcome = (typeof AI_REVIEW_OUTCOMES)[number];
+/** One typed assistant request. Manual Send may attach the captured document context. */
+export interface AIAssistantRequest {
   requestId: string;
-  messages?: import('./api').AIMessage[];
+  model: AIModelRef;
+  messages: import('./api').AIMessage[];
+  /** Present only for a manual send that authorizes on-demand access to the captured document. */
+  contextId?: string;
 }
-/** Local transcript; no credentials, live requests, or pending edits are persisted. */
+export type AIDocumentAccess = 'none' | 'authorized' | 'unsupported';
+export interface AIAssistantResult {
+  text: string;
+  proposal: AIEditProposal | null;
+  documentAccess: AIDocumentAccess;
+}
+/** Display-only stream events. Tool arguments/results and provider payloads never appear here. */
+export type AIAssistantEvent =
+  | { requestId: string; type: 'text'; text: string }
+  | { requestId: string; type: 'reasoning'; text: string }
+  | { requestId: string; type: 'status'; message: string };
+export const AI_ASSISTANT_STATUS_LIMIT = 120;
+/** Local transcript; no credentials, live requests, tool transcripts or pending edits persist. */
 export interface AIStoredChat {
   id: string;
   title: string;
   updatedAt: number;
   messages: import('./api').AIMessage[];
-}
-export interface AIAgentResult {
-  text: string;
-  proposal: AIEditProposal | null;
 }
 export interface AIAgentReviewRequest {
   id: string;
@@ -307,4 +320,9 @@ export interface AIAgentReviewResult {
   applied: AIEditProposal | null;
   remaining: AIEditProposal | null;
   context: AIAgentContext;
+}
+/** Streamed Ctrl+I preview text (cumulative, bounded). */
+export interface AIInlineEditChunk {
+  requestId: string;
+  text: string;
 }

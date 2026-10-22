@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
+  AIChat,
   ArrowRight,
+  Article,
   Columns2,
   FilePdf,
   FilePlus2,
@@ -22,7 +24,7 @@ import {
 import { DEFAULT_PREFERENCES, type Theme } from '../../shared/api';
 import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
-import SetupDialog from './features/onboarding/SetupDialog';
+import SetupDialog, { type SectionId } from './features/onboarding/SetupDialog';
 import RecipeDialog from './features/onboarding/RecipeDialog';
 import { ToastViewport } from './features/notifications/ToastViewport';
 
@@ -47,7 +49,6 @@ function CommandPalette() {
     setPaletteOpen,
     expandedPane,
     setExpandedPane,
-    setRecipeEditorOpen,
   } = useUI();
   const [query, setQuery] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -136,7 +137,28 @@ function CommandPalette() {
       label: 'Manage compile recipes',
       shortcut: '',
       icon: Hammer,
-      run: () => setRecipeEditorOpen(true),
+      run: () =>
+        window.dispatchEvent(
+          new CustomEvent('textra:open-settings', { detail: { section: 'compilation' } }),
+        ),
+    },
+    {
+      label: 'AI settings',
+      shortcut: '',
+      icon: AIChat,
+      run: () =>
+        window.dispatchEvent(
+          new CustomEvent('textra:open-settings', { detail: { section: 'ai' } }),
+        ),
+    },
+    {
+      label: 'Configure keyboard shortcuts',
+      shortcut: '',
+      icon: Article,
+      run: () =>
+        window.dispatchEvent(
+          new CustomEvent('textra:open-settings', { detail: { section: 'shortcuts' } }),
+        ),
     },
     {
       label: 'Open settings',
@@ -347,19 +369,53 @@ function CommandPalette() {
 
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
   const { preferences, hydrated, error, updatePreferences, setPaletteOpen } = useUI();
   const { recipeEditorOpen, setRecipeEditorOpen } = useUI();
   useEffect(() => {
     void hydratePreferences();
   }, []);
   useEffect(() => {
-    const handleOpenSettings = () => setSettingsOpen(true);
+    const handleOpenSettings = (event?: Event) => {
+      const section = (event as CustomEvent<{ section?: SectionId }> | undefined)?.detail?.section;
+      if (section) setSettingsSection(section);
+      setSettingsOpen(true);
+    };
     window.addEventListener('textra:open-settings', handleOpenSettings);
     return () => window.removeEventListener('textra:open-settings', handleOpenSettings);
   }, []);
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = preferences.theme;
+    const customThemes = preferences.customThemes ?? [];
+    const activeCustom = customThemes.find((t) => t.id === preferences.theme);
+
+    if (activeCustom) {
+      root.dataset.theme = activeCustom.baseTheme;
+      if (activeCustom.background) root.style.setProperty('--bg', activeCustom.background);
+      if (activeCustom.surface) root.style.setProperty('--surface', activeCustom.surface);
+      if (activeCustom.text) root.style.setProperty('--text', activeCustom.text);
+      if (activeCustom.accent) root.style.setProperty('--accent', activeCustom.accent);
+      if (activeCustom.accentStrong)
+        root.style.setProperty('--accent-strong', activeCustom.accentStrong);
+      if (activeCustom.accentBackground)
+        root.style.setProperty('--accent-bg', activeCustom.accentBackground);
+    } else {
+      root.dataset.theme = preferences.theme;
+      for (const varName of [
+        '--bg',
+        '--surface',
+        '--raised',
+        '--sidebar',
+        '--preview',
+        '--border',
+        '--text',
+        '--muted',
+        '--hover',
+      ]) {
+        root.style.removeProperty(varName);
+      }
+    }
+
     const custom = preferences.themeCustomizations;
     const defaults = DEFAULT_PREFERENCES.themeCustomizations;
     for (const [name, value] of [
@@ -373,10 +429,30 @@ export function App() {
           : name === '--accent-strong'
             ? defaults.accentStrong
             : defaults.accentBackground;
-      if (value === defaultValue) root.style.removeProperty(name);
+      if (value === defaultValue && !activeCustom?.accent) root.style.removeProperty(name);
       else root.style.setProperty(name, value);
     }
-  }, [preferences.theme, preferences.themeCustomizations]);
+
+    const uiFont = preferences.uiFont || activeCustom?.uiFont;
+    if (uiFont) {
+      root.style.setProperty('--font-ui', uiFont);
+    } else {
+      root.style.removeProperty('--font-ui');
+    }
+
+    const editorFont = preferences.editorFont || activeCustom?.editorFont;
+    if (editorFont) {
+      root.style.setProperty('--font-mono', editorFont);
+    } else {
+      root.style.removeProperty('--font-mono');
+    }
+  }, [
+    preferences.theme,
+    preferences.themeCustomizations,
+    preferences.customThemes,
+    preferences.uiFont,
+    preferences.editorFont,
+  ]);
   useEffect(() => {
     const handleKey = (event: globalThis.KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || !hydrated) return;
@@ -405,10 +481,19 @@ export function App() {
           {error}
         </div>
       )}
-      <Workspace onOpenSettings={() => setSettingsOpen(true)} />
+      <Workspace
+        onOpenSettings={(section) => {
+          if (section) setSettingsSection(section);
+          setSettingsOpen(true);
+        }}
+      />
       <CommandPalette />
       <ToastViewport />
-      <SetupDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SetupDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialSection={settingsSection}
+      />
       <RecipeDialog open={recipeEditorOpen} onOpenChange={setRecipeEditorOpen} />
     </div>
   );

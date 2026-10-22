@@ -199,7 +199,9 @@ function ProblemDetail({
             className="common-problem-help-link"
             onClick={() => onOpenCommonHelp?.(help.url)}
           >
-            Learn more at TeX FAQ
+            {help.sourceLabel === 'Overleaf'
+              ? 'Learn more on Overleaf'
+              : `Learn more at ${help.sourceLabel ?? 'TeX FAQ'}`}
           </button>
         </aside>
       )}

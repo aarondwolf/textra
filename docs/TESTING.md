@@ -15,6 +15,23 @@ live Agent test is opt-in with `TEXTRA_LIVE_AI_TEST=1`, uses the saved encrypted
 key and real quota, and should be run only when explicitly needed. Normal tests do not
 send credentials to any provider.
 
+AI SDK provider contracts live in `tests/integration/ai-sdk-providers.test.ts`. They run the
+real SDK adapters against a local fixture HTTP server that speaks each provider's streaming
+format: bearer/key headers, configured path prefixes, system prompt placement, OpenRouter
+routing options, zero retries, sanitized authentication errors, refused redirects, malformed
+streams, mid-stream cancellation, and tool/reasoning replay for Chat Completions (DeepSeek
+reasoning_content) and Anthropic (thinking signatures). `tests/unit/assistant-runner.test.ts`
+and `tests/unit/agent.test.ts` drive the assistant with scripted SDK mock models
+(`tests/helpers/scripted-model.ts`): ordinary answers, on-demand reads, multiple ordered
+staged edits, recoverable and fatal tool errors, budgets, truncation, unsupported-tool
+connections, request validation, review notes, cancellation and invalidated context.
+`tests/unit/agent-staging.test.ts` covers the staging operations directly.
+`tests/e2e/agent.spec.ts` and `tests/e2e/chat.spec.ts` exercise the unified assistant UI with
+mocked assistant IPC; `tests/e2e/completion.spec.ts` checks the streamed Ctrl+I preview.
+Assistant regressions verify optional SDK reasoning remains separate from answer text, Google
+thought output is requested only for Gemini 2.5/3 model IDs, reasoning stays collapsed and
+ephemeral, and fenced code in both user and assistant bubbles has a working copy control.
+
 Inline completion has parser, editor-coordinator, settings migration/consent and
 provider contract tests. `tests/e2e/completion.spec.ts` uses real Monaco/project IO
 with explicitly mocked AI/build IPC: automatic opt-in and quiet prose, prompted

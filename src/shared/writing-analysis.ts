@@ -288,9 +288,10 @@ export function analyzeLatexDocument(source: string): WritingAnalysis {
       for (const value of valuesInGroup(group[0])) graphics.push({ value, command, ...location });
     }
   }
+  const todoSource = maskVerbatim(source);
   const todoPattern = /\b(TODO|FIXME)\b\s*:?[ \t]*([^\r\n]*)/g;
-  while ((match = todoPattern.exec(text))) {
-    const location = lineAndColumnAt(text, match.index);
+  while ((match = todoPattern.exec(todoSource))) {
+    const location = lineAndColumnAt(source, match.index);
     todos.push({ kind: match[1] as TodoItem['kind'], text: match[2].trim(), ...location });
   }
   const referenceIssues = findReferenceIssues(labels, references);

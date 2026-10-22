@@ -74,7 +74,10 @@ export class AIInlineEditService {
     if (this.active?.id === id) this.active.controller.abort();
   }
 
-  async request(request: AIInlineEditRequest): Promise<AIInlineEditResponse> {
+  async request(
+    request: AIInlineEditRequest,
+    onText?: (text: string) => void,
+  ): Promise<AIInlineEditResponse> {
     validateInlineEditRequest(request);
     for (const [id, expiry] of this.cancelled) if (expiry <= Date.now()) this.cancelled.delete(id);
     if (this.cancelled.has(request.requestId))
@@ -125,6 +128,15 @@ export class AIInlineEditService {
                 maxTokens: 4_096,
                 exactTokenBudget: true,
                 signal,
+                onText: (text) => {
+                  if (signal.aborted || this.active !== entry) return;
+                  if (text.length > 32_000)
+                    throw new AIError(
+                      'AI_INLINE_EDIT_OUTPUT',
+                      'The inline edit exceeded its output limit.',
+                    );
+                  onText?.(text);
+                },
               }),
               stopped,
             ]);

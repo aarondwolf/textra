@@ -1,8 +1,8 @@
 import type {
   AIAgentContext,
   AIAgentDocument,
-  AIAgentRequest,
-  AIAgentResult,
+  AIAssistantEvent,
+  AIAssistantResult,
   AIAgentReviewRequest,
   AIAgentReviewResult,
   AIEditProposal,
@@ -20,7 +20,7 @@ export class AgentWorkspaceService {
     private readonly projects: Pick<ProjectService, 'resolvePath' | 'readFile'>,
     private readonly agent: Pick<
       BoundedAgentService,
-      'syncDocument' | 'getDocument' | 'run' | 'accept' | 'reject' | 'review'
+      'syncDocument' | 'getDocument' | 'run' | 'accept' | 'reject' | 'review' | 'cancelRequest'
     >,
   ) {}
 
@@ -60,7 +60,7 @@ export class AgentWorkspaceService {
     )
       throw new AIError(
         'AI_AGENT_SCOPE',
-        'Agent mode needs an active .tex file under 64,000 characters.',
+        'The assistant can use only an active .tex file under 64,000 characters.',
       );
     const document: AIAgentDocument = {
       projectId: value.projectId,
@@ -91,9 +91,25 @@ export class AgentWorkspaceService {
     return document;
   }
 
-  async run(request: AIAgentRequest): Promise<AIAgentResult> {
-    await this.current(request?.contextId);
-    return this.agent.run(request);
+  /** Runs one assistant request. A document is touched only when Manual Send attached it. */
+  async run(
+    request: unknown,
+    emit?: (event: AIAssistantEvent) => void,
+  ): Promise<AIAssistantResult> {
+    const contextId =
+      request && typeof request === 'object' && 'contextId' in request
+        ? request.contextId
+        : undefined;
+    if (contextId !== undefined) {
+      if (typeof contextId !== 'string')
+        throw new AIError('INVALID_ARGUMENT', 'Provide a valid document context.');
+      await this.current(contextId);
+    }
+    return this.agent.run(request, emit);
+  }
+
+  cancel(request: unknown): void {
+    this.agent.cancelRequest(request);
   }
 
   async accept(request: {

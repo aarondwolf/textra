@@ -149,15 +149,17 @@ export function ConflictDialog({
           </section>
 
           <section className="conflict-choice" aria-labelledby="discard-conflict-title">
-            <h3 id="discard-conflict-title">Give precedence to the external editor</h3>
-            <p>Close TeXtra’s buffer without writing it. The external file is left untouched.</p>
+            <h3 id="discard-conflict-title">Discard TeXtra buffer</h3>
+            <p>
+              Close TeXtra’s buffer without writing it. The external file on disk is left untouched.
+            </p>
             <button
               type="button"
               className="danger-button"
               disabled={busy !== null || !document}
               onClick={() => void run('discard', onDiscard)}
             >
-              {busy === 'discard' ? 'Closing buffer…' : 'Close TeXtra buffer'}
+              {busy === 'discard' ? 'Closing buffer…' : 'Discard and close tab'}
             </button>
           </section>
           {error && (

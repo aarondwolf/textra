@@ -9,7 +9,7 @@ import {
   type AIModelRef,
   type AIProviderId,
 } from '../../../../shared/ai';
-import { Check, ChevronDown, Search, Star } from '../../icons';
+import { Check, ChevronDown, ChevronUp, Search, Star } from '../../icons';
 import { findModel, modelGroups, modelUnavailableReason } from './useAISettings';
 import './model-picker.css';
 
@@ -188,7 +188,11 @@ export function ModelPicker({
             </small>
           )}
         </span>
-        <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+        {placement === 'up' ? (
+          <ChevronUp size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+        ) : (
+          <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+        )}
       </button>
       {open && (
         <div

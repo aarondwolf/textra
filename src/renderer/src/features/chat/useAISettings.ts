@@ -83,8 +83,7 @@ export function modelGroups(
           isModelVisible(
             provider.filters?.[role === 'completion' ? 'completion' : 'chat'],
             model.id,
-          ) &&
-          (role !== 'agent' || provider.supportsTools !== false),
+          ),
       ),
     }))
     .filter((group) => group.models.length);
@@ -102,8 +101,6 @@ export function modelUnavailableReason(
   if (provider.enabled === false) return 'This connection is silenced.';
   const model = provider.models.find((item) => item.id === ref.model);
   if (!model) return 'This model is missing from the connection’s catalog.';
-  if (role === 'agent' && provider.supportsTools === false)
-    return 'Tool calls are disabled for this connection.';
   if (role && !supportsAIRole(model, role)) return 'This model does not support this role.';
   if (!isModelVisible(provider.filters?.[role === 'completion' ? 'completion' : 'chat'], model.id))
     return 'This model is hidden for this role.';
@@ -120,7 +117,7 @@ export function findModel(settings: AISettings | null, ref: AIModelRef | null, r
 export function isDefaultModel(
   settings: AISettings | null,
   ref: AIModelRef,
-  role: AIRole = 'chat',
+  role: AIRole = 'assistant',
 ) {
   return sameModel(settings?.roleDefaults[role], ref);
 }

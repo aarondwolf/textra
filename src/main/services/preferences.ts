@@ -41,10 +41,79 @@ const optionalKeys = new Set([
   'externalChangeQuietPeriodMs',
   'externalChangePollingOnly',
   'openDiffAfterConflictCopy',
+  'uiFont',
+  'editorFont',
+  'customThemes',
+  'keyboardShortcuts',
+  'snippetsSymbolsOpenDefault',
+  'snippetsTemplatesOpenDefault',
 ]);
 
 const themeNames = new Set(['dark', 'light', 'midnight', 'forest', 'ocean', 'rose', 'sand']);
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
+
+function validateCustomThemes(value: unknown): Preferences['customThemes'] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error('Unsupported or invalid preferences.');
+  return value.map((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item))
+      throw new Error('Unsupported or invalid preferences.');
+    const candidate = item as Record<string, unknown>;
+    if (
+      typeof candidate.id !== 'string' ||
+      !candidate.id ||
+      candidate.id.length > 64 ||
+      typeof candidate.name !== 'string' ||
+      !candidate.name ||
+      candidate.name.length > 64 ||
+      typeof candidate.baseTheme !== 'string' ||
+      !themeNames.has(candidate.baseTheme)
+    )
+      throw new Error('Unsupported or invalid preferences.');
+    return {
+      id: candidate.id,
+      name: candidate.name,
+      baseTheme: candidate.baseTheme as 'dark' | 'light',
+      ...(typeof candidate.accent === 'string' && colorPattern.test(candidate.accent)
+        ? { accent: candidate.accent }
+        : {}),
+      ...(typeof candidate.accentStrong === 'string' && colorPattern.test(candidate.accentStrong)
+        ? { accentStrong: candidate.accentStrong }
+        : {}),
+      ...(typeof candidate.accentBackground === 'string' &&
+      colorPattern.test(candidate.accentBackground)
+        ? { accentBackground: candidate.accentBackground }
+        : {}),
+      ...(typeof candidate.background === 'string' && colorPattern.test(candidate.background)
+        ? { background: candidate.background }
+        : {}),
+      ...(typeof candidate.surface === 'string' && colorPattern.test(candidate.surface)
+        ? { surface: candidate.surface }
+        : {}),
+      ...(typeof candidate.text === 'string' && colorPattern.test(candidate.text)
+        ? { text: candidate.text }
+        : {}),
+      ...(typeof candidate.uiFont === 'string' ? { uiFont: candidate.uiFont.slice(0, 128) } : {}),
+      ...(typeof candidate.editorFont === 'string'
+        ? { editorFont: candidate.editorFont.slice(0, 128) }
+        : {}),
+    };
+  });
+}
+
+function validateKeyboardShortcuts(value: unknown): Record<string, string> {
+  if (value === undefined) return {};
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error('Unsupported or invalid preferences.');
+  const record = value as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const [key, val] of Object.entries(record)) {
+    if (typeof key === 'string' && typeof val === 'string' && key.length < 64 && val.length < 64) {
+      result[key] = val;
+    }
+  }
+  return result;
+}
 
 function validateThemeCustomizations(value: unknown): Preferences['themeCustomizations'] {
   if (value === undefined) return { ...DEFAULT_PREFERENCES.themeCustomizations };
@@ -139,7 +208,16 @@ export function validatePreferences(value: unknown): Preferences {
       !BUILD_RECIPES.some((recipe) => recipe.value === candidate.defaultRecipe)) ||
     candidate.version !== 1 ||
     typeof candidate.theme !== 'string' ||
-    !themeNames.has(candidate.theme) ||
+    (!themeNames.has(candidate.theme) &&
+      !(
+        Array.isArray(candidate.customThemes) &&
+        candidate.customThemes.some(
+          (t) =>
+            typeof t === 'object' &&
+            t !== null &&
+            (t as Record<string, unknown>).id === candidate.theme,
+        )
+      )) ||
     typeof candidate.sidebarVisible !== 'boolean' ||
     (Object.hasOwn(candidate, 'previewVisible') && typeof candidate.previewVisible !== 'boolean') ||
     typeof candidate.outputVisible !== 'boolean' ||
@@ -189,7 +267,13 @@ export function validatePreferences(value: unknown): Preferences {
     (Object.hasOwn(candidate, 'externalChangePollingOnly') &&
       typeof candidate.externalChangePollingOnly !== 'boolean') ||
     (Object.hasOwn(candidate, 'openDiffAfterConflictCopy') &&
-      typeof candidate.openDiffAfterConflictCopy !== 'boolean')
+      typeof candidate.openDiffAfterConflictCopy !== 'boolean') ||
+    (Object.hasOwn(candidate, 'uiFont') && typeof candidate.uiFont !== 'string') ||
+    (Object.hasOwn(candidate, 'editorFont') && typeof candidate.editorFont !== 'string') ||
+    (Object.hasOwn(candidate, 'snippetsSymbolsOpenDefault') &&
+      typeof candidate.snippetsSymbolsOpenDefault !== 'boolean') ||
+    (Object.hasOwn(candidate, 'snippetsTemplatesOpenDefault') &&
+      typeof candidate.snippetsTemplatesOpenDefault !== 'boolean')
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
@@ -233,6 +317,12 @@ export function validatePreferences(value: unknown): Preferences {
     openDiffAfterConflictCopy: (candidate.openDiffAfterConflictCopy ??
       DEFAULT_PREFERENCES.openDiffAfterConflictCopy) as boolean,
     recentCommands: validateRecentCommands(candidate.recentCommands),
+    uiFont: (candidate.uiFont ?? '') as string,
+    editorFont: (candidate.editorFont ?? '') as string,
+    customThemes: validateCustomThemes(candidate.customThemes),
+    keyboardShortcuts: validateKeyboardShortcuts(candidate.keyboardShortcuts),
+    snippetsSymbolsOpenDefault: (candidate.snippetsSymbolsOpenDefault ?? false) as boolean,
+    snippetsTemplatesOpenDefault: (candidate.snippetsTemplatesOpenDefault ?? false) as boolean,
   };
 }
 

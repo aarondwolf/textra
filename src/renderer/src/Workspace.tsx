@@ -11,7 +11,7 @@ import {
   type PointerEvent,
 } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ChatPanel } from './features/chat/ChatPanel';
+import { ChatPanel, type ReviewOutcomeEvent } from './features/chat/ChatPanel';
 import { AgentInlineReview, AgentReviewControls } from './features/chat/AgentInlineReview';
 import { agentEditHunks } from '../../shared/ai-edits';
 import { AGENT_SOURCE_LIMIT, type AIAgentContext, type AIEditProposal } from '../../shared/ai';
@@ -91,6 +91,7 @@ import { notify } from './features/notifications/ToastViewport';
 import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import { WritingPanel } from './features/writing/WritingPanel';
 import { CompileRecipeEditor } from './features/compile/CompileRecipeEditor';
+import type { SectionId } from './features/onboarding/SetupDialog';
 import { parseBibliography } from '../../shared/bibliography';
 import {
   analyzeLatexDocument,
@@ -114,7 +115,8 @@ function unwrap<T>(result: Result<T>): T {
 function projectFileUri(rootPath: string | undefined, relativePath: string): string | undefined {
   if (!rootPath) return undefined;
   const absolute = `${rootPath.replace(/\\/g, '/')}/${relativePath}`.replace(/\/+/g, '/');
-  return `file:///${encodeURI(absolute)}`;
+  // POSIX roots already start with "/"; a fourth slash makes Monaco reject the URI.
+  return `file:///${encodeURI(absolute.replace(/^\/+/, ''))}`;
 }
 
 function PromptDialog({ prompt, close }: { prompt: Prompt | null; close: () => void }) {
@@ -366,7 +368,7 @@ function SplitHandle({ container }: { container: React.RefObject<HTMLDivElement 
   );
 }
 
-export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: SectionId) => void }) {
   const state = useWorkspace();
   const {
     project,
@@ -476,6 +478,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     id: number;
     text: string;
     projectId: string | null;
+    autoSend?: boolean;
   } | null>(null);
   const chatDraftId = useRef(0);
   useEffect(() => {
@@ -486,9 +489,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [pdfPreviewPath, setPdfPreviewPath] = useState<string | null>(null);
   const [requestedPdfPreviewPath, setRequestedPdfPreviewPath] = useState<string | null>(null);
-  const [buildHistory, setBuildHistory] = useState<
-    { outcome: string; recipe: string; time: string }[]
-  >([]);
+  const [savedTabPath, setSavedTabPath] = useState<string | null>(null);
+  const savedTabTimer = useRef<number | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{
     x: number;
     y: number;
@@ -774,6 +776,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const operations = useRef(0);
   const active = documents.find((document) => document.path === activePath);
   const [agentContext, setAgentContext] = useState<AIAgentContext | null>(null);
+  const [agentWorking, setAgentWorking] = useState(false);
   const [agentProposal, setAgentProposal] = useState<AIEditProposal | null>(null);
   const agentApprovedSnapshot = useRef<Pick<
     AIEditProposal,
@@ -786,7 +789,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     () => (agentProposal ? agentEditHunks(agentProposal.content, agentProposal.modified) : []),
     [agentProposal],
   );
+  // Application-owned review tally, reported back to the assistant conversation as context.
+  const agentReviewTally = useRef({ approved: 0, rejected: 0 });
+  const reviewOutcomeId = useRef(0);
+  const [reviewOutcome, setReviewOutcome] = useState<ReviewOutcomeEvent | null>(null);
+  function finishAgentReview() {
+    const { approved, rejected } = agentReviewTally.current;
+    agentReviewTally.current = { approved: 0, rejected: 0 };
+    setReviewOutcome({
+      id: ++reviewOutcomeId.current,
+      outcome: approved && !rejected ? 'applied' : approved ? 'partial' : 'rejected',
+    });
+  }
   function reviewAgentProposal(proposal: AIEditProposal) {
+    agentReviewTally.current = { approved: 0, rejected: 0 };
     agentApprovedSnapshot.current = null;
     setAgentReviewError(null);
     setAgentProposal(proposal);
@@ -852,7 +868,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     (busy ||
       !active ||
       active.conflict ||
-      agentContext?.contextId !== agentProposal.contextId ||
+      // A review decision rotates the main-owned opaque context. The renderer may still be
+      // catching up on its matching sync request; main validates the proposal context on click.
       active.projectId !== agentProposal.projectId ||
       active.path !== agentProposal.path ||
       active.content !== agentProposal.content ||
@@ -909,8 +926,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
         if (window.dispatchEvent(event))
           throw new Error('The active editor could not apply this proposal.');
         agentApprovedSnapshot.current = result.applied;
+        agentReviewTally.current.approved += approveHunkIds.length;
       }
+      agentReviewTally.current.rejected += rejectHunkIds.length;
     } catch (cause) {
+      agentReviewTally.current.rejected += 1;
+      finishAgentReview();
       if (result.remaining)
         await window.textra.rejectAIAgentProposal(result.remaining.id).catch(() => undefined);
       setAgentProposal(null);
@@ -957,10 +978,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     }
     setAgentContext(result.context);
     setAgentProposal(result.remaining);
-    if (!result.remaining) await saveApprovedAgentBuffer();
+    if (!result.remaining) {
+      finishAgentReview();
+      await saveApprovedAgentBuffer();
+    }
   }
   async function rejectAgentProposal() {
     if (agentProposal) unwrap(await window.textra.rejectAIAgentProposal(agentProposal.id));
+    if (agentProposal) {
+      agentReviewTally.current.rejected += Math.max(1, agentHunks.length);
+      finishAgentReview();
+    }
     setAgentProposal(null);
     await saveApprovedAgentBuffer();
   }
@@ -980,13 +1008,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   const engine = availableRecipes.some((recipe) => recipe.name === preferred)
     ? preferred
     : availableRecipes[0].name;
-  const selectedRecipeLabel =
-    BUILD_RECIPES.find((preset) => preset.value === engine)?.label ?? engine;
   const canCompile = !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
   const recipeControl = useRef<HTMLDivElement>(null);
-  const [sidebarRecipeOpen, setSidebarRecipeOpen] = useState(false);
-  const sidebarRecipeControl = useRef<HTMLDivElement>(null);
   const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
   const [headerNode, setHeaderNode] = useState<HTMLDivElement | null>(null);
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -1041,15 +1065,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
     document.addEventListener('mousedown', dismiss);
     return () => document.removeEventListener('mousedown', dismiss);
   }, [recipeOpen]);
-  useEffect(() => {
-    if (!sidebarRecipeOpen) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!sidebarRecipeControl.current?.contains(event.target as Node))
-        setSidebarRecipeOpen(false);
-    };
-    document.addEventListener('mousedown', dismiss);
-    return () => document.removeEventListener('mousedown', dismiss);
-  }, [sidebarRecipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
   const analysisSources = useMemo(() => {
@@ -1226,12 +1241,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
       return;
     }
     if (buildStartedAt.current === null || build.outcome === 'idle') return;
-    const seconds = Math.max(0.1, (Date.now() - buildStartedAt.current) / 1000).toFixed(1);
     buildStartedAt.current = null;
-    setBuildHistory((previous) =>
-      [{ outcome: build.outcome, recipe: engine, time: `${seconds}s` }, ...previous].slice(0, 5),
-    );
-  }, [build.outcome, build.running, engine]);
+  }, [build.outcome, build.running]);
 
   async function run(action: () => Promise<void>) {
     operations.current++;
@@ -1509,7 +1520,13 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }
   async function saveAndLint(path: string) {
     const saved = await saveDocument(path);
-    if (saved) notify('Saved', 'success');
+    if (saved) {
+      if (savedTabTimer.current) window.clearTimeout(savedTabTimer.current);
+      setSavedTabPath(path);
+      savedTabTimer.current = window.setTimeout(() => {
+        setSavedTabPath((current) => (current === path ? null : current));
+      }, 1200);
+    }
     if (saved && preferences.chktexEnabled && preferences.chktexRunMode === 'save')
       void lintDocument(path).catch(() => {
         // Linting is optional and must never make Ctrl+S look like a failed save.
@@ -1616,6 +1633,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   async function askProblemInChat(diagnostic: ProblemDiagnostic) {
     const text = await prepareProblemPrompt(diagnostic, true);
     setChatDraft({ id: ++chatDraftId.current, text, projectId: project?.id ?? null });
+    setChatOpened(true);
+    setSidebarView('chat');
+    updatePreferences({ sidebarVisible: true });
+  }
+  function askSnippetInChat(text: string) {
+    setChatDraft({
+      id: ++chatDraftId.current,
+      text,
+      projectId: project?.id ?? null,
+      autoSend: false,
+    });
     setChatOpened(true);
     setSidebarView('chat');
     updatePreferences({ sidebarVisible: true });
@@ -1781,7 +1809,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             className="icon-button"
             aria-label="Toggle sidebar"
             title={
-              preferences.sidebarVisible ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'
+              preferences.sidebarVisible
+                ? 'Collapse sidebar (Ctrl/Cmd+B)'
+                : 'Expand sidebar (Ctrl/Cmd+B)'
             }
             aria-pressed={preferences.sidebarVisible}
             onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
@@ -1831,8 +1861,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           </button>
           <button
             className="icon-button activity-view"
-            aria-label="Compile settings"
-            title="Compile settings and generated files"
+            aria-label="Build"
+            title="Build"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'compile'}
             onClick={() => selectSidebarView('compile')}
           >
@@ -1864,7 +1894,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button
             className="icon-button"
             aria-label="Command palette"
-            title="Search commands (Ctrl+K)"
+            title="Search commands (Ctrl/Cmd+K)"
             onClick={() => useUI.getState().setPaletteOpen(true)}
           >
             <Search size={18} />
@@ -1898,7 +1928,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
             className="icon-button"
             aria-label="Settings and TeX setup"
             title="Settings"
-            onClick={onOpenSettings}
+            onClick={() => onOpenSettings?.()}
           >
             <Settings size={19} />
           </button>
@@ -1912,7 +1942,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
           >
             <ChatPanel
               agentContext={agentContext}
+              onAgentWorkingChange={setAgentWorking}
               reviewActive={agentProposal !== null}
+              reviewOutcome={reviewOutcome}
               onReviewProposal={reviewAgentProposal}
               reviewControls={
                 agentProposal ? (
@@ -1984,7 +2016,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <div className="sidebar-title">
                   <span className="sidebar-heading">Snippets & Symbols</span>
                 </div>
-                <SnippetPalette canInsert={!!active} />
+                <SnippetPalette canInsert={!!active} onAskChat={askSnippetInChat} />
               </>
             ) : sidebarView === 'recents' ? (
               <>
@@ -2049,132 +2081,86 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
               </>
             ) : sidebarView === 'compile' ? (
               <div className="writing-panel compile-sidebar">
-                <div className="sidebar-title writing-title">
-                  <span className="sidebar-heading">Compile</span>
-                </div>
-                <section className="writing-section">
-                  <h3 className="writing-section-title">Build</h3>
-                  <p className="writing-empty">
-                    {selectedRecipeLabel}{' '}
-                    {missingTool ? 'needs a configured tool.' : 'is ready for the active file.'}
-                  </p>
-                  <p className="writing-empty" role="status">
-                    {build.running
-                      ? `Building${build.stepCount ? ` step ${(build.stepsDone ?? 0) + 1} of ${build.stepCount}` : ''}…`
-                      : build.outcome === 'success'
-                        ? 'Last build succeeded.'
-                        : build.outcome === 'failed'
-                          ? 'Last build reported problems.'
-                          : 'Ready to compile.'}
-                  </p>
-                  <div
-                    className="sidebar-recipe-control"
-                    ref={sidebarRecipeControl}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') {
-                        setSidebarRecipeOpen(false);
-                        sidebarRecipeControl.current
-                          ?.querySelector<HTMLButtonElement>(
-                            '[aria-label="Choose compile setting"]',
-                          )
-                          ?.focus();
-                      }
-                    }}
-                  >
+                <div className="sidebar-title writing-title build-sidebar-title">
+                  <span className="sidebar-heading">Build</span>
+                  <div className="build-header-actions">
                     <button
-                      className="text-button sidebar-recipe-button"
-                      aria-label="Choose compile setting"
-                      aria-expanded={sidebarRecipeOpen}
-                      aria-controls="sidebar-compile-recipes"
-                      disabled={!canCompile || busy || build.running}
+                      className={`toolbar-button compile-button compile-feedback-${buildFeedback}`}
+                      data-feedback={buildFeedback}
+                      aria-label={build.running ? 'Cancel build' : 'Compile active document'}
+                      title={
+                        build.running
+                          ? 'Cancel build'
+                          : buildFeedback === 'success'
+                            ? 'Build succeeded!'
+                            : buildFeedback === 'failed'
+                              ? 'Build failed.'
+                              : !canCompile
+                                ? 'Open a .tex document to compile it.'
+                                : busy
+                                  ? 'Wait for the current file operation to finish.'
+                                  : missingTool
+                                    ? engine + ' not found. Check Settings, LaTeX tools.'
+                                    : 'Compile ' +
+                                      (activePath ?? 'active document') +
+                                      ' with ' +
+                                      engine +
+                                      ' (Ctrl/Cmd+Enter)'
+                      }
+                      disabled={!build.running && (!canCompile || busy)}
+                      onClick={() =>
+                        build.running
+                          ? void run(async () => {
+                              unwrap(await window.textra.cancelBuild());
+                            })
+                          : void compile()
+                      }
+                    >
+                      {build.running ? (
+                        <Square size={13} />
+                      ) : buildFeedback === 'success' ? (
+                        <Check size={13} />
+                      ) : buildFeedback === 'failed' ? (
+                        <Warning size={13} />
+                      ) : (
+                        <Play size={13} />
+                      )}
+                      {build.running ? 'Cancel' : 'Compile'}
+                    </button>
+                    <button
+                      className="icon-button small collapsed-alert"
+                      data-severity={issueSeverity}
+                      aria-label={'Show problems' + (issueCount ? ` (${issueCount})` : '')}
+                      title={
+                        issueSeverity === 'error'
+                          ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
+                          : issueSeverity === 'warning'
+                            ? `${warningCount} warning${warningCount === 1 ? '' : 's'}`
+                            : issueSeverity === 'ok'
+                              ? 'No problems'
+                              : 'Show problems'
+                      }
                       onClick={() => {
-                        if (sidebarRecipeOpen) setSidebarRecipeOpen(false);
-                        else if (project)
-                          void run(async () => {
-                            const config = unwrap(await window.textra.getProjectConfig(project.id));
-                            useWorkspace.setState({ projectConfig: config });
-                            setSidebarRecipeOpen(true);
-                          });
+                        setPanel('problems');
+                        updatePreferences({ previewVisible: true });
                       }}
                     >
-                      <span>{selectedRecipeLabel}</span>
-                      <ChevronDown size={13} />
+                      <span className="alert-glyph">
+                        <Warning
+                          size={15}
+                          weight={
+                            issueSeverity === 'error' || issueSeverity === 'warning'
+                              ? 'fill'
+                              : 'light'
+                          }
+                        />
+                        {issueSeverity === 'ok' && (
+                          <Check size={8} weight="bold" className="alert-check" />
+                        )}
+                      </span>
                     </button>
-                    {sidebarRecipeOpen && (
-                      <div
-                        className="recipe-menu sidebar-recipe-menu"
-                        id="sidebar-compile-recipes"
-                        role="group"
-                        aria-label="Compile settings"
-                      >
-                        <span className="eyebrow">COMPILE SETTINGS</span>
-                        {availableRecipes.map((recipe) => (
-                          <button
-                            key={recipe.name}
-                            aria-pressed={engine === recipe.name}
-                            onClick={() => {
-                              setSidebarRecipeOpen(false);
-                              void run(() => selectRecipe(recipe.name));
-                            }}
-                          >
-                            <span>
-                              {BUILD_RECIPES.find((preset) => preset.value === recipe.name)
-                                ?.label ?? recipe.name}
-                            </span>
-                            {engine === recipe.name && <Check size={14} />}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => {
-                            setSidebarRecipeOpen(false);
-                            useUI.getState().setRecipeEditorOpen(true);
-                          }}
-                        >
-                          Create or edit settings…
-                        </button>
-                      </div>
-                    )}
                   </div>
-                  <button
-                    className="text-button"
-                    disabled={!canCompile || busy || build.running || !!missingTool}
-                    onClick={() => void compile()}
-                  >
-                    Compile active document
-                  </button>
-                </section>
-                {buildHistory.length > 0 && (
-                  <details className="writing-section" aria-label="Recent builds">
-                    <summary className="writing-section-title">Recent builds</summary>
-                    {buildHistory.map((entry, index) => (
-                      <p className="writing-empty" key={`${entry.recipe}:${entry.time}:${index}`}>
-                        {entry.recipe} · {entry.outcome} · {entry.time}
-                      </p>
-                    ))}
-                  </details>
-                )}
-                <details className="writing-section" aria-label="Project health">
-                  <summary className="writing-section-title">Project health</summary>
-                  <p className="writing-empty">
-                    {errorCount} errors · {warningCount} warnings · {referenceDiagnostics.length}{' '}
-                    reference checks
-                  </p>
-                  <p className="writing-empty">
-                    {missingTool
-                      ? 'A required compile tool needs setup.'
-                      : 'Selected compile tools are available.'}
-                  </p>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => {
-                      setPanel('problems');
-                      updatePreferences({ previewVisible: true });
-                    }}
-                  >
-                    Review problems
-                  </button>
-                </details>
+                </div>
                 {project && (
                   <CompileRecipeEditor
                     activePath={activePath}
@@ -2182,6 +2168,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     disabled={!canCompile || busy || build.running}
                     projectId={project.id}
                     recipeName={engine}
+                    onSelectRecipe={(recipe) => void selectRecipe(recipe)}
                     onSaved={(config, savedRecipeName) => {
                       useWorkspace.setState((state) => ({
                         projectConfig: config,
@@ -2192,49 +2179,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     }}
                   />
                 )}
-                <details className="writing-section">
-                  <summary className="writing-section-title">Generated files</summary>
-                  <p className="writing-empty">
-                    Clean only TeXtra&apos;s managed build/textra folder. Custom output folders
-                    stay.
-                  </p>
-                  <button
-                    className="text-button"
-                    disabled={!project || busy || build.running}
-                    onClick={() =>
-                      void run(async () => {
-                        if (!project) return;
-                        const result = await window.textra.cleanProjectBuildArtifacts(project.id);
-                        if (!result.ok) throw new Error(result.error);
-                      })
-                    }
-                  >
-                    Clean generated files…
-                  </button>
-                </details>
-                <details className="writing-section">
-                  <summary className="writing-section-title">Document formatting</summary>
-                  <p className="writing-empty">
-                    {tools.some((tool) => tool.name === 'latexindent' && tool.path)
-                      ? 'latexindent is available. Use Format document in Writing to preview changes.'
-                      : 'latexindent is not available. Configure it in Settings if you install it.'}
-                  </p>
-                  {!tools.some((tool) => tool.name === 'latexindent' && tool.path) && (
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        void window.textra
-                          .openSetupLink('latexindent')
-                          .then((result) => {
-                            if (!result.ok) showError(result.error);
-                          })
-                          .catch(showError);
-                      }}
-                    >
-                      Install latexindent
-                    </button>
-                  )}
-                </details>
               </div>
             ) : (
               <>
@@ -2460,7 +2404,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   {documents.length ? (
                     documents.map((document, index) => (
                       <div
-                        className={`document-tab ${document.path === activePath ? 'selected' : ''}${document.path === previewPath ? ' preview-tab' : ''}`}
+                        className={`document-tab ${document.path === activePath ? 'selected' : ''}${document.path === previewPath ? ' preview-tab' : ''}${savedTabPath === document.path ? ' tab-saved-pulse' : ''}`}
                         key={document.path}
                         data-close-buttons={preferences.tabCloseButtons}
                         draggable={true}
@@ -2509,7 +2453,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           }}
                         >
                           <FileText size={13} />
-                          <span>{document.path.split('/').at(-1)}</span>
+                          <span>
+                            {savedTabPath === document.path
+                              ? 'Saved'
+                              : document.path.split('/').at(-1)}
+                          </span>
                           {dirty(document) && (
                             <span className="dirty-dot" aria-label="Unsaved changes" />
                           )}
@@ -2573,7 +2521,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                     <button
                       className="icon-button small"
                       aria-label="Save file"
-                      title="Save (Ctrl+S)"
+                      title="Save (Ctrl/Cmd+S)"
                       disabled={!dirty(active) || busy || active.conflict}
                       onClick={() =>
                         void run(async () => {
@@ -2597,7 +2545,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                         title={
                           editorFull
                             ? 'Restore editor and preview split'
-                            : 'Expand editor to full width (Ctrl+Enter still compiles)'
+                            : 'Expand editor to full width (Ctrl/Cmd+Enter still compiles)'
                         }
                         aria-pressed={editorFull}
                         onClick={() => setExpandedPane(editorFull ? null : 'editor')}
@@ -2766,7 +2714,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   ) : (
                     <div className="agent-review-editor-stack">
                       <div
-                        className={`agent-review-source-host ${agentProposal ? 'is-reviewing' : ''}`}
+                        className={`agent-review-source-host${agentProposal ? ' is-reviewing' : ''}${agentWorking ? ' is-agent-working' : ''}`}
                         inert={agentProposal !== null}
                       >
                         <SourceEditor
@@ -2918,7 +2866,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                                     (activePath ?? 'active document') +
                                     ' with ' +
                                     engine +
-                                    ' (Ctrl+Enter)'
+                                    ' (Ctrl/Cmd+Enter)'
                     }
                     style={
                       build.running && build.stepCount
@@ -2958,7 +2906,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           : 'Compile'}
                   </button>
                   <button
-                    className="toolbar-button compile-button recipe-toggle"
+                    className={`toolbar-button compile-button recipe-toggle compile-feedback-${buildFeedback}`}
+                    data-feedback={buildFeedback}
                     aria-label="Choose compile recipe"
                     aria-expanded={recipeOpen}
                     aria-controls="compile-recipes"
@@ -3008,7 +2957,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                       <button
                         onClick={() => {
                           setRecipeOpen(false);
-                          useUI.getState().setRecipeEditorOpen(true);
+                          window.dispatchEvent(
+                            new CustomEvent('textra:open-settings', {
+                              detail: { section: 'compilation' },
+                            }),
+                          );
                         }}
                       >
                         Manage recipes…
@@ -3185,7 +3138,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                 aria-labelledby="preview-tab"
                 hidden={panel !== 'preview'}
               >
-                {active && /\.md(?:own)?$/i.test(active.path) ? (
+                {!pdfPreviewPath && active && /\.md(?:own)?$/i.test(active.path) ? (
                   <MarkdownPreview source={active.content} path={active.path} />
                 ) : (
                   <PdfViewer
@@ -3293,7 +3246,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                           ? 'Build failed.'
                           : !canCompile
                             ? 'Open a .tex document to compile it.'
-                            : 'Compile with ' + engine + ' (Ctrl+Enter)'
+                            : 'Compile with ' + engine + ' (Ctrl/Cmd+Enter)'
                   }
                   disabled={!build.running && (!canCompile || busy)}
                   onClick={() =>
@@ -3632,6 +3585,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
                   setPdfPreviewPath(requestedPdfPreviewPath);
                   setRequestedPdfPreviewPath(null);
                   setPanel('preview');
+                  updatePreferences({ previewVisible: true });
                 }}
               >
                 Open Preview

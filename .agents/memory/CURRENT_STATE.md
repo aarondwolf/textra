@@ -1,5 +1,93 @@
 # Current state
 
+2026-10-22 Settings integration & dialog consolidation:
+- AI Settings: eliminated duplicate `AISettingsDialog` modal dialog and DOM portal container injection hack. Converted AI settings into an integrated inline panel (`AISettingsDialog` / `AISettingsPanel`) embedded directly in `SetupDialog` under the `ai` section. Header gear icon, unconfigured card action, and provider warning triggers in `ChatPanel` directly open `SetupDialog` at `section: 'ai'`.
+- Recipe Management: embedded `CompileRecipeEditor` directly inside `SetupDialog`'s Compilation tab (`section: 'compilation'`). The "Manage recipes…" compile dropdown button and Command Palette item now route to Settings -> Compilation instead of opening an external standalone recipe dialog.
+- Open Settings Routing: `textra:open-settings` custom events and Command Palette entries ("AI settings", "Manage compile recipes", "Configure keyboard shortcuts") now reliably navigate to specific sections (`ai`, `compilation`, `shortcuts`, `appearance`, etc.).
+- Verification: 556 unit and integration tests pass, typecheck passes, lint passes with 0 errors/warnings, prettier format check passes.
+
+2026-10-22 UI/UX audit, Build tab refactor, and Settings customization follow-up:
+
+- Build tab: renamed from "Compile" to "Build"; header houses matching primary Compile
+  and Problems button copies on one line; removed "Project health", "Generated files", and
+  "Document formatting"; simplified the recipe editor with faded "+ Add", step edit icon opening a
+  common modal ToolEditorDialog, and "Save" / "Save As" actions; card styled as an open section.
+- Writing tab: fixed latexindent executable lookup and % TODO / % FIXME comment-boundary parsing;
+  header features Document Format button beside Focus button (standardized 24px icon buttons);
+  Outline panel is placed first followed by Notes with a vertical resizable splitter defaulting
+  Notes to a compact collapsed height.
+- Snippets tab: Math Symbols & Templates sections are collapsed by default with lock icons and
+  settings toggles to persist open-by-default preferences; custom snippets are consolidated into
+  the main card with inline add/delete controls and dedicated snippet prompts.
+- Chat & Models: Model picker chevron flips up; Ctrl/Cmd+/ toggles the picker; active file pill
+  positioned northwest above the composer and restricted to Agent mode; header buttons standardized
+  to 24px icon-only with tooltips.
+- Appearance & Custom Themes: support custom UI font and Monaco editor font; custom theme builder
+  in SetupDialog saving to preferences with live CSS variable injection for background, surface,
+  accent, and text colors.
+- Editor & Diagnostics: removed document length constraint for editor minimap (remains off by
+  default); added official ChkTeX documentation manual link for rule codes and severities; fixed
+  Monaco find widget hover tooltip pointer obstruction; keyboard shortcuts viewer supports adding
+  and editing custom key bindings; clicking a PDF in the file tree automatically opens and focuses
+  the PDF preview pane; split compile button error styling covers both halves on failure; document
+  saving replaces toast with a subtle accent pulse on the tab pill.
+- Verification: 556/556 vitest unit and integration tests pass, typecheck passes, lint passes with
+  0 errors and 0 warnings, prettier format check passes, electron-vite production build passes.
+
+2026-10-22 Agent deletion follow-up: authorized Agent runs now have an exact-source
+delete_range tool. Deletions remain staged for explicit review and cannot directly write files.
+The shared prompt briefly guides literal LaTeX backslashes and balanced braces/environments.
+Code-block copy controls are icon-only. Custom snippet creation offers a copyable editable
+prompt and a prefilled Ask in Chat draft that bypasses automatic sending.
+
+2026-10-22 assistant activity UI follow-up: reasoning-only streams no longer render an empty
+Markdown preview. Chat/Agent thinking uses animated ellipsis dots; the active document editor
+gets a subtle pulsing accent border only during an authorized Agent request. Reduced-motion
+preferences disable both animations while retaining the editor cue.
+
+2026-10-22 assistant display follow-up: typed SDK reasoning deltas now cross the validated
+preload bridge and render in a faded, collapsed-by-default panel only when the provider returns
+them. Gemini 2.5/3 receives includeThoughts; other Google-compatible models do not. Reasoning is
+excluded from future provider turns and saved chat history. Fenced code has an always-visible,
+working copy button in user and assistant bubbles. Fixed the composer flex hit targets so the
+context chip/model label cannot cover the model or cancel controls. Focused unit checks pass
+19/19, typecheck and build pass, lint passes with the existing draft dependency warning, and the
+native chat e2e passes 1/1 (34.3s), including collapsed reasoning and both copy controls.
+
+2026-10-22 chat follow-up: a fresh prompt after an unanswered/failed user turn now remains a
+separate visible bubble; adjacent same-role turns coalesce only at provider serialization.
+User messages now render through the safe MarkdownPreview component, including fenced code.
+Typecheck and focused conversation/Markdown unit checks pass (5 tests). Native UI check not run.
+
+2026-10-22 assistant UX follow-up: restored the Chat/Agent switch over the SDK assistant.
+Chat is the default, sends no document/tools, and Problems' Ask in AI forces Chat. Agent
+manual Send explicitly authorizes the active .tex snapshot; the agent receives it as
+untrusted context and can stage a direct edit without a separate initial read call.
+Document sync only cancels an in-flight request bound to that document. Per-hunk approval
+can advance using the live renderer snapshot while main remains authoritative for context
+validation. Follow-up diagnosis confirmed the reported Google failure was HTTP 503/high demand,
+misreported as network failure because SDK errors were not normalized at the assistant runner.
+Assistant errors now normalize status and safe response detail. Gemini 3.5 Flash-Lite uses
+minimal thinking for Chat, low for Agent, and provider stream retries are disabled. Typecheck
+passes; targeted assistant/runtime tests pass 48/48. Native Windows interaction remains
+unverified. Agent response latency remains model/network dependent, and tool edits still
+require model tool-call and final-response work.
+
+2026-10-21 AI SDK migration (working tree, not committed). Chat and Agent are replaced by one
+SDK-backed assistant: main builds models with the Vercel AI SDK 7 (ai-sdk-runtime.ts, guarded
+fetch, maxRetries 0, lazy provider packages), assistant-runner.ts uses ToolLoopAgent with the
+four pathless tools over the extracted staging buffer (agent-staging.ts), and the renderer uses
+useChat with an Electron IPC transport (assistant-transport.ts). Ctrl+I streams a growing
+preview; chat-based automatic completion uses streamText; Codestral FIM and Ollama generate stay
+native. Settings v5 migrates Chat/Agent to Assistant. Custom SSE/chat/tool transcripts and
+@google/genai are removed. Evidence (Linux container, 2026-10-21): typecheck, lint, build pass;
+vitest 525 pass with 9 pre-existing real-TeX integration failures caused by the container's
+TeX install; Electron e2e agent, chat, completion, provider-settings, shell, ui-consistency and
+editor-word-selection pass under xvfb. project-workflow and recipes fail on Linux for
+environment reasons (external watcher, real TeX). Windows native e2e has not been rerun.
+Also fixed: projectFileUri produced file://// on POSIX roots, crashing Monaco on file open.
+Next: run npm install (lockfile updated) and the serial Windows e2e suite, then commit.
+
 2026-10-21 provider v4 and prompted Ctrl+I redesign is implemented. Full unit 557/557,
 native matrix 7/7, typecheck, lint and production build pass. Live local Qwen3B prompted edit and FIM pass; paid-provider live checks are blocked
 by isolated-profile key decryption. Exact evidence and remaining normal-profile checks are in [implementation tally](AI_SETTINGS_IMPLEMENTATION.md).

@@ -2,19 +2,17 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  AIService,
-  type KeyCipher,
-  type ChatGenerate,
-  type ModelLister,
-} from '../../src/main/services/ai-service';
+import { AIService, type KeyCipher, type ModelLister } from '../../src/main/services/ai-service';
+import type { streamChat } from '../../src/main/services/ai-providers';
+import type { AIMessage } from '../../src/shared/api';
 import { validateAIEndpoint } from '../../src/main/services/ai-endpoints';
 import type { AIProviderConfiguration, AICompletionRequest } from '../../src/shared/ai';
 
+// Provider SDK packages load lazily, only for a connection that receives a real request.
 const sdkLoaded = vi.hoisted(() => vi.fn());
-vi.mock('@google/genai', () => {
+vi.mock('@ai-sdk/google', () => {
   sdkLoaded();
-  return { GoogleGenAI: class {} };
+  return { createGoogleGenerativeAI: () => () => ({}) };
 });
 const config: AIProviderConfiguration = {
   provider: 'custom',
@@ -77,7 +75,20 @@ describe('offline provider configuration and role policy', () => {
   let directory: string;
   let service: AIService;
   let cipher: KeyCipher;
-  let chat: ReturnType<typeof vi.fn<ChatGenerate>>;
+  let chat: ReturnType<typeof vi.fn<typeof streamChat>>;
+  // Foreground requests run through withProvider; the fixture generator stands in for the SDK.
+  const send = (value: { model: unknown; messages: unknown }) =>
+    service.withProvider(
+      value.model,
+      (access, id, signal) =>
+        chat(access, id, {
+          system: 'fixture',
+          messages: value.messages as AIMessage[],
+          maxTokens: 4096,
+          signal,
+        }),
+      'assistant',
+    );
   let list: ReturnType<typeof vi.fn<ModelLister>>;
   let confirm: ReturnType<typeof vi.fn<(model: unknown, endpoint?: string) => Promise<boolean>>>;
   beforeEach(async () => {
@@ -87,10 +98,10 @@ describe('offline provider configuration and role policy', () => {
       encrypt: (value) => Buffer.from(value),
       decrypt: vi.fn((value) => value.toString()),
     };
-    chat = vi.fn<ChatGenerate>(async () => 'fixture response');
+    chat = vi.fn<typeof streamChat>(async () => 'fixture response');
     list = vi.fn<ModelLister>(async () => [{ id: 'tiny-model', label: 'Tiny' }]);
     confirm = vi.fn(async () => true);
-    service = new AIService(directory, cipher, { chat, list, confirmAutomatic: confirm });
+    service = new AIService(directory, cipher, { list, confirmAutomatic: confirm });
   });
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
@@ -109,11 +120,7 @@ describe('offline provider configuration and role policy', () => {
     const decrypt = vi.fn(() => {
       throw new Error('Other OS account');
     });
-    service = new AIService(
-      directory,
-      { ...cipher, available: () => false, decrypt },
-      { chat, list },
-    );
+    service = new AIService(directory, { ...cipher, available: () => false, decrypt }, { list });
     const settings = await service.configureProvider({
       ...config,
       provider: 'google',
@@ -137,8 +144,8 @@ describe('offline provider configuration and role policy', () => {
   });
   it('routes a custom optional-key model only after an explicit request', async () => {
     await service.configureProvider(config);
-    await service.setRoleDefault({ role: 'chat', model });
-    await service.send(question);
+    await service.setRoleDefault({ role: 'assistant', model });
+    await send(question);
     expect(chat.mock.calls[0][0]).toMatchObject({
       provider: 'custom',
       key: null,
@@ -149,17 +156,17 @@ describe('offline provider configuration and role policy', () => {
   });
   it('preserves a disabled default while blocking requests and restores it on enable', async () => {
     await service.configureProvider(config);
-    await service.setRoleDefault({ role: 'chat', model });
+    await service.setRoleDefault({ role: 'assistant', model });
     await service.configureProvider({ ...config, enabled: false });
-    expect((await service.settings()).roleDefaults.chat).toEqual(model);
-    await expect(service.send(question)).rejects.toMatchObject({ code: 'AI_PROVIDER_DISABLED' });
+    expect((await service.settings()).roleDefaults.assistant).toEqual(model);
+    await expect(send(question)).rejects.toMatchObject({ code: 'AI_PROVIDER_DISABLED' });
     expect(chat).not.toHaveBeenCalled();
     await service.configureProvider(config);
-    expect(await service.send(question)).toBe('fixture response');
+    expect(await send(question)).toBe('fixture response');
   });
   it('keeps full catalogues and defaults while applying separate chat and completion visibility', async () => {
     await service.configureProvider(config);
-    await service.setRoleDefault({ role: 'chat', model });
+    await service.setRoleDefault({ role: 'assistant', model });
     const filtered = {
       ...config,
       filters: {
@@ -168,24 +175,22 @@ describe('offline provider configuration and role policy', () => {
       },
     };
     const settings = await service.configureProvider(filtered);
-    expect(settings.roleDefaults.chat).toEqual(model);
+    expect(settings.roleDefaults.assistant).toEqual(model);
     expect(settings.providers.find((provider) => provider.id === 'custom')?.models).toHaveLength(1);
-    await expect(service.send(question)).rejects.toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
+    await expect(send(question)).rejects.toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
     await service.setRoleDefault({ role: 'completion', model });
     await expect(service.setRoleDefault({ role: 'inlineCompletion', model })).rejects.toMatchObject(
       { code: 'INVALID_ARGUMENT' },
     );
   });
-  it('requires an explicit custom tool capability for Agent but not inline editing', async () => {
+  it('keeps a connection without tool support usable by the Assistant and inline editing', async () => {
     await service.configureProvider(config);
-    await expect(service.withProvider(model, async () => 'agent')).rejects.toMatchObject({
-      code: 'AI_MODEL_UNAVAILABLE',
-    });
+    expect(await service.withProvider(model, async (access) => access.supportsTools)).toBe(false);
     expect(await service.withProvider(model, async () => 'inline', 'inlineCompletion')).toBe(
       'inline',
     );
     await service.configureProvider({ ...config, supportsTools: true });
-    expect(await service.withProvider(model, async () => 'agent')).toBe('agent');
+    expect(await service.withProvider(model, async (access) => access.supportsTools)).toBe(true);
   });
   it('saves automatic enable before a model exists and confirms selection later', async () => {
     const enabled = await service.setCompletionSettings({
@@ -231,7 +236,6 @@ describe('offline provider configuration and role policy', () => {
     const diagnostic = vi.fn();
     const completion = vi.fn(async () => '');
     service = new AIService(directory, cipher, {
-      chat,
       list,
       completion,
       confirmAutomatic: confirm,
@@ -267,7 +271,12 @@ describe('offline provider configuration and role policy', () => {
     const filename = join(directory, 'ai.json');
     const raw = JSON.parse(await readFile(filename, 'utf8'));
     raw.version = 3;
-    raw.roleDefaults.chat = { provider: 'google', model: 'gemini-fixture' };
+    raw.roleDefaults = {
+      chat: { provider: 'google', model: 'gemini-fixture' },
+      agent: null,
+      completion: null,
+      inlineCompletion: null,
+    };
     const key = raw.providers.google.encryptedKey;
     delete raw.providers.google.endpoint;
     delete raw.providers.google.filters;
@@ -275,11 +284,11 @@ describe('offline provider configuration and role policy', () => {
     const decrypt = vi.fn(() => {
       throw new Error('Key unavailable');
     });
-    service = new AIService(directory, { ...cipher, decrypt }, { list, chat });
+    service = new AIService(directory, { ...cipher, decrypt }, { list });
     const results = await Promise.all(Array.from({ length: 5 }, () => service.settings()));
-    expect(results[0].roleDefaults.chat).toEqual(raw.roleDefaults.chat);
+    expect(results[0].roleDefaults.assistant).toEqual(raw.roleDefaults.chat);
     expect(JSON.parse(await readFile(filename, 'utf8'))).toMatchObject({
-      version: 4,
+      version: 5,
       providers: { google: { encryptedKey: key } },
     });
     expect(decrypt).not.toHaveBeenCalled();
@@ -293,7 +302,6 @@ describe('offline provider configuration and role policy', () => {
       started = resolve;
     });
     service = new AIService(directory, cipher, {
-      chat,
       list,
       confirmAutomatic: confirm,
       onCompletionDiagnostic: diagnostic,
@@ -314,7 +322,7 @@ describe('offline provider configuration and role policy', () => {
   it('invalidates only the discovered catalogue when its endpoint changes', async () => {
     await service.configureProvider({ ...config, manualModels: [] });
     await service.refreshModels({ provider: 'custom' });
-    await service.setRoleDefault({ role: 'chat', model });
+    await service.setRoleDefault({ role: 'assistant', model });
     const settings = await service.configureProvider({
       ...config,
       endpoint: 'https://new.example/v1',
@@ -325,8 +333,8 @@ describe('offline provider configuration and role policy', () => {
       modelsFetchedAt: null,
       defaultModel: 'tiny-model',
     });
-    expect(settings.roleDefaults.chat).toEqual(model);
-    await expect(service.send(question)).rejects.toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
+    expect(settings.roleDefaults.assistant).toEqual(model);
+    await expect(send(question)).rejects.toMatchObject({ code: 'AI_MODEL_UNAVAILABLE' });
   });
   it.each(['disable', 'endpoint', 'visibility', 'key', 'tools'] as const)(
     'cancels active foreground work after matching provider %s changes',
@@ -346,7 +354,7 @@ describe('offline provider configuration and role policy', () => {
               started();
               return new Promise<string>(() => undefined);
             })
-          : service.send(question);
+          : send(question);
       const stopped = expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
       await ready;
       await service.configureProvider({
@@ -381,7 +389,7 @@ describe('offline provider configuration and role policy', () => {
         finish = resolve;
       });
     });
-    const pending = service.send(question);
+    const pending = send(question);
     await ready;
     await service.configureProvider({
       ...config,
@@ -402,7 +410,6 @@ describe('offline provider configuration and role policy', () => {
       started = resolve;
     });
     service = new AIService(directory, cipher, {
-      chat,
       list,
       confirmAutomatic: confirm,
       completion: async (_access, _model, request) => {

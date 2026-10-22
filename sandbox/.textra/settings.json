@@ -157,6 +157,7 @@
   "latex-workshop.latex.recipe.default": "lastUsed",
   "recipes": {
     "test.tex": "latexmk",
-    "test2.tex": "pdflatex"
+    "test2.tex": "pdflatex",
+    "demo.tex": "latexmk"
   }
 }

@@ -2,7 +2,7 @@
 
 A modern, local-first LaTeX desktop IDE. Your documents stay ordinary files on
 your computer. Editing and local compilation never require an account; AI is
-optional. AI chat works with your own Google, OpenAI, Anthropic, Mistral, DeepSeek, OpenRouter or Ollama Cloud key, or
+optional. The AI assistant works with your own Google, OpenAI, Anthropic, Mistral, DeepSeek, OpenRouter or Ollama Cloud key, or
 with a local Ollama server.
 
 ![Native TeXtra editing and PDF preview](docs/screenshot.png)
@@ -100,7 +100,8 @@ tool paths are excluded. Offline operation is the default. Settings save automat
 footer of Settings and AI settings shows Saving… and All changes saved, and **Save settings**
 waits for pending writes before closing. Provider connection drafts use their own Save button.
 
-The **AI Chat** rail tab opens a conversational debugger. Until a provider is connected it
+The **AI Chat** rail tab opens the assistant, one conversation that answers LaTeX questions
+and, when you ask for a change, proposes reviewed edits to the open `.tex` file. Until a provider is connected it
 shows a single **Configure AI** button that opens the **AI settings** dialog (also reachable
 from the chat header **Settings** button and **Settings → AI Chat**). A fresh installation
 shows **Add Provider +**. Add a connection, then use its compact row to enable/silence,
@@ -110,69 +111,90 @@ OpenAI-compatible endpoint. Mistral uses one key for chat and Codestral FIM.
 
 Saving connection details is offline; **Test / Refresh** explicitly contacts the
 provider and caches its models. Advanced settings contain its API base URL, manual
-model IDs and independent All/Include/Exclude visibility lists for Chat/Agent/Inline
+model IDs and independent All/Include/Exclude visibility lists for Assistant/Inline
 and automatic completion. Each preference can be reset individually. Silencing keeps
 the key and model catalogue while preventing requests, SDK initialization and pings.
-Custom endpoints use standard Chat Completions; their API key is optional, and Agent
-requires explicitly enabling tool support. HTTPS is required except configured local
+Custom endpoints use standard Chat Completions; their API key is optional. Turn on tool
+support for a custom endpoint to let the assistant read and edit the open file; without it
+the assistant answers in text only and says so beside the composer. HTTPS is required except configured local
 or private-network HTTP servers, which display an unencrypted-connection notice.
 
-Chat, Agent and Inline Edit (Ctrl+I) share one compact default-model card. Automatic
+Chat and Agent share the Assistant model. Chat is the default and answers without
+reading the active document. Switch to **Agent** when you want it to inspect or edit
+the open `.tex` file; pressing Send shares that captured file with the selected model,
+which stages edits for review. **Ask in AI** from Problems always opens in Chat mode.
+Agent mode skips a separate initial file-read call, but tool calls and the final reply
+still require provider round trips. Automatically sent Problems prompts stay tool-free.
+Both modes can use the same text model; connections with tool calls disabled remain
+available in Chat and cannot enter Agent mode.
+User prompts support the same safe Markdown formatting as assistant replies, and a
+new send after a failed turn appears as its own message bubble.
+Gemini 3.5 Flash-Lite uses minimal thinking in Chat and low thinking in Agent to reduce
+latency. Provider HTTP errors show the provider's safe status detail, so service outages
+are distinguishable from local connection failures.
+
+Assistant and Inline Edit (Ctrl+I) share one compact default-model card. Automatic
 completion has a separate opt-in card and reveals its selector only while enabled.
-Chat, Agent and Ctrl+I also support independent temporary workspace selections that
+Assistant and Ctrl+I also support independent temporary workspace selections that
 reset after restart. Hidden, missing or silenced models remain displayed as unavailable;
 requests are blocked until you choose or restore a model. Deleting a provider clears
 its bindings. Changing an endpoint revokes automatic-sharing consent.
 The composer's model button opens a searchable list grouped by provider (type to filter by
-model name, id or provider; arrows and Enter choose). Chat and Agent list text chat
+model name, id or provider; arrows and Enter choose). The Assistant lists text chat
 models; automatic completion also lists native fill-in-the-middle (FIM) models. Capability metadata is used where available, with model-family filtering
 for providers that omit it. Vision input models that produce text remain available;
 image/audio generation, embeddings and other specialist endpoints are excluded.
-Refresh models updates capability checks. Changing one role never changes another. Requests are sent in each provider's own format: Gemini generateContent,
-OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, and Ollama's native `/api/chat`.
-Every provider receives the same Chat system instructions; routing changes only
-the endpoint and request format.
+Refresh models updates capability checks. Changing one role never changes another. Requests
+use the Vercel AI SDK's native adapter for each provider (OpenAI through Chat Completions,
+Google, Anthropic, Mistral, DeepSeek and OpenRouter), and its OpenAI-compatible adapter for
+Ollama and custom endpoints. Everything runs in TeXtra's main process with your own keys:
+there is no hosted gateway, no account, and no automatic retry.
 OpenRouter lists text models from its authenticated account catalogue, respecting
 your account's provider/privacy preferences. It routes submitted text to the
 selected model's hosting provider. TeXtra disables automatic provider fallback and
-requires tool parameters to be supported in Agent mode. Dynamic auto/free router
+requires routed providers to support every request parameter, including tools. Dynamic auto/free router
 entries are excluded so you choose an explicit model.
 **New chat** clears prior conversation context and retries while preserving unsent draft text.
 Settings can enable automatic
 Problems prompts (off by default). **Ask in Chat** prepares the selected error plus five
 source lines above and below for review. Sending shares that conversation/snippet with
-the selected model's provider (local-only Ollama models stay on the computer; Ollama cloud models use Ollama Cloud). Chat has no file or command tools. Agent sends only the active `.tex` buffer
-after an explicit request and can stage precise insertions/replacements in that file.
-It cannot browse other files, delete files, or run commands. Every proposed edit opens
+the selected model's provider (local-only Ollama models stay on the computer; Ollama cloud models use Ollama Cloud).
+The open `.tex` file appears beside the composer as available context. Chat never sends it;
+Agent sends the captured buffer only after you select Agent and press **Send**. Agent can stage
+precise insertions/replacements in that file. Automatically sent Problems prompts never get
+document access and **Ask in AI** defaults to Chat. With no `.tex` file open, the assistant simply
+answers. It cannot browse other files, delete files, or run commands. Every proposed edit opens
 an inline read-only diff in the editor. **Approve** immediately applies that change to the
 buffer and advances to the next; **Reject** skips that change. The final decision returns
 to the normal editor. **Approve all** applies the remaining changes together; **Reject all**
 discards the remaining proposal and preserves changes already approved. Each approval is undoable.
 Auto-save pauses during review and resumes for approved text when review finishes.
-Changing the file, its content, or its disk revision expires the proposal. Agent requests
-include the preceding conversation for handoff and have a 24-response/64-tool budget
-with a 90-second deadline (180 seconds for Local Ollama);
-Problems drafts never auto-send in Agent mode. Mode switches preserve conversation and drafts.
-Chat replies favor concise debugging fixes. When a reply includes a **Suggested fix**,
-the **Implement Suggested Fix** pill switches to Agent with the conversation and a simple
-implementation request. It requires an active `.tex` file; all proposed edits still need review.
-The Agent privacy reminder appears on first selection, fades away, and stays dismissed
-for that app profile. Clicking Send or the handoff pill remains the explicit sharing action.
+Changing the file, its content, or its disk revision expires the proposal. A request has a
+24-response/64-tool budget with a 90-second deadline (180 seconds for Local Ollama); a
+proposal appears only when the whole request finishes. While it works, the assistant shows short
+status lines such as "Reading the active document". Reviewed replies are labelled _Changes
+applied_, _Some changes applied_ or _Changes rejected_, and the assistant is told the same, so
+a rejected proposal is never treated as applied. To act on advice from an earlier reply, just
+ask (for example "apply that fix"); the proposal still needs your review.
 **Chat history** restores workspace-specific conversations, including after restarting TeXtra.
+Only conversation text and review labels are stored; tool transcripts are not.
 History keeps the latest 100 chats per canonical workspace in local app data (`ai-chats/`),
 with at most 80 messages/128,000 characters per stored transcript. History contains plaintext
 conversation text, never API credentials or pending edits; it is excluded from settings exports.
 Unsent drafts remain in memory. **Ctrl+Enter** sends; Enter inserts a newline. Cancel stops waiting
 locally; a provider may still process a request already sent.
-Responses stream as full-width Markdown with a copy action below; only your messages use
-bubbles. The compact composer has two text rows, no resize handle, a model menu, and a circular
+Responses stream as full-width Markdown with a copy action below; fenced code in either your
+messages or assistant replies has an always-visible copy button. When a model provides separate
+reasoning text, TeXtra shows it in a faded panel that starts collapsed and is not saved with chat
+history. Only your messages use bubbles. The compact composer has two text rows, no resize handle, a model menu, and a circular
 send arrow (a stop control during streaming). The introductory
 guidance disappears once a conversation starts. The chat tab sits with the main rail views.
 
 **Ctrl+I inline editing** opens a focused instruction box inside an editable TeX buffer.
 Type what to insert or change; Enter generates, Shift+Enter adds a prompt line, and
 Escape cancels. Opening the box sends nothing. With a selection, review a replacement
-as an inline diff; otherwise review an insertion as ghost text. Accept applies one
+as an inline diff; otherwise review an insertion as ghost text. The preview grows while the
+model streams, and Accept becomes available once generation finishes. Accept applies one
 undoable edit; insertion ghost text also accepts with Tab. The panel has its own
 model picker, Generate/Regenerate and Cancel controls. Changing models clears the
 preview without submitting again. Ordinary TexLab completion, Ctrl+Space, snippets
@@ -198,13 +220,13 @@ with a 10-second remote or 30-second local deadline.
 Prompted Ctrl+I sends up to 4,000 instruction characters, 16,000 selected characters,
 16,000 prefix / 4,000 suffix / 4,000 metadata characters. It allows 4,096 output tokens,
 32,000 output characters and 60 seconds. Both modes use only the active buffer,
-without Chat history or other project files. Typing, navigation, model changes,
-conflicts and Agent review invalidate pending proposals. Suggestions never apply themselves.
+without conversation history or other project files. Typing, navigation, model changes,
+conflicts and assistant review invalidate pending proposals. Suggestions never apply themselves.
 
 Local Qwen coder models with verified FIM templates use Ollama's native generate API;
 new automatic bindings prefer an already installed Qwen2.5-Coder 0.5B model.
 Codestral automatic completion uses native FIM through the Mistral connection; prompted edits use chat.
-Other text models use the same completion instructions through their normal chat route.
+Other text models use the same completion instructions through the AI SDK's streaming text route.
 There is no fallback or automatic retry. Ollama is kept warm for five minutes after real
 completion requests; opening TeXtra does not start or warm it. Automatic failures stay
 quiet and authentication/quota errors pause suggestions until retry or configuration change.

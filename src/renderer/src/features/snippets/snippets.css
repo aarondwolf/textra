@@ -149,6 +149,39 @@
   color: var(--accent);
   border-color: transparent;
 }
+.palette-prompt-actions {
+  display: flex;
+  gap: 6px;
+}
+.palette-prompt-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.palette-prompt-actions button:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--hover);
+}
+.palette-prompt-actions button.primary-pill {
+  color: var(--accent);
+  border-color: transparent;
+  background: var(--accent-bg);
+}
+.palette-prompt-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .custom-snippet-item {
   position: relative;
   display: flex;

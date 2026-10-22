@@ -90,7 +90,6 @@ describe('completion service coordination', () => {
         },
       ],
       completion: generate,
-      chat: async () => 'Chat response',
       confirmAutomatic: async () => true,
     });
     await service.saveProvider({ provider: 'ollama-local' });
@@ -160,7 +159,7 @@ describe('completion service coordination', () => {
     await cancelled;
     expect(generate.mock.calls[0][2].signal.aborted).toBe(true);
   });
-  it('lets Chat preempt automatic work and lets Ctrl+I preempt automatic work', async () => {
+  it('lets the Assistant preempt automatic work and lets Ctrl+I preempt automatic work', async () => {
     await service.setCompletionSettings({ enabled: true, allowOutsideEnvironments: false });
     for (const foreground of ['chat', 'inline'] as const) {
       let started!: () => void;
@@ -177,12 +176,12 @@ describe('completion service coordination', () => {
       const cancelled = expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
       await ready;
       if (foreground === 'chat')
-        await service.send({ model: snapshot.model, messages: [{ role: 'user', text: 'Hello' }] });
+        await service.withProvider(snapshot.model, async () => 'Assistant response');
       else await service.complete(snapshot);
       await cancelled;
     }
   });
-  it('reports busy for Ctrl+I while a foreground Agent request is active', async () => {
+  it('reports busy for Ctrl+I while a foreground Assistant request is active', async () => {
     let started!: () => void;
     let finish!: () => void;
     const ready = new Promise<void>((resolve) => (started = resolve));
@@ -197,7 +196,7 @@ describe('completion service coordination', () => {
     finish();
     await foreground;
   });
-  it('does not let Chat interrupt an active manual completion', async () => {
+  it('does not let the Assistant interrupt an active manual completion', async () => {
     let started!: () => void;
     const ready = new Promise<void>((resolve) => (started = resolve));
     generate.mockImplementationOnce(async () => {
@@ -207,7 +206,7 @@ describe('completion service coordination', () => {
     const pending = service.complete(snapshot);
     await ready;
     await expect(
-      service.send({ model: snapshot.model, messages: [{ role: 'user', text: 'Hello' }] }),
+      service.withProvider(snapshot.model, async () => 'Assistant response'),
     ).rejects.toMatchObject({ code: 'AI_BUSY' });
     expect(generate.mock.calls[0][2].signal.aborted).toBe(false);
     service.cancelCompletion({ requestId: snapshot.requestId });

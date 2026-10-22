@@ -1,5 +1,17 @@
 # Known issues
 
+- 2026-10-22 SDK assistant UX follow-up: the native chat e2e now passes with the Chat/Agent
+  controls present, covering provider onboarding, Markdown, reasoning display and retries.
+  Native Agent staging and sequential multi-hunk approval remain separate checks. Targeted
+  runtime/assistant tests passed 48/48 at the earlier checkpoint. Agent latency still depends on provider/model
+  speed and the extra model turn required after an edit tool call. Sending the active
+  snapshot removes the separate initial read round trip but does not remove those turns.
+  The captured Gemini request in the user's log reached Google's API and received HTTP 503
+  high demand (not a local connection failure). The UI now reports provider unavailability
+  and the safe provider detail. Thinking is reduced for the default Flash-Lite model; genuine
+  provider congestion can still delay or reject requests. No live provider request was made
+  during this fix.
+
 - 2026-10-21 prompted-edit native blocker resolved: interactive Monaco view zone
   exposes its form to accessibility, defers focus until painted and raises its
   pointer layer above source lines. Native acceptance passes for typing, selected
@@ -58,3 +70,7 @@
   In the managed runner, Electron reaches `application-ready` then exits before the UI automation
   service can bind a window. ChkTeX and latexindent are optional PATH tools; TeXtra keeps local
   reference and writing analysis available when they are absent.
+- AI SDK migration (2026-10-21) was verified in a Linux container only. Re-run the serial
+  Windows e2e suite and an opt-in live check (`TEXTRA_LIVE_AI_TEST=1`) before committing.
+  Settings switches are controlled inputs, so e2e tests click and then assert state rather than
+  using Playwright check/uncheck.

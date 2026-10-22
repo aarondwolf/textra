@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Article, Hammer, Palette, Pencil, Save, Undo2, Wrench, X } from '../../icons';
+import {
+  AIChat,
+  Article,
+  Hammer,
+  Palette,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  Undo2,
+  Wrench,
+  X,
+} from '../../icons';
 import {
   BUILD_RECIPES,
   CONFIGURABLE_TOOLS,
   type BuildEngine,
   type ConfigurableTool,
+  type CustomTheme,
   type DiagnosticSeverity,
   type SetupLink,
   type Theme,
@@ -14,20 +27,21 @@ import {
 import { preferencesSaved, useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
 import { TexLabSettings } from './TexLabSettings';
-import { AISettingsLauncher } from '../chat/AISettingsDialog';
+import { AISettingsDialog } from '../chat/AISettingsDialog';
+import { CompileRecipeEditor } from '../compile/CompileRecipeEditor';
 import { SaveFooter } from '../save-status/SaveFooter';
 import './setup.css';
 
-type SectionId =
+export type SectionId =
   'appearance' | 'editor' | 'preferences' | 'shortcuts' | 'tools' | 'compilation' | 'backup' | 'ai';
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'editor', label: 'Editor', icon: Article },
-  { id: 'preferences', label: 'Preferences', icon: Article },
+  { id: 'preferences', label: 'Files & Diagnostics', icon: Article },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Article },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
-  { id: 'ai', label: 'AI Chat', icon: Article },
+  { id: 'ai', label: 'AI Settings', icon: AIChat },
   { id: 'backup', label: 'Import & export', icon: Save },
 ];
 
@@ -60,9 +74,11 @@ function parseChktexSeverities(value: string): Record<string, DiagnosticSeverity
 export default function SetupDialog({
   open,
   onOpenChange,
+  initialSection,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialSection?: SectionId;
 }) {
   const { tools, build } = useWorkspace();
   const { preferences, updatePreferences, saveState, error: preferenceError } = useUI();
@@ -72,7 +88,22 @@ export default function SetupDialog({
   const [log, setLog] = useState('');
   const [platform, setPlatform] = useState('');
   const [texLabStatus, setTexLabStatus] = useState<TexlabStatus | null>(null);
-  const [section, setSection] = useState<SectionId>('appearance');
+  const [section, setSection] = useState<SectionId>(initialSection ?? 'appearance');
+  useEffect(() => {
+    if (open && initialSection) {
+      setSection(initialSection);
+    }
+  }, [open, initialSection]);
+  const [newThemeName, setNewThemeName] = useState('');
+  const [newThemeBase, setNewThemeBase] = useState<
+    'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand'
+  >('dark');
+  const [newThemeBg, setNewThemeBg] = useState('#1c1e20');
+  const [newThemeSurface, setNewThemeSurface] = useState('#222426');
+  const [newThemeText, setNewThemeText] = useState('#e4e5e2');
+  const [newThemeAccent, setNewThemeAccent] = useState('#9bc9bb');
+  const [newShortcutLabel, setNewShortcutLabel] = useState('');
+  const [newShortcutKeys, setNewShortcutKeys] = useState('');
   useEffect(() => {
     if (open) {
       void window.textra.getAppInfo().then((result) => {
@@ -161,7 +192,14 @@ export default function SetupDialog({
               ))}
             </nav>
             <div className="setup-scroll">
-              {section === 'ai' && <AISettingsLauncher />}
+              {section === 'ai' && (
+                <AISettingsDialog
+                  onClose={() => setSection('appearance')}
+                  onOpenChange={(isOpen) => {
+                    if (!isOpen) setSection('appearance');
+                  }}
+                />
+              )}
               {section === 'appearance' && (
                 <>
                   <h3>Appearance</h3>
@@ -181,8 +219,62 @@ export default function SetupDialog({
                       <option value="ocean">Ocean</option>
                       <option value="rose">Rose</option>
                       <option value="sand">Sand</option>
+                      {(preferences.customThemes ?? []).map((ct) => (
+                        <option key={ct.id} value={ct.id}>
+                          {ct.name} (Custom)
+                        </option>
+                      ))}
                     </select>
                   </label>
+                  {(preferences.customThemes ?? []).some((ct) => ct.id === preferences.theme) && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      style={{ alignSelf: 'start', marginTop: '4px', color: 'var(--alert-error)' }}
+                      onClick={() => {
+                        const remaining = (preferences.customThemes ?? []).filter(
+                          (ct) => ct.id !== preferences.theme,
+                        );
+                        updatePreferences({
+                          theme: 'dark',
+                          customThemes: remaining,
+                        });
+                      }}
+                    >
+                      <Trash2 size={13} /> Delete selected custom theme
+                    </button>
+                  )}
+
+                  <h3>Fonts</h3>
+                  <p className="setup-hint">
+                    Specify custom font families for the interface and editor. Leave blank to use
+                    system defaults.
+                  </p>
+                  <div className="setup-actions" style={{ display: 'flex', gap: '10px' }}>
+                    <label className="field-label" style={{ flex: 1 }}>
+                      UI Font
+                      <input
+                        aria-label="UI Font"
+                        placeholder="'Segoe UI', system-ui, sans-serif"
+                        value={preferences.uiFont ?? ''}
+                        onChange={(event) =>
+                          updatePreferences({ uiFont: event.target.value || undefined })
+                        }
+                      />
+                    </label>
+                    <label className="field-label" style={{ flex: 1 }}>
+                      Editor Font
+                      <input
+                        aria-label="Editor Font"
+                        placeholder="'Cascadia Code', Consolas, monospace"
+                        value={preferences.editorFont ?? ''}
+                        onChange={(event) =>
+                          updatePreferences({ editorFont: event.target.value || undefined })
+                        }
+                      />
+                    </label>
+                  </div>
+
                   <h3>Accent colors</h3>
                   <p className="setup-hint">
                     Personalize the accent used by the selected color scheme. Your choices stay
@@ -214,6 +306,133 @@ export default function SetupDialog({
                       </label>
                     ))}
                   </div>
+
+                  <details
+                    className="custom-theme-box"
+                    style={{
+                      marginTop: '16px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      padding: '10px',
+                    }}
+                  >
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                      Create and save a new theme…
+                    </summary>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        marginTop: '10px',
+                      }}
+                    >
+                      <label className="field-label">
+                        Theme Name
+                        <input
+                          aria-label="New theme name"
+                          placeholder="e.g. Nord Night"
+                          value={newThemeName}
+                          onChange={(e) => setNewThemeName(e.target.value)}
+                        />
+                      </label>
+                      <label className="field-label">
+                        Base Theme
+                        <select
+                          aria-label="New theme base"
+                          value={newThemeBase}
+                          onChange={(e) =>
+                            setNewThemeBase(
+                              e.target.value as
+                                | 'dark'
+                                | 'light'
+                                | 'midnight'
+                                | 'forest'
+                                | 'ocean'
+                                | 'rose'
+                                | 'sand',
+                            )
+                          }
+                        >
+                          <option value="dark">Dark</option>
+                          <option value="light">Light</option>
+                          <option value="midnight">Midnight</option>
+                          <option value="forest">Forest</option>
+                          <option value="ocean">Ocean</option>
+                          <option value="rose">Rose</option>
+                          <option value="sand">Sand</option>
+                        </select>
+                      </label>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                          gap: '8px',
+                        }}
+                      >
+                        <label className="field-label">
+                          Background
+                          <input
+                            type="color"
+                            value={newThemeBg}
+                            onChange={(e) => setNewThemeBg(e.target.value)}
+                          />
+                        </label>
+                        <label className="field-label">
+                          Surface
+                          <input
+                            type="color"
+                            value={newThemeSurface}
+                            onChange={(e) => setNewThemeSurface(e.target.value)}
+                          />
+                        </label>
+                        <label className="field-label">
+                          Text
+                          <input
+                            type="color"
+                            value={newThemeText}
+                            onChange={(e) => setNewThemeText(e.target.value)}
+                          />
+                        </label>
+                        <label className="field-label">
+                          Accent
+                          <input
+                            type="color"
+                            value={newThemeAccent}
+                            onChange={(e) => setNewThemeAccent(e.target.value)}
+                          />
+                        </label>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-button primary-button"
+                        style={{ alignSelf: 'start', marginTop: '6px' }}
+                        disabled={!newThemeName.trim()}
+                        onClick={() => {
+                          const id = `custom-${Date.now()}`;
+                          const created: CustomTheme = {
+                            id,
+                            name: newThemeName.trim(),
+                            baseTheme: newThemeBase,
+                            background: newThemeBg,
+                            surface: newThemeSurface,
+                            text: newThemeText,
+                            accent: newThemeAccent,
+                            uiFont: preferences.uiFont,
+                            editorFont: preferences.editorFont,
+                          };
+                          const updated = [...(preferences.customThemes ?? []), created];
+                          updatePreferences({
+                            customThemes: updated,
+                            theme: id,
+                          });
+                          setNewThemeName('');
+                        }}
+                      >
+                        <Plus size={13} /> Save theme to picker
+                      </button>
+                    </div>
+                  </details>
                 </>
               )}
               {section === 'editor' && (
@@ -265,7 +484,7 @@ export default function SetupDialog({
                     and starts at a three-second delay.
                   </p>
                   <h3>Tabs and recovery</h3>
-                  <label className="texlab-toggle">
+                  <label className="texlab-toggle editor-session-toggle">
                     <span>Restore the previous session after restart</span>
                     <input
                       type="checkbox"
@@ -276,7 +495,7 @@ export default function SetupDialog({
                       }
                     />
                   </label>
-                  <label className="texlab-toggle">
+                  <label className="texlab-toggle editor-session-toggle">
                     <span>Use preview tabs for unedited files</span>
                     <input
                       type="checkbox"
@@ -300,8 +519,34 @@ export default function SetupDialog({
                     </select>
                   </label>
                   <p className="setup-hint">
-                    These session and tab options are saved now; their workspace behavior is being
-                    connected with the broader tab and recovery work.
+                    Reopen files from your last session and choose how editor tabs are displayed.
+                  </p>
+                  <h3>Snippets & Symbols</h3>
+                  <label className="texlab-toggle">
+                    <span>Keep Math Symbols open by default</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.snippetsSymbolsOpenDefault}
+                      onChange={(event) =>
+                        updatePreferences({ snippetsSymbolsOpenDefault: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <label className="texlab-toggle">
+                    <span>Keep Templates & Snippets open by default</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.snippetsTemplatesOpenDefault}
+                      onChange={(event) =>
+                        updatePreferences({ snippetsTemplatesOpenDefault: event.target.checked })
+                      }
+                    />
+                  </label>
+                  <p className="setup-hint">
+                    Choose whether sections in the Snippets & Symbols sidebar tab start expanded or
+                    collapsed.
                   </p>
                 </>
               )}
@@ -376,7 +621,8 @@ export default function SetupDialog({
                     />
                   </label>
                   <p className="setup-hint">
-                    The diff only helps inspect the two versions; manual merging will come later.
+                    The diff view lets you compare conflicting versions side by side without
+                    modifying either file.
                   </p>
                   <h3>Problem explanations</h3>
                   <label className="texlab-toggle">
@@ -398,46 +644,241 @@ export default function SetupDialog({
               )}
               {section === 'shortcuts' && (
                 <>
-                  <h3>Keyboard shortcuts</h3>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <h3>Keyboard shortcuts</h3>
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() =>
+                        updatePreferences({
+                          keyboardShortcuts: {},
+                        })
+                      }
+                      title="Reset all keyboard shortcuts to their default values"
+                    >
+                      <Undo2 size={13} /> Reset to defaults
+                    </button>
+                  </div>
                   <p className="setup-hint">
-                    These standard shortcuts work on Windows and Linux with Ctrl, and on macOS with
-                    Command. Shortcut customization is not available yet, so TeXtra does not
-                    silently replace familiar editor or system shortcuts.
+                    These shortcuts use Ctrl on Windows and Linux, and Command on macOS. You can
+                    customize key combinations or add custom shortcuts.
                   </p>
-                  <dl className="shortcut-list">
-                    <div>
-                      <dt>Save</dt>
-                      <dd>Ctrl/Cmd + S</dd>
-                    </div>
-                    <div>
-                      <dt>Save a copy</dt>
-                      <dd>Ctrl/Cmd + Shift + S</dd>
-                    </div>
-                    <div>
-                      <dt>Compile active document</dt>
-                      <dd>Ctrl/Cmd + Enter</dd>
-                    </div>
-                    <div>
-                      <dt>Command palette</dt>
-                      <dd>Ctrl/Cmd + K</dd>
-                    </div>
-                    <div>
-                      <dt>Toggle sidebar</dt>
-                      <dd>Ctrl/Cmd + B</dd>
-                    </div>
-                    <div>
-                      <dt>Preview / Output</dt>
-                      <dd>Ctrl/Cmd + J</dd>
-                    </div>
-                    <div>
-                      <dt>Find / replace</dt>
-                      <dd>Ctrl/Cmd + F / Ctrl/Cmd + H</dd>
-                    </div>
-                    <div>
-                      <dt>Close a menu or search</dt>
-                      <dd>Escape</dd>
-                    </div>
-                  </dl>
+                  <div
+                    className="shortcuts-editor"
+                    style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+                  >
+                    {[
+                      { id: 'save', label: 'Save', defaultKeys: 'Ctrl/Cmd + S' },
+                      { id: 'saveCopy', label: 'Save a copy', defaultKeys: 'Ctrl/Cmd + Shift + S' },
+                      {
+                        id: 'compile',
+                        label: 'Compile active document',
+                        defaultKeys: 'Ctrl/Cmd + Enter',
+                      },
+                      {
+                        id: 'commandPalette',
+                        label: 'Command palette',
+                        defaultKeys: 'Ctrl/Cmd + K',
+                      },
+                      { id: 'toggleSidebar', label: 'Toggle sidebar', defaultKeys: 'Ctrl/Cmd + B' },
+                      {
+                        id: 'togglePreview',
+                        label: 'Preview / Output',
+                        defaultKeys: 'Ctrl/Cmd + J',
+                      },
+                      {
+                        id: 'find',
+                        label: 'Find / replace',
+                        defaultKeys: 'Ctrl/Cmd + F / Ctrl/Cmd + H',
+                      },
+                      {
+                        id: 'switchModel',
+                        label: 'Switch chat model',
+                        defaultKeys: 'Ctrl/Cmd + /',
+                      },
+                      { id: 'inlineEdit', label: 'Inline AI edit', defaultKeys: 'Ctrl/Cmd + I' },
+                      { id: 'escape', label: 'Close a menu or search', defaultKeys: 'Escape' },
+                    ].map((shortcut) => {
+                      const currentKey =
+                        preferences.keyboardShortcuts?.[shortcut.id] ?? shortcut.defaultKeys;
+                      return (
+                        <div
+                          key={shortcut.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 8px',
+                            background: 'var(--surface)',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border)',
+                          }}
+                        >
+                          <span
+                            style={{ flex: 1, minWidth: 0, fontSize: '11px', color: 'var(--text)' }}
+                          >
+                            {shortcut.label}
+                          </span>
+                          <input
+                            aria-label={`Shortcut keys for ${shortcut.label}`}
+                            value={currentKey}
+                            onChange={(e) => {
+                              updatePreferences({
+                                keyboardShortcuts: {
+                                  ...preferences.keyboardShortcuts,
+                                  [shortcut.id]: e.target.value,
+                                },
+                              });
+                            }}
+                            style={{
+                              width: '180px',
+                              padding: '4px 6px',
+                              fontSize: '11px',
+                              fontFamily: 'monospace',
+                            }}
+                          />
+                          {preferences.keyboardShortcuts?.[shortcut.id] && (
+                            <button
+                              type="button"
+                              className="icon-button small"
+                              aria-label={`Reset ${shortcut.label} to default`}
+                              title="Reset to default"
+                              onClick={() => {
+                                const next = { ...preferences.keyboardShortcuts };
+                                delete next[shortcut.id];
+                                updatePreferences({ keyboardShortcuts: next });
+                              }}
+                            >
+                              <Undo2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {Object.entries(preferences.keyboardShortcuts ?? {})
+                      .filter(
+                        ([key]) =>
+                          ![
+                            'save',
+                            'saveCopy',
+                            'compile',
+                            'commandPalette',
+                            'toggleSidebar',
+                            'togglePreview',
+                            'find',
+                            'switchModel',
+                            'inlineEdit',
+                            'escape',
+                          ].includes(key),
+                      )
+                      .map(([customId, customKey]) => (
+                        <div
+                          key={customId}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 8px',
+                            background: 'var(--surface)',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border)',
+                          }}
+                        >
+                          <span
+                            style={{ flex: 1, minWidth: 0, fontSize: '11px', color: 'var(--text)' }}
+                          >
+                            {customId}
+                          </span>
+                          <input
+                            aria-label={`Shortcut keys for ${customId}`}
+                            value={customKey}
+                            onChange={(e) => {
+                              updatePreferences({
+                                keyboardShortcuts: {
+                                  ...preferences.keyboardShortcuts,
+                                  [customId]: e.target.value,
+                                },
+                              });
+                            }}
+                            style={{
+                              width: '180px',
+                              padding: '4px 6px',
+                              fontSize: '11px',
+                              fontFamily: 'monospace',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="icon-button small"
+                            aria-label={`Remove shortcut ${customId}`}
+                            title="Remove custom shortcut"
+                            onClick={() => {
+                              const next = { ...preferences.keyboardShortcuts };
+                              delete next[customId];
+                              updatePreferences({ keyboardShortcuts: next });
+                            }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px',
+                      background: 'var(--surface)',
+                      borderRadius: '6px',
+                      border: '1px dashed var(--border)',
+                      display: 'flex',
+                      gap: '8px',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <input
+                      aria-label="New shortcut action name"
+                      placeholder="Action name (e.g. Export PDF)"
+                      value={newShortcutLabel}
+                      onChange={(e) => setNewShortcutLabel(e.target.value)}
+                      style={{ flex: 1, minWidth: 0, padding: '4px 6px', fontSize: '11px' }}
+                    />
+                    <input
+                      aria-label="New shortcut key combination"
+                      placeholder="Keys (e.g. Ctrl/Cmd + E)"
+                      value={newShortcutKeys}
+                      onChange={(e) => setNewShortcutKeys(e.target.value)}
+                      style={{
+                        width: '150px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        fontFamily: 'monospace',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="text-button primary-button"
+                      disabled={!newShortcutLabel.trim() || !newShortcutKeys.trim()}
+                      onClick={() => {
+                        updatePreferences({
+                          keyboardShortcuts: {
+                            ...preferences.keyboardShortcuts,
+                            [newShortcutLabel.trim()]: newShortcutKeys.trim(),
+                          },
+                        });
+                        setNewShortcutLabel('');
+                        setNewShortcutKeys('');
+                      }}
+                    >
+                      <Plus size={13} /> Add shortcut
+                    </button>
+                  </div>
                 </>
               )}
               {section === 'tools' && (
@@ -593,7 +1034,21 @@ export default function SetupDialog({
                     </label>
                     <p className="setup-hint chktex-hint">
                       Rule filters apply before Problems is updated. Choose error, warning, or info
-                      for each listed rule.
+                      for each listed rule.{' '}
+                      <button
+                        type="button"
+                        onClick={() => void setupLink('chktexRules')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          color: 'var(--accent)',
+                          textDecoration: 'underline',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ChkTeX rule codes reference (official manual)
+                      </button>
                     </p>
                   </section>
                   <div className="setup-actions">
@@ -690,16 +1145,38 @@ export default function SetupDialog({
                     Compile builds the active .tex document. Each document remembers its last used
                     recipe in the project settings.
                   </p>
-                  <div className="setup-actions">
-                    <button
-                      disabled={!useWorkspace.getState().project || busy || build.running}
-                      onClick={() => {
-                        onOpenChange(false);
-                        useUI.getState().setRecipeEditorOpen(true);
-                      }}
-                    >
-                      Edit project build recipes
-                    </button>
+                  <div style={{ marginTop: '16px', marginBottom: '24px' }}>
+                    <h4 style={{ margin: '14px 0 8px', fontSize: '13px', fontWeight: 600 }}>
+                      Project build recipes
+                    </h4>
+                    <p className="setup-hint">
+                      Customize compile tools and recipe steps for this project.
+                    </p>
+                    {useWorkspace.getState().project ? (
+                      <CompileRecipeEditor
+                        activePath={useWorkspace.getState().activePath}
+                        config={useWorkspace.getState().projectConfig}
+                        disabled={busy || build.running}
+                        projectId={useWorkspace.getState().project!.id}
+                        recipeName={useWorkspace.getState().engine}
+                        onSelectRecipe={(recipeName) =>
+                          useWorkspace.setState({ engine: recipeName as BuildEngine })
+                        }
+                        onSaved={(updatedConfig, savedRecipeName) => {
+                          useWorkspace.setState((state) => ({
+                            projectConfig: updatedConfig,
+                            engine: savedRecipeName as BuildEngine,
+                            recipes: state.activePath
+                              ? { ...state.recipes, [state.activePath]: savedRecipeName }
+                              : state.recipes,
+                          }));
+                        }}
+                      />
+                    ) : (
+                      <p className="setup-hint">
+                        Open a project folder to configure its build recipes.
+                      </p>
+                    )}
                   </div>
                   <p className="setup-hint">
                     Recipes and the output location (build folder or PDF beside the source) are

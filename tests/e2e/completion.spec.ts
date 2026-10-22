@@ -59,7 +59,7 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
         settings: {
           configured: true,
           autoSendProblems: false,
-          roleDefaults: { chat: model, agent: model, completion: model, inlineCompletion: model },
+          roleDefaults: { assistant: model, completion: model, inlineCompletion: model },
           completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
           providers: [
             {
@@ -127,7 +127,7 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
       ipcMain.handle(
         'textra:ai:inline-edit:request',
         (
-          _event,
+          event,
           request: AIInlineEditRequest,
         ): Result<AIInlineEditResponse> | Promise<Result<AIInlineEditResponse>> => {
           state.edits.push(request);
@@ -145,6 +145,16 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
                   : ' MANUAL_INSERTION',
             },
           };
+          if (request.selection && !state.hold) {
+            // Stream a growing preview, then complete only when the test releases it.
+            event.sender.send('textra:ai:inline-edit:chunk', {
+              requestId: request.requestId,
+              text: 'REWRI',
+            });
+            return new Promise((resolve) => {
+              state.release = () => resolve(reply);
+            });
+          }
           if (!state.hold) return reply;
           return new Promise((resolve) => {
             state.release = () => resolve(reply);
@@ -201,15 +211,16 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
     expect((await state()).requests).toHaveLength(0);
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
-    await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
-    await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
-    const aiSettings = page.getByRole('dialog', { name: 'AI settings', exact: true });
+    await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
+    const aiSettings = settings.locator('.ai-settings-inline');
     const enabled = aiSettings.getByRole('checkbox', { name: /^Enable automatic completion/ });
     await expect(enabled).not.toBeChecked();
     await expect(
-      aiSettings.getByRole('button', { name: /^Automatic completion model:/ }),
+      aiSettings.getByRole('button', { name: /^Automatic completion.*model:/ }),
     ).toHaveCount(0);
-    await enabled.check();
+    // Controlled by saved settings: the checkbox changes once the save completes.
+    await enabled.click();
+    await expect(enabled).toBeChecked();
     await expect(aiSettings).toContainText('math');
     await aiSettings.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
@@ -248,7 +259,17 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
     await page.keyboard.press('Enter');
     const preview = panel.locator('[aria-label="Inline edit preview"]');
     await expect(preview.locator('del')).toHaveText('Th');
+    // The replacement preview grows while streaming; acceptance waits for completion.
+    await expect(preview.locator('ins')).toHaveText('REWRI');
+    await expect(panel.getByRole('button', { name: 'Accept', exact: true })).toBeDisabled();
+    await application.evaluate(() => {
+      const s = (globalThis as typeof globalThis & { completionTest: CompletionTestState })
+        .completionTest;
+      s.release?.();
+      s.release = null;
+    });
     await expect(preview.locator('ins')).toHaveText('REWRITTEN_SELECTION');
+    await expect(panel.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
     await page.screenshot({ path: test.info().outputPath('prompted-selection-diff.png') });
     await panel.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(source).toContainText('REWRITTEN_SELECTION');

@@ -40,6 +40,15 @@ interface PromptProps {
   resize(height: number): void;
 }
 
+/** Display-only normalization: an incomplete fenced response must not show its wrapper. */
+export function inlineEditPreview(raw: string): string {
+  if (/^`{1,2}$/.test(raw)) return '';
+  if (!raw.startsWith('```')) return raw;
+  const opening = raw.indexOf('\n');
+  if (opening < 0) return '';
+  return raw.slice(opening + 1).replace(/\r?\n`{1,3}\s*$/, '');
+}
+
 function InlinePrompt(props: PromptProps) {
   const input = useRef<HTMLTextAreaElement>(null);
   const card = useRef<HTMLElement>(null);
@@ -113,7 +122,7 @@ function InlinePrompt(props: PromptProps) {
           {props.loading ? 'Generating…' : props.replacement === null ? 'Generate' : 'Regenerate'}
         </button>
         {props.replacement !== null && (
-          <button type="button" onClick={props.accept}>
+          <button type="button" disabled={props.loading} onClick={props.accept}>
             Accept
           </button>
         )}
@@ -121,9 +130,9 @@ function InlinePrompt(props: PromptProps) {
           Cancel
         </button>
       </div>
-      {props.replacement !== null && props.original && (
+      {props.replacement !== null && (props.original || props.loading) && (
         <div className="ai-inline-diff" aria-label="Inline edit preview">
-          <del>{props.original}</del>
+          {props.original && <del>{props.original}</del>}
           <ins>{props.replacement}</ins>
         </div>
       )}
@@ -153,6 +162,7 @@ export function installInlineEdit(
   let generation = 0;
   let composing = false;
   let deadline: ReturnType<typeof setTimeout> | undefined;
+  let unsubscribe: (() => void) | null = null;
   const node = editor.getDomNode()!;
   const keyboardTarget = node.ownerDocument ?? node;
   const safe = () => {
@@ -184,6 +194,8 @@ export function installInlineEdit(
   function cancelPending() {
     generation++;
     clearTimeout(deadline);
+    unsubscribe?.();
+    unsubscribe = null;
     if (pending) void window.textra.cancelAIInlineEdit({ requestId: pending });
     pending = null;
   }
@@ -346,16 +358,31 @@ export function installInlineEdit(
     deadline = setTimeout(() => {
       if (ticket === generation) {
         cancelPending();
+        replacement = null;
         status = 'Inline edit timed out. Generate to try again.';
         render();
       }
     }, 60_000);
     try {
+      unsubscribe = window.textra.onAIInlineEditChunk((chunk) => {
+        if (
+          ticket !== generation ||
+          pending !== chunk.requestId ||
+          request.requestId !== chunk.requestId ||
+          !valid()
+        )
+          return;
+        replacement = inlineEditPreview(chunk.text);
+        render();
+      });
       const result = await window.textra.requestAIInlineEdit(request);
       if (ticket !== generation || !valid()) return;
       clearTimeout(deadline);
+      unsubscribe?.();
+      unsubscribe = null;
       pending = null;
       if (!result.ok) {
+        replacement = null;
         status = result.error;
         render();
         return;
@@ -367,7 +394,8 @@ export function installInlineEdit(
         response.offset !== request.offset ||
         response.endOffset !== request.endOffset
       ) {
-        status = 'The edit response was stale.';
+        replacement = null;
+        status = 'The document changed while generating. Try again.';
         render();
         return;
       }
@@ -382,14 +410,17 @@ export function installInlineEdit(
     } catch {
       if (ticket === generation) {
         clearTimeout(deadline);
+        unsubscribe?.();
+        unsubscribe = null;
         pending = null;
+        replacement = null;
         status = 'Inline edit failed. Generate to try again.';
         render();
       }
     }
   }
   function accept() {
-    if (!valid() || !anchor || replacement === null) return false;
+    if (pending || !valid() || !anchor || replacement === null) return false;
     const captured = anchor;
     const text = replacement;
     close(false);
@@ -406,6 +437,7 @@ export function installInlineEdit(
     provideInlineCompletions(model, position) {
       if (
         !anchor ||
+        pending ||
         replacement === null ||
         anchor.offset !== anchor.endOffset ||
         model !== anchor.model ||

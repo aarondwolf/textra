@@ -7,7 +7,7 @@ import {
 
 describe('analyzeLatexDocument', () => {
   const source = [
-    '% TODO: ignored',
+    '% A regular comment',
     '\\section{A \\emph{clear} start}\\label{sec:start}',
     'Words are counted, but \\citep{knuth, lamport} is not words.',
     'See \\ref{sec:start}, \\eqref{eq:missing}, and \\Cref{sec:start}.',
@@ -69,6 +69,24 @@ describe('analyzeLatexDocument', () => {
     expect(
       analyzeLatexDocument('\\includegraphics{one}\\n\\includegraphics{two}').counts.figures,
     ).toBe(2);
+  });
+
+  it('detects % TODO and % FIXME notes inside comments', () => {
+    const result = analyzeLatexDocument(
+      [
+        '\\section{Intro}',
+        '% FIXME: Fix this',
+        'Text here.',
+        '% TODO: review numbers',
+        '\\begin{verbatim}',
+        '% FIXME: ignored inside verbatim',
+        '\\end{verbatim}',
+      ].join('\n'),
+    );
+    expect(result.todos).toEqual([
+      expect.objectContaining({ kind: 'FIXME', text: 'Fix this', line: 2 }),
+      expect.objectContaining({ kind: 'TODO', text: 'review numbers', line: 4 }),
+    ]);
   });
 });
 

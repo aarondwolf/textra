@@ -6,8 +6,11 @@ import type {
   AIProviderLink,
   AIAgentDocument,
   AIAgentContext,
-  AIAgentRequest,
-  AIAgentResult,
+  AIAssistantRequest,
+  AIAssistantResult,
+  AIAssistantEvent,
+  AIInlineEditChunk,
+  AIReviewOutcome,
   AIEditProposal,
   AIStoredChat,
   AIAgentReviewRequest,
@@ -23,13 +26,27 @@ import type {
   AIModelVisibility,
 } from './ai';
 export const PRODUCT_NAME = 'TeXtra';
-export type Theme = 'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
+export type Theme =
+  'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand' | (string & {});
 export type ChktexRunMode = 'save' | 'live';
 export type DiagnosticSeverity = Diagnostic['severity'];
 export interface AppInfo {
   name: string;
   version: string;
   platform: string;
+}
+export interface CustomTheme {
+  id: string;
+  name: string;
+  baseTheme: 'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
+  accent?: string;
+  accentStrong?: string;
+  accentBackground?: string;
+  background?: string;
+  surface?: string;
+  text?: string;
+  uiFont?: string;
+  editorFont?: string;
 }
 export interface Preferences {
   version: 1;
@@ -81,6 +98,18 @@ export interface Preferences {
   previewTabs: boolean;
   /** Command names, newest first; only labels are stored. */
   recentCommands: string[];
+  /** Application UI font family. */
+  uiFont?: string;
+  /** Monaco editor font family. */
+  editorFont?: string;
+  /** Saved user custom themes. */
+  customThemes?: CustomTheme[];
+  /** User customized keyboard shortcuts mapped by action id. */
+  keyboardShortcuts?: Record<string, string>;
+  /** Keep Math Symbols open by default in Snippets tab. */
+  snippetsSymbolsOpenDefault?: boolean;
+  /** Keep Templates & Snippets open by default in Snippets tab. */
+  snippetsTemplatesOpenDefault?: boolean;
 }
 export interface ThemeCustomizations {
   accent: string;
@@ -95,6 +124,8 @@ export const CONFIGURABLE_TOOLS = [
   'bibtex',
   'biber',
   'synctex',
+  'chktex',
+  'latexindent',
 ] as const;
 export type ConfigurableTool = (typeof CONFIGURABLE_TOOLS)[number];
 export const SIDEBAR_WIDTH_RANGE = { min: 160, max: 480 } as const;
@@ -120,7 +151,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   externalChangeQuietPeriodMs: 3000,
   externalChangePollingOnly: false,
   openDiffAfterConflictCopy: false,
-  editorMinimap: true,
+  editorMinimap: false,
   commonProblemHelp: true,
   formatToolbarVisible: true,
   sidebarWidth: 226,
@@ -134,6 +165,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   tabCloseButtons: 'hover',
   previewTabs: false,
   recentCommands: [],
+  uiFont: '',
+  editorFont: '',
+  customThemes: [],
+  keyboardShortcuts: {},
+  snippetsSymbolsOpenDefault: false,
+  snippetsTemplatesOpenDefault: false,
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 export interface FileEntry {
@@ -222,7 +259,7 @@ export interface ProjectConfig extends Partial<RecipeSettings> {
   engine: BuildEngine;
   recipes?: Record<string, string>;
 }
-export type SetupLink = 'miktex' | 'texlive' | 'mactex' | 'latexindent';
+export type SetupLink = 'miktex' | 'texlive' | 'mactex' | 'latexindent' | 'chktexRules';
 export interface Diagnostic {
   severity: 'error' | 'warning' | 'info';
   message: string;
@@ -333,7 +370,7 @@ export interface AIProviderSettings {
   error: string | null;
 }
 export interface AISettings {
-  /** A Chat or Agent role has a configured default model. */
+  /** The Assistant role has a configured default model. */
   configured: boolean;
   autoSendProblems: boolean;
   roleDefaults: AIRoleDefaults;
@@ -349,11 +386,8 @@ export interface OllamaLocalStatus {
 export interface AIMessage {
   role: 'user' | 'model';
   text: string;
-}
-export interface AIResponseChunk {
-  requestId: string;
-  /** Cumulative response text, bounded to 32,000 characters. */
-  text: string;
+  /** Model turns only: what the user did with the proposal that turn produced. */
+  review?: AIReviewOutcome;
 }
 export interface TextraAPI {
   getAISettings(): Promise<Result<AISettings>>;
@@ -382,13 +416,13 @@ export interface TextraAPI {
   setAIAutoSend(request: { autoSendProblems: boolean }): Promise<Result<AISettings>>;
   getOllamaStatus(): Promise<Result<OllamaLocalStatus>>;
   startOllama(): Promise<Result<OllamaLocalStatus>>;
-  sendAIMessage(request: {
-    messages: AIMessage[];
-    requestId?: string;
-    model: AIModelRef;
-  }): Promise<Result<string>>;
   syncAIAgentDocument(document: AIAgentDocument | null): Promise<Result<AIAgentContext | null>>;
-  runAIAgent(request: AIAgentRequest): Promise<Result<AIAgentResult>>;
+  /** Runs one assistant request; register onAIAssistantEvent before calling. */
+  runAIAssistant(request: AIAssistantRequest): Promise<Result<AIAssistantResult>>;
+  /** Cancels only the named request (or records it so it never starts). */
+  cancelAIAssistant(request: { requestId: string }): Promise<Result<void>>;
+  onAIAssistantEvent(listener: (event: AIAssistantEvent) => void): () => void;
+  onAIInlineEditChunk(listener: (chunk: AIInlineEditChunk) => void): () => void;
   acceptAIAgentProposal(request: {
     id: string;
     contextId: string;
@@ -403,8 +437,6 @@ export interface TextraAPI {
   listAIChats(projectId: string): Promise<Result<AIStoredChat[]>>;
   saveAIChat(request: { projectId: string; chat: AIStoredChat }): Promise<Result<void>>;
   deleteAIChat(request: { projectId: string; chatId: string }): Promise<Result<boolean>>;
-  onAIResponseChunk(listener: (chunk: AIResponseChunk) => void): () => void;
-  cancelAIMessage(): Promise<Result<void>>;
   getAppInfo(): Promise<Result<AppInfo>>;
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;

@@ -1,5 +1,18 @@
 # Test evidence
 
+2026-10-22 assistant activity UI follow-up: typecheck passes, Markdown rendering tests pass 2/2,
+and changed-file Prettier check passes. Native chat e2e passes 1/1 after retrying with desktop
+process access; the sandboxed launch attempt was denied by Electron startup.
+
+2026-10-22 assistant reasoning/code-copy follow-up: typecheck passes; focused assistant runner,
+runtime, transport and Markdown tests pass 19/19; lint exits 0 with one existing
+react-hooks/exhaustive-deps warning in ChatPanel.tsx:292; changed-file Prettier check passes.
+Production build passes after an elevated retry because Windows sandbox cleanup intermittently
+denies Vite's generated out/renderer/assets directory. Native chat e2e passes 1/1 in 34.3s,
+covering provider-exposed reasoning as collapsed display, copy controls on user and assistant
+code fences, the current Chat/Agent toggle and request cancellation. The e2e needed desktop
+access; its first runs exposed and corrected stale expectations and composer hit-target overlap.
+
 2026-10-21 provider v4 / prompted inline-edit redesign: full unit suite passes
 557/557 (43 files, 98.40s). Typecheck and repository ESLint pass. Standard production
 build passes (no cleanup workaround needed in final run). Serial native matrix

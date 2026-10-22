@@ -31,7 +31,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(await page.evaluate(() => 'process' in window)).toBe(false);
     expect(await page.evaluate(() => 'ipcRenderer' in window)).toBe(false);
     const invalidChatRequest = await page.evaluate(() =>
-      window.textra.sendAIMessage({
+      window.textra.runAIAssistant({
         messages: [{ role: 'user', text: 'Do not send this invalid request.' }],
         requestId: '../invalid-request-id',
         model: { provider: 'google', model: 'gemini-3.5-flash-lite' },
@@ -58,9 +58,9 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(cancelledDeletion).toEqual({ result: { ok: true, value: null }, confirmedPrompt: true });
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
       'acceptAIAgentProposal',
+      'cancelAIAssistant',
       'cancelAICompletion',
       'cancelAIInlineEdit',
-      'cancelAIMessage',
       'cancelBuild',
       'checkTexlab',
       'chooseProject',
@@ -92,7 +92,8 @@ test('native shell keeps security boundaries and persists representative UI acti
       'importSettings',
       'lintLatex',
       'listAIChats',
-      'onAIResponseChunk',
+      'onAIAssistantEvent',
+      'onAIInlineEditChunk',
       'onExternalFileChange',
       'openAIProviderLink',
       'openInCode',
@@ -112,11 +113,10 @@ test('native shell keeps security boundaries and persists representative UI acti
       'requestAIInlineEdit',
       'revealEntry',
       'reviewAIAgentProposal',
-      'runAIAgent',
+      'runAIAssistant',
       'saveAIChat',
       'saveAIProvider',
       'saveFile',
-      'sendAIMessage',
       'setAIAutoSend',
       'setAICompletionSettings',
       'setAIProviderDefault',

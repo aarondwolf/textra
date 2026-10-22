@@ -4,12 +4,12 @@ This file tracks unfinished work only. Current product behavior is described in 
 README and focused guides; test evidence and phase history live in `.agents/memory/`.
 Do not mark a gate complete until its acceptance checks pass.
 
-| Gate | Remaining work | Status |
-| --- | --- | --- |
-| Phase 1: cross-platform verification | Run the editor, compile, PDF, SyncTeX, crop and rotation matrix on macOS/Linux. | Open |
-| Phase 2: verification | Complete the native interaction and platform test matrix in [Testing](TESTING.md). | Open |
-| Phase 3: research tools | Decide and implement bibliography workflows, Git/history, Beamer, presentation controls and remaining writing views. | Planned |
-| Phase 4: release | Accessibility review, migrations, installers, TeX setup help and Windows install/uninstall release matrix. | Planned |
+| Gate                                 | Remaining work                                                                                                       | Status  |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------- |
+| Phase 1: cross-platform verification | Run the editor, compile, PDF, SyncTeX, crop and rotation matrix on macOS/Linux.                                      | Open    |
+| Phase 2: verification                | Complete the native interaction and platform test matrix in [Testing](TESTING.md).                                   | Open    |
+| Phase 3: research tools              | Decide and implement bibliography workflows, Git/history, Beamer, presentation controls and remaining writing views. | Planned |
+| Phase 4: release                     | Accessibility review, migrations, installers, TeX setup help and Windows install/uninstall release matrix.           | Planned |
 
 ### Deferred interface work
 

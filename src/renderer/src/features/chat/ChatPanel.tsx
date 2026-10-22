@@ -1,39 +1,48 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
   type KeyboardEvent,
 } from 'react';
+import { useChat } from '@ai-sdk/react';
 import type { AIMessage } from '../../../../shared/api';
-import { hasSuggestedFix } from '../../../../shared/ai-suggestions';
 import {
   AI_PROVIDERS,
+  sameModel,
   type AIAgentContext,
+  type AIDocumentAccess,
   type AIEditProposal,
-  type AIMode,
+  type AIModelRef,
+  type AIReviewOutcome,
   type AIStoredChat,
 } from '../../../../shared/ai';
-import { AISettingsDialog } from './AISettingsDialog';
 import { ModelPicker } from './ModelPicker';
-import { useAISettings } from './useAISettings';
+import { modelGroups, useAISettings } from './useAISettings';
 import { getAIRoleSelection, useAIRoleSelection } from '../../state/ai-role-selections';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
-import { ArrowUp, Check, Copy, Square, History, Trash2 } from '../../icons';
+import {
+  ArrowUp,
+  Check,
+  Copy,
+  FileText,
+  History,
+  Plus,
+  Settings,
+  Square,
+  Trash2,
+} from '../../icons';
+import {
+  AssistantRequestError,
+  AssistantTransport,
+  fromUIMessages,
+  toUIMessages,
+  type AssistantUIMessage,
+} from './assistant-transport';
+import { appendUserTurn, coalesceProviderMessages } from './conversation';
 import './chat.css';
-
-const AGENT_NOTICE_SEEN_KEY = 'textra:agent-notice-seen:v1';
-let agentNoticeSeenThisSession = false;
-
-function agentNoticeWasSeen(): boolean {
-  if (agentNoticeSeenThisSession) return true;
-  try {
-    return localStorage.getItem(AGENT_NOTICE_SEEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 function ResponseContent({ text, incomplete = false }: { text: string; incomplete?: boolean }) {
   const [copied, setCopied] = useState(false);
@@ -46,7 +55,7 @@ function ResponseContent({ text, incomplete = false }: { text: string; incomplet
   return (
     <>
       {incomplete && <small className="ai-partial-label">Incomplete response</small>}
-      <MarkdownPreview source={text} className="ai-message-markdown" />
+      {text.trim() && <MarkdownPreview source={text} className="ai-message-markdown" copyCode />}
       <button
         className="ai-copy-response"
         type="button"
@@ -74,28 +83,24 @@ function ResponseContent({ text, incomplete = false }: { text: string; incomplet
   );
 }
 
+const REVIEW_LABELS: Record<AIReviewOutcome, string> = {
+  applied: 'Changes applied',
+  partial: 'Some changes applied',
+  rejected: 'Changes rejected',
+};
+
+type AssistantMode = 'chat' | 'agent';
+
 export interface ChatDraft {
   id: number;
   text: string;
+  /** Keep this draft in the composer for review even when Problems auto-send is enabled. */
+  autoSend?: boolean;
 }
-
-function appendQuestion(messages: AIMessage[], text: string): AIMessage[] {
-  const last = messages.at(-1);
-  // A failed/cancelled response leaves a user turn pending. Keep SDK turns alternating.
-  if (last?.role === 'user') {
-    return [...messages.slice(0, -1), { role: 'user', text: `${last.text}\n\n${text}` }];
-  }
-  return [...messages, { role: 'user', text }];
-}
-
-function providerMessages(messages: AIMessage[]): AIMessage[] {
-  const result: AIMessage[] = [];
-  for (const message of messages) {
-    const last = result.at(-1);
-    if (last?.role === message.role) last.text += `\n\n${message.text}`;
-    else result.push({ ...message });
-  }
-  return result;
+/** Emitted by the workspace when a proposal from the latest reply is fully reviewed. */
+export interface ReviewOutcomeEvent {
+  id: number;
+  outcome: AIReviewOutcome;
 }
 
 function storedChat(id: string, messages: AIMessage[]): AIStoredChat {
@@ -139,6 +144,31 @@ function navigateMenu(event: KeyboardEvent<HTMLDivElement>) {
   items[next]?.focus();
 }
 
+function messageText(message: AssistantUIMessage | undefined): string {
+  return message?.parts.map((part) => (part.type === 'text' ? part.text : '')).join('') ?? '';
+}
+
+function messageReasoning(message: AssistantUIMessage | undefined): string {
+  return message?.parts.map((part) => (part.type === 'reasoning' ? part.text : '')).join('') ?? '';
+}
+
+function ReasoningContent({ text, active = false }: { text: string; active?: boolean }) {
+  if (!text) return null;
+  return (
+    <details className="ai-reasoning">
+      <summary>
+        Thinking
+        {active && (
+          <span className="ai-chat-thinking-dots" aria-hidden="true">
+            .....
+          </span>
+        )}
+      </summary>
+      <div className="ai-reasoning-text">{text}</div>
+    </details>
+  );
+}
+
 export function ChatPanel({
   draft,
   onDraftConsumed,
@@ -148,41 +178,124 @@ export function ChatPanel({
   onReviewProposal,
   reviewActive = false,
   reviewControls,
+  reviewOutcome = null,
+  onAgentWorkingChange,
 }: {
   draft: ChatDraft | null;
   onDraftConsumed?: () => void;
   active?: boolean;
   /** Changing projects clears the conversation so source context never crosses projects. */
   resetKey?: string | null;
+  /** The captured active .tex document. Its contents are read only after Manual Send. */
   agentContext?: AIAgentContext | null;
   onReviewProposal?: (proposal: AIEditProposal) => void;
   reviewActive?: boolean;
   reviewControls?: ReactNode;
+  reviewOutcome?: ReviewOutcomeEvent | null;
+  onAgentWorkingChange?: (working: boolean) => void;
 }) {
   const { settings, error: settingsLoadError, refresh: refreshSettings } = useAISettings(active);
   const [settingsWarning, setSettingsError] = useState('');
   const settingsError = settingsLoadError || settingsWarning;
   const hasConnections = Boolean(settings?.providers.some((provider) => provider.configured));
-  const [messages, setMessages] = useState<AIMessage[]>([]);
+  const transport = useMemo(() => new AssistantTransport(), []);
+  const [toolStatus, setToolStatus] = useState('');
+  const chat = useChat<AssistantUIMessage>({
+    transport,
+    onData: (part) => {
+      if (part.type === 'data-status') setToolStatus(part.data.message);
+    },
+  });
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const [activeRequest, setActiveRequest] = useState<string | null>(null);
+  const visibleUIMessages = useMemo(
+    () => chat.messages.filter((message) => message.id !== activeRequest),
+    [chat.messages, activeRequest],
+  );
+  const messages = useMemo(() => fromUIMessages(visibleUIMessages), [visibleUIMessages]);
+  const streamingText = useMemo(
+    () =>
+      activeRequest
+        ? messageText(chat.messages.find((message) => message.id === activeRequest))
+        : '',
+    [chat.messages, activeRequest],
+  );
+  const streamingReasoning = useMemo(
+    () =>
+      activeRequest
+        ? messageReasoning(chat.messages.find((message) => message.id === activeRequest))
+        : '',
+    [chat.messages, activeRequest],
+  );
+  const setChatMessages = chat.setMessages;
+  const setMessages = useCallback(
+    (next: AIMessage[]) => setChatMessages(toUIMessages(next)),
+    [setChatMessages],
+  );
   const [input, setInput] = useState('');
+  const [mode, setMode] = useState<AssistantMode>('chat');
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState('');
-  const [retryMessages, setRetryMessages] = useState<AIMessage[] | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [completedReasoning, setCompletedReasoning] = useState('');
+  const [retry, setRetryState] = useState<{
+    messages: AIMessage[];
+    authorizeDocument: boolean;
+    mode: AssistantMode;
+  } | null>(null);
+  const retryMessages = retry?.messages ?? null;
+  const lastAuthorization = useRef(false);
+  const lastMode = useRef<AssistantMode>('chat');
+  const setRetryMessages = useCallback((messages: AIMessage[] | null) => {
+    setRetryState(
+      messages
+        ? {
+            messages,
+            authorizeDocument: lastAuthorization.current,
+            mode: lastMode.current,
+          }
+        : null,
+    );
+  }, []);
+  const openAISettings = () =>
+    window.dispatchEvent(new CustomEvent('textra:open-settings', { detail: { section: 'ai' } }));
   const [partialResponse, setPartialResponse] = useState('');
-  const [mode, setMode] = useState<AIMode>('chat');
+  const [lastAccess, setLastAccess] = useState<AIDocumentAccess | null>(null);
   const {
     model,
     available: modelAvailable,
     selectModel: setModel,
-  } = useAIRoleSelection(resetKey, mode, settings);
+  } = useAIRoleSelection(resetKey, 'assistant', settings);
+
+  const assistantModels = useMemo<AIModelRef[]>(() => {
+    return modelGroups(settings, undefined, 'assistant').flatMap((group) =>
+      group.models.map((m) => ({ provider: group.provider, model: m.id })),
+    );
+  }, [settings]);
+
+  const cycleModel = useCallback(() => {
+    if (assistantModels.length === 0) return;
+    const currentIndex = assistantModels.findIndex((m) => sameModel(m, model));
+    const nextIndex = (currentIndex + 1) % assistantModels.length;
+    const next = assistantModels[nextIndex];
+    setModel(next);
+  }, [assistantModels, model, setModel]);
+
+  useEffect(() => {
+    const handleKey = (event: globalThis.KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === '/') {
+        event.preventDefault();
+        cycleModel();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [cycleModel]);
+  const toolsSupported =
+    !model ||
+    settings?.providers.find((item) => item.id === model.provider)?.supportsTools !== false;
   const [rateLimited, setRateLimited] = useState(false);
-  const [agentNoticePhase, setAgentNoticePhase] = useState<'hidden' | 'visible' | 'fading'>(
-    'hidden',
-  );
-  const [noticeWasSeen] = useState(agentNoticeWasSeen);
-  const noticeSeen = useRef(noticeWasSeen);
   const [chatId, setChatId] = useState<string>(() => crypto.randomUUID());
   const [sessionProject, setSessionProject] = useState(resetKey ?? null);
   const [savedChats, setSavedChats] = useState<AIStoredChat[]>([]);
@@ -207,58 +320,88 @@ export function ChatPanel({
   latestContext.current = agentContext?.contextId;
   const sending = useRef(false);
   const requestId = useRef(0);
+  const inflight = useRef<{
+    requestId: string;
+    contextId?: string;
+    conversation: AIMessage[];
+  } | null>(null);
+  const streamingRef = useRef('');
+  streamingRef.current = streamingText;
+  const proposalTurn = useRef<{ chatId: string; index: number } | null>(null);
+  const appliedOutcome = useRef<number | null>(null);
   const consumedDraft = useRef<number | null>(null);
   const history = useRef<HTMLDivElement>(null);
   const followResponse = useRef(true);
-  const streamRequestId = useRef<string | null>(null);
   const previousResetKey = useRef<string | null | undefined>(undefined);
   const previousContext = useRef(agentContext?.contextId);
 
+  const agentWorking =
+    loading && mode === 'agent' && Boolean(activeRequest) && Boolean(inflight.current?.contextId);
+  useEffect(() => {
+    onAgentWorkingChange?.(agentWorking);
+  }, [agentWorking, onAgentWorkingChange]);
+  useEffect(() => () => onAgentWorkingChange?.(false), [onAgentWorkingChange]);
+
+  const draftId = draft?.id;
+  useEffect(() => {
+    if (draftId) setMode('chat');
+  }, [draftId]);
+
   const clearConversation = useCallback(() => {
     ++requestId.current;
-    streamRequestId.current = null;
+    inflight.current = null;
+    setActiveRequest(null);
     setMessages([]);
+    setCompletedReasoning('');
     setPartialResponse('');
+    setToolStatus('');
     setRetryMessages(null);
     setError('');
     setRateLimited(false);
+    setLastAccess(null);
+    proposalTurn.current = null;
     followResponse.current = true;
+  }, [setMessages, setRetryMessages]);
+
+  /** Stops the request in flight (if any) and keeps its partial text out of future context. */
+  const abandonRequest = useCallback(async (currentId: number) => {
+    const running = inflight.current;
+    inflight.current = null;
+    if (!running) return;
+    setCancelling(true);
+    const partial = streamingRef.current;
+    try {
+      await chatRef.current.stop();
+      const result = await window.textra.cancelAIAssistant({ requestId: running.requestId });
+      if (currentId !== requestId.current) return;
+      if (!result.ok) setError(result.error);
+    } catch {
+      if (currentId === requestId.current)
+        setError('Could not confirm cancellation of the previous response.');
+    } finally {
+      if (currentId === requestId.current) {
+        setActiveRequest(null);
+        setPartialResponse(partial);
+        setToolStatus('');
+        sending.current = false;
+        setLoading(false);
+        setCancelling(false);
+      }
+    }
+    return running;
   }, []);
 
-  const changeMode = useCallback(
-    (next: AIMode) => {
-      if (mode === next || sending.current || reviewActive || historyBusy) return;
-      ++requestId.current;
-      streamRequestId.current = null;
-      setPartialResponse('');
-      setRetryMessages(null);
-      setError('');
-      setRateLimited(false);
-      setMode(next);
-      if (next === 'agent') {
-        if (!noticeSeen.current) {
-          noticeSeen.current = true;
-          agentNoticeSeenThisSession = true;
-          setAgentNoticePhase('visible');
-          try {
-            localStorage.setItem(AGENT_NOTICE_SEEN_KEY, '1');
-          } catch {
-            /* The session fallback still prevents repeated notices. */
-          }
-        }
-      } else setAgentNoticePhase('hidden');
+  // Unmounting cancels the request in flight; its listener is removed by the transport.
+  useEffect(
+    () => () => {
+      const running = inflight.current;
+      inflight.current = null;
+      if (!running) return;
+      void chatRef.current.stop();
+      void window.textra.cancelAIAssistant({ requestId: running.requestId }).catch(() => undefined);
     },
-    [mode, reviewActive, historyBusy],
+    [],
   );
-
-  useEffect(() => {
-    if (agentNoticePhase === 'hidden') return;
-    const timer = window.setTimeout(
-      () => setAgentNoticePhase(agentNoticePhase === 'visible' ? 'fading' : 'hidden'),
-      agentNoticePhase === 'visible' ? 5000 : 500,
-    );
-    return () => window.clearTimeout(timer);
-  }, [agentNoticePhase]);
 
   const persist = useCallback(async (projectId: string, chat: AIStoredChat) => {
     if (!chat.messages.length) return;
@@ -306,6 +449,23 @@ export function ChatPanel({
       historyControl.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     return () => document.removeEventListener('mousedown', outside);
   }, [historyOpen, historyLoading]);
+
+  // An application-owned review outcome annotates the reply that produced the proposal, so
+  // later requests do not treat rejected changes as applied.
+  useEffect(() => {
+    if (!reviewOutcome || appliedOutcome.current === reviewOutcome.id) return;
+    appliedOutcome.current = reviewOutcome.id;
+    const turn = proposalTurn.current;
+    proposalTurn.current = null;
+    const current = session.current;
+    if (!turn || turn.chatId !== current.id || current.messages[turn.index]?.role !== 'model')
+      return;
+    setMessages(
+      current.messages.map((message, index) =>
+        index === turn.index ? { ...message, review: reviewOutcome.outcome } : message,
+      ),
+    );
+  }, [reviewOutcome, setMessages]);
 
   async function chooseChat(chat?: AIStoredChat) {
     if (sending.current || reviewActive || historyBusy) return;
@@ -369,32 +529,20 @@ export function ChatPanel({
     }
   }
 
+  // A request that was authorized for one captured document stops when that document changes.
   useEffect(() => {
     if (previousContext.current === agentContext?.contextId) return;
     previousContext.current = agentContext?.contextId;
-    if (mode !== 'agent') return;
+    const running = inflight.current;
+    if (!running?.contextId || running.contextId === agentContext?.contextId) return;
     const currentId = ++requestId.current;
-    streamRequestId.current = null;
-    setPartialResponse('');
-    setRetryMessages(null);
-    setError('');
+    setRetryMessages(running.conversation);
+    setError('The active file changed, so the request stopped. Retry to use the current file.');
     setRateLimited(false);
-    if (sending.current) {
-      setCancelling(true);
-      void window.textra
-        .cancelAIMessage()
-        .finally(() => {
-          if (currentId !== requestId.current) return;
-          sending.current = false;
-          setLoading(false);
-          setCancelling(false);
-        })
-        .catch(() => {
-          if (currentId === requestId.current)
-            setError('Could not confirm cancellation of the previous response.');
-        });
-    }
-  }, [agentContext?.contextId, mode]);
+    void abandonRequest(currentId).then(() => {
+      if (currentId === requestId.current) setMessages(running.conversation);
+    });
+  }, [agentContext?.contextId, abandonRequest, setMessages, setRetryMessages]);
 
   useEffect(() => {
     const projectId = resetKey ?? null;
@@ -417,11 +565,15 @@ export function ChatPanel({
         );
     }
     previousResetKey.current = projectId;
-    setAgentNoticePhase('hidden');
     const generation = ++projectGeneration.current;
     const interaction = chatInteraction.current;
     const cached = projectId ? projectSessions.current.get(projectId) : undefined;
     const id = cached?.id ?? crypto.randomUUID();
+    const currentId = ++requestId.current;
+    // Leaving a workspace cancels its request; its partial reply never enters context.
+    void abandonRequest(currentId).then(() => {
+      if (currentId === requestId.current) setPartialResponse('');
+    });
     setSessionProject(projectId);
     setChatId(id);
     setMessages(cached?.messages ?? []);
@@ -431,13 +583,15 @@ export function ChatPanel({
     setHistoryOpen(false);
     setHistoryBusy(false);
     settled.current = null;
-    const currentId = ++requestId.current;
-    streamRequestId.current = null;
+    proposalTurn.current = null;
+    setActiveRequest(null);
     setPartialResponse('');
+    setToolStatus('');
     followResponse.current = true;
     setError('');
     setRateLimited(false);
     setRetryMessages(null);
+    setLastAccess(null);
     setHistoryLoading(Boolean(projectId));
     if (projectId)
       void window.textra
@@ -469,43 +623,25 @@ export function ChatPanel({
         .finally(() => {
           if (generation === projectGeneration.current) setHistoryLoading(false);
         });
-    if (sending.current) {
-      setCancelling(true);
-      void window.textra
-        .cancelAIMessage()
-        .finally(() => {
-          if (currentId !== requestId.current) return;
-          sending.current = false;
-          setLoading(false);
-          setCancelling(false);
-        })
-        .catch(() => {
-          if (currentId === requestId.current)
-            setError('Could not confirm cancellation of the previous response.');
-        });
-    }
-  }, [resetKey, persist]);
-
-  useEffect(() => {
-    return window.textra.onAIResponseChunk((event) => {
-      if (event.requestId === streamRequestId.current) setPartialResponse(event.text);
-    });
-  }, []);
+  }, [resetKey, persist, abandonRequest, setMessages, setRetryMessages]);
 
   useEffect(() => {
     const container = history.current;
     if (container && followResponse.current && active) container.scrollTop = container.scrollHeight;
-  }, [messages, partialResponse, loading, active]);
+  }, [messages, streamingText, partialResponse, loading, active]);
 
   const send = useCallback(
-    async (conversation: AIMessage[], override?: { mode: AIMode; preserveDraft?: boolean }) => {
-      const requestMode = override?.mode ?? mode;
-      const selection = getAIRoleSelection(resetKey, requestMode, settings);
+    async (
+      conversation: AIMessage[],
+      options: { authorizeDocument: boolean; preserveDraft?: boolean; mode?: AssistantMode },
+    ) => {
+      const requestMode = options.mode ?? mode;
+      const selection = getAIRoleSelection(resetKey, 'assistant', settings);
       const requestModel = selection.model;
       if (sending.current || reviewActive || historyBusy || sessionProject !== liveProject.current)
         return;
       if (!requestModel || !selection.available) {
-        if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
+        if (!options.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
         setError(
           requestModel
             ? 'The selected model is unavailable. Choose another model.'
@@ -513,136 +649,121 @@ export function ChatPanel({
         );
         return;
       }
-      if (requestMode === 'agent' && !agentContext) {
-        if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
-        setError('Open an active .tex file to use Agent.');
-        return;
-      }
+      const providerConversation = coalesceProviderMessages(conversation);
       if (
-        conversation.length > 79 ||
-        conversation.reduce((size, message) => size + message.text.length, 0) > 96_000 ||
-        (requestMode === 'chat' &&
-          (providerMessages(conversation).length > 40 ||
-            providerMessages(conversation).some((message) => message.text.length > 32_000) ||
-            conversation.reduce((size, message) => size + message.text.length, 0) > 64_000)) ||
-        (requestMode === 'agent' && (conversation.at(-1)?.text.length ?? 0) > 12_000)
+        providerConversation.length > 40 ||
+        providerConversation.some((message) => message.text.length > 32_000) ||
+        providerConversation.reduce((size, message) => size + message.text.length, 0) > 64_000
       ) {
-        if (!override?.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
+        if (!options.preserveDraft) setInput(conversation.at(-1)?.text ?? '');
         setError(
           'This conversation has reached its size limit. Start a new chat or shorten the question. Your question is preserved below.',
         );
         return;
       }
+      // Manual Send authorizes on-demand access to the captured document. Nothing is read
+      // unless the assistant asks for it, and automatic Problems prompts never authorize it.
+      const contextId =
+        requestMode === 'agent' && options.authorizeDocument ? agentContext?.contextId : undefined;
+      lastAuthorization.current = options.authorizeDocument;
+      lastMode.current = requestMode;
       sending.current = true;
       ++chatInteraction.current;
       const currentId = ++requestId.current;
       const streamId = crypto.randomUUID();
-      streamRequestId.current = requestMode === 'chat' ? streamId : null;
+      const turnChat = chatId;
+      inflight.current = { requestId: streamId, contextId, conversation };
+      setActiveRequest(streamId);
+      setCompletedReasoning('');
       setPartialResponse('');
+      setToolStatus('');
       followResponse.current = true;
       setMessages(conversation);
       setLoading(true);
       setError('');
       setRateLimited(false);
       setRetryMessages(null);
+      let failure: unknown;
       try {
-        if (requestMode === 'agent' && agentContext) {
-          const contextId = agentContext.contextId;
-          const result = await window.textra.runAIAgent({
-            contextId,
-            prompt: conversation.at(-1)?.text ?? '',
-            messages: providerMessages(conversation.slice(0, -1)),
-            model: requestModel,
-            requestId: streamId,
-          });
-          if (currentId !== requestId.current || latestContext.current !== contextId) return;
-          if (result.ok) {
-            setMessages([...conversation, { role: 'model', text: result.value.text }]);
-            if (result.value.proposal) onReviewProposal?.(result.value.proposal);
-          } else {
-            const limited = result.code === 'AI_RATE_LIMIT' || result.code === 'AI_AGENT_LIMIT';
-            setRateLimited(limited);
-            setError(
-              result.code === 'AI_AGENT_LIMIT'
-                ? result.error
-                : limited
-                  ? 'The request reached a rate or Agent budget limit. Choose another available model or try again later.'
-                  : result.error,
-            );
-            setRetryMessages(conversation);
-          }
-          return;
-        }
-        const result = await window.textra.sendAIMessage({
-          messages: providerMessages(conversation),
-          requestId: streamId,
-          model: requestModel,
+        await chatRef.current.regenerate({
+          body: { requestId: streamId, model: requestModel, ...(contextId ? { contextId } : {}) },
         });
-        if (currentId !== requestId.current) return;
-        if (result.ok) {
-          setPartialResponse('');
-          setMessages([...conversation, { role: 'model', text: result.value }]);
-        } else {
-          setRateLimited(result.code === 'AI_RATE_LIMIT' || result.code === 'AI_AGENT_LIMIT');
-          setError(
-            result.code === 'AI_RATE_LIMIT'
-              ? 'The model reached a rate or quota limit. Choose another available model or try again later.'
-              : result.error,
-          );
-          setRetryMessages(conversation);
-        }
-      } catch {
-        if (currentId !== requestId.current) return;
-        setError('Could not reach the model. Check your connection and try again.');
-        setRetryMessages(conversation);
-      } finally {
-        if (currentId === requestId.current) {
-          streamRequestId.current = null;
-          sending.current = false;
-          setLoading(false);
-        }
+      } catch (cause) {
+        failure = cause;
       }
+      if (currentId !== requestId.current) return;
+      inflight.current = null;
+      const partial = streamingRef.current;
+      const result = transport.takeResult(streamId);
+      const reasoning = transport.takeReasoning(streamId);
+      setActiveRequest(null);
+      setToolStatus('');
+      sending.current = false;
+      setLoading(false);
+      if (contextId && latestContext.current !== contextId) {
+        setMessages(conversation);
+        return;
+      }
+      if (result?.ok) {
+        const reply: AIMessage = { role: 'model', text: result.value.text };
+        setMessages([...conversation, reply]);
+        setCompletedReasoning(reasoning);
+        setLastAccess(result.value.documentAccess);
+        if (result.value.proposal) {
+          proposalTurn.current = { chatId: turnChat, index: conversation.length };
+          onReviewProposal?.(result.value.proposal);
+        }
+        return;
+      }
+      // Interrupted replies stay visible as incomplete but never enter future context.
+      setMessages(conversation);
+      setPartialResponse(partial);
+      const code =
+        (!result?.ok ? result?.code : undefined) ??
+        (failure instanceof AssistantRequestError ? failure.code : undefined) ??
+        (chatRef.current.error instanceof AssistantRequestError
+          ? chatRef.current.error.code
+          : undefined);
+      const message =
+        (!result?.ok ? result?.error : undefined) ??
+        (chatRef.current.error?.message ||
+          'Could not reach the model. Check your connection and try again.');
+      const limited = code === 'AI_RATE_LIMIT' || code === 'AI_AGENT_LIMIT';
+      setRateLimited(limited);
+      setError(
+        code === 'AI_RATE_LIMIT'
+          ? 'The model reached a rate or quota limit. Choose another available model or try again later.'
+          : message,
+      );
+      setRetryMessages(conversation);
     },
     [
-      mode,
       resetKey,
+      mode,
       settings,
       agentContext,
       onReviewProposal,
       reviewActive,
       historyBusy,
       sessionProject,
+      chatId,
+      transport,
+      setMessages,
+      setRetryMessages,
     ],
   );
-
-  function implementSuggestedFix() {
-    if (
-      mode !== 'chat' ||
-      sending.current ||
-      reviewActive ||
-      historyBusy ||
-      !agentContext ||
-      sessionProject !== liveProject.current
-    )
-      return;
-    const latest = messages.at(-1);
-    if (latest?.role !== 'model' || !hasSuggestedFix(latest.text)) return;
-    changeMode('agent');
-    void send([...messages, { role: 'user', text: 'Implement the suggested fix above.' }], {
-      mode: 'agent',
-      preserveDraft: true,
-    });
-  }
 
   useEffect(() => {
     if (sessionProject !== (resetKey ?? null)) return;
     if (!draft || consumedDraft.current === draft.id || loading || reviewActive || historyBusy)
       return;
-    if (mode === 'agent') {
-      changeMode('chat');
+    if (!settings?.configured) return;
+    if (draft.autoSend === false) {
+      consumedDraft.current = draft.id;
+      onDraftConsumed?.();
+      setInput((previous) => (previous ? `${previous}\n\n${draft.text}` : draft.text));
       return;
     }
-    if (!settings?.configured) return;
     let current = true;
     // Recheck consent at the moment a Problems prompt is consumed.
     void window.textra
@@ -655,11 +776,14 @@ export function ChatPanel({
           result.ok &&
           result.value.configured &&
           result.value.autoSendProblems &&
-          mode === 'chat' &&
           !reviewActive &&
           !sending.current
         ) {
-          void send(appendQuestion(messages, draft.text));
+          // Automatic Problems prompts stay tool-free: only their own snippet is sent.
+          void send(appendUserTurn(messages, draft.text), {
+            authorizeDocument: false,
+            mode: 'chat',
+          });
         } else {
           setInput((previous) => (previous ? `${previous}\n\n${draft.text}` : draft.text));
           if (!result.ok) setSettingsError(result.error);
@@ -684,48 +808,49 @@ export function ChatPanel({
     messages,
     onDraftConsumed,
     send,
-    mode,
     reviewActive,
     sessionProject,
     resetKey,
-    changeMode,
     historyBusy,
   ]);
 
   async function cancel() {
     if (cancelling) return;
-    setCancelling(true);
+    const running = inflight.current;
     const currentId = ++requestId.current;
-    streamRequestId.current = null;
-    try {
-      const result = await window.textra.cancelAIMessage();
-      if (currentId !== requestId.current) return;
-      setError(result.ok ? 'Response cancelled. You can retry when ready.' : result.error);
-    } catch {
-      if (currentId !== requestId.current) return;
-      setError('Could not confirm cancellation. Please wait before retrying.');
-    } finally {
-      if (currentId === requestId.current) {
-        sending.current = false;
-        setLoading(false);
-        setCancelling(false);
-        setRetryMessages(messages);
-      }
+    await abandonRequest(currentId);
+    if (currentId !== requestId.current) return;
+    if (running) {
+      setMessages(running.conversation);
+      setRetryMessages(running.conversation);
     }
+    setError('Response cancelled. You can retry when ready.');
   }
 
+  const documentName = agentContext?.path.split('/').at(-1) ?? null;
+  const destination = model
+    ? AI_PROVIDERS[model.provider].local
+      ? /cloud/i.test(model.model)
+        ? 'Ollama Cloud through local Ollama'
+        : 'local Ollama on this computer'
+      : AI_PROVIDERS[model.provider].label
+    : 'the provider';
+
   return (
-    <section className="ai-chat" aria-label="AI debugging chat">
+    <section className="ai-chat" aria-label="AI assistant">
       <header className="ai-chat-header">
         <div>
-          <strong>{mode === 'chat' ? 'Chat' : 'Agent'}</strong>
+          <strong>Assistant</strong>
         </div>
         <button
           type="button"
+          className="ai-header-icon-button"
           disabled={loading || reviewActive || historyBusy || messages.length === 0}
           onClick={() => void chooseChat()}
+          aria-label="New chat"
+          title="New chat"
         >
-          New chat
+          <Plus size={14} aria-hidden="true" />
         </button>
         <div
           className="ai-history-control"
@@ -747,7 +872,7 @@ export function ChatPanel({
           <button
             ref={historyButton}
             type="button"
-            className="ai-history-trigger"
+            className="ai-header-icon-button ai-history-trigger"
             aria-label="Chat history"
             title="Latest 100 workspace chats"
             aria-haspopup="menu"
@@ -801,14 +926,15 @@ export function ChatPanel({
         </div>
         <button
           type="button"
-          onClick={() => setShowSettings(true)}
+          className="ai-header-icon-button"
+          onClick={openAISettings}
           aria-haspopup="dialog"
+          aria-label="Settings"
           title="AI providers and models"
         >
-          Settings
+          <Settings size={14} aria-hidden="true" />
         </button>
       </header>
-      <AISettingsDialog open={showSettings} onOpenChange={setShowSettings} />
       {historyError && (
         <p className="ai-history-error" role="alert">
           {historyError}
@@ -828,38 +954,20 @@ export function ChatPanel({
           <div className="ai-chat-setup-card">
             <strong>Set up AI</strong>
             <p>
-              Connect Google, OpenAI, Anthropic, Ollama Cloud or a local Ollama server to chat about
+              Connect Google, OpenAI, Anthropic, Ollama Cloud or a local Ollama server to ask about
               LaTeX errors and review focused edits.
             </p>
-            <button
-              type="button"
-              className="ai-chat-setup-button"
-              onClick={() => setShowSettings(true)}
-            >
+            <button type="button" className="ai-chat-setup-button" onClick={openAISettings}>
               Configure AI
             </button>
           </div>
         </div>
       ) : hasConnections ? (
         <>
-          {mode === 'agent' && agentNoticePhase !== 'hidden' && (
-            <p
-              className="ai-chat-privacy ai-agent-notice"
-              data-state={agentNoticePhase}
-              role="status"
-            >
-              The conversation and active .tex file{agentContext ? ` (${agentContext.path})` : ''}{' '}
-              are sent. Edits require review; tools cannot access other files.
-            </p>
-          )}
-          {mode === 'chat' && messages.length === 0 && (
+          {messages.length === 0 && (
             <p className="ai-chat-privacy">
-              {model && AI_PROVIDERS[model.provider].local
-                ? /cloud/i.test(model.model)
-                  ? 'Messages go to Ollama Cloud through local Ollama.'
-                  : 'Messages stay on this computer with local Ollama.'
-                : `Messages and selected snippets are sent to ${model ? AI_PROVIDERS[model.provider].label : 'the provider'}.`}{' '}
-              No file access or editing tools. Check suggestions before applying them.
+              Messages go to {destination}. Chat sends only your conversation. Agent includes the
+              active .tex file when you press Send, and proposed edits always wait for your review.
             </p>
           )}
           <div
@@ -877,13 +985,10 @@ export function ChatPanel({
           >
             {messages.length === 0 && (
               <div className="ai-chat-empty">
-                <strong>
-                  {mode === 'chat' ? 'Let’s untangle that error.' : 'Review a focused edit.'}
-                </strong>
+                <strong>Let’s untangle that LaTeX.</strong>
                 <p>
-                  {mode === 'chat'
-                    ? 'Ask a LaTeX question or choose Ask in Chat from Problems. Review any source snippet before sending.'
-                    : 'Describe a correction to the active file. Your conversation stays with you; proposed changes open for review.'}
+                  Ask a question, choose Ask in Chat from Problems, or describe a change to the open
+                  file. Proposed changes open for review before anything is applied.
                 </p>
               </div>
             )}
@@ -895,51 +1000,50 @@ export function ChatPanel({
               >
                 {message.role === 'model' ? (
                   <>
+                    {index === messages.length - 1 && (
+                      <ReasoningContent text={completedReasoning} />
+                    )}
                     <ResponseContent text={message.text} />
-                    {mode === 'chat' &&
-                      index === messages.length - 1 &&
-                      hasSuggestedFix(message.text) && (
-                        <button
-                          type="button"
-                          className="ai-implement-fix"
-                          disabled={
-                            loading ||
-                            reviewActive ||
-                            historyBusy ||
-                            !agentContext ||
-                            sessionProject !== liveProject.current
-                          }
-                          title={
-                            !agentContext
-                              ? 'Open an active .tex file to implement this fix'
-                              : 'Run Agent on the active .tex file and review its proposed edits'
-                          }
-                          onClick={implementSuggestedFix}
-                        >
-                          Implement Suggested Fix
-                        </button>
-                      )}
+                    {message.review && (
+                      <small className="ai-review-outcome" data-outcome={message.review}>
+                        {REVIEW_LABELS[message.review]}
+                      </small>
+                    )}
                   </>
                 ) : (
                   <>
                     <strong>You</strong>
-                    <div className="ai-message-text">{message.text}</div>
+                    <MarkdownPreview
+                      source={message.text}
+                      className="ai-message-markdown"
+                      copyCode
+                    />
                   </>
                 )}
               </article>
             ))}
-            {partialResponse && (
+            {(loading ? streamingText || streamingReasoning : partialResponse) && (
               <article
                 className="ai-message ai-message-model"
                 aria-label={loading ? 'Response in progress' : 'Incomplete response'}
               >
-                <ResponseContent text={partialResponse} incomplete={!loading} />
+                {loading && <ReasoningContent text={streamingReasoning} active={!streamingText} />}
+                {(loading ? streamingText : partialResponse).trim() && (
+                  <ResponseContent
+                    text={loading ? streamingText : partialResponse}
+                    incomplete={!loading}
+                  />
+                )}
               </article>
             )}
-            {loading && !partialResponse && (
+            {loading && (toolStatus || (!streamingText && !streamingReasoning)) && (
               <p className="ai-chat-typing" role="status">
-                {mode === 'chat' ? 'Thinking' : 'Preparing a proposal'}
-                <span aria-hidden="true">…</span>
+                <span>{toolStatus || 'Thinking'}</span>
+                {!toolStatus && (
+                  <span className="ai-chat-thinking-dots" aria-hidden="true">
+                    .....
+                  </span>
+                )}
               </p>
             )}
           </div>
@@ -965,7 +1069,16 @@ export function ChatPanel({
                 </button>
               )}
               {retryMessages && !loading && !reviewActive && (
-                <button type="button" onClick={() => void send(retryMessages)}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    retry &&
+                    void send(retry.messages, {
+                      authorizeDocument: retry.authorizeDocument,
+                      mode: retry.mode,
+                    })
+                  }
+                >
                   Retry response
                 </button>
               )}
@@ -976,16 +1089,36 @@ export function ChatPanel({
             <p className="ai-agent-context-hint" role="status">
               {model
                 ? 'The selected model is unavailable. Choose another model.'
-                : `Choose a ${mode === 'agent' ? 'Agent' : 'Chat'} model to continue.`}
-              <button type="button" onClick={() => setShowSettings(true)}>
+                : 'Choose an Assistant model to continue.'}
+              <button type="button" onClick={openAISettings}>
                 Edit providers
               </button>
             </p>
           )}
-          {mode === 'agent' && !agentContext && (
-            <p id="ai-agent-context-hint" className="ai-agent-context-hint">
-              Open an active .tex file to use Agent.
-            </p>
+          {mode === 'agent' && (
+            <div className="ai-chat-active-file-corner">
+              <span
+                id="ai-chat-context"
+                className="ai-context-chip"
+                data-state={!documentName ? 'none' : toolsSupported ? 'available' : 'unsupported'}
+                title={
+                  !documentName
+                    ? 'Open a .tex file to let Agent read it and propose edits.'
+                    : toolsSupported
+                      ? `Available on Send: Agent may read ${agentContext?.path} and propose edits for review.`
+                      : 'This connection has tool calls turned off, so it answers in text only.'
+                }
+              >
+                <FileText size={12} aria-hidden="true" />
+                <span>
+                  {!documentName
+                    ? 'No document'
+                    : toolsSupported
+                      ? documentName
+                      : `${documentName} · text only`}
+                </span>
+              </span>
+            </div>
           )}
           <form
             className="ai-chat-compose"
@@ -996,34 +1129,25 @@ export function ChatPanel({
                 !modelAvailable ||
                 sending.current ||
                 reviewActive ||
-                historyBusy ||
-                (mode === 'agent' && !agentContext)
+                historyBusy
               )
                 return;
               const text = input.trim();
               setInput('');
-              void send(
-                mode === 'chat'
-                  ? appendQuestion(messages, text)
-                  : [...messages, { role: 'user', text }],
-              );
+              void send(appendUserTurn(messages, text), { authorizeDocument: true });
             }}
           >
             <textarea
               id="ai-chat-message"
-              aria-label={mode === 'chat' ? 'Message AI' : 'Agent request'}
+              aria-label="Message the assistant"
+              aria-describedby={mode === 'agent' ? 'ai-chat-context' : undefined}
               rows={2}
               value={input}
               maxLength={30000}
               placeholder={
-                mode === 'agent' && !agentContext
-                  ? 'Open an active .tex file to use Agent'
-                  : 'Ask about your LaTeX…'
+                mode === 'chat' ? 'Ask a question…' : 'Describe a change to the active file…'
               }
-              aria-describedby={
-                mode === 'agent' && !agentContext ? 'ai-agent-context-hint' : undefined
-              }
-              disabled={reviewActive || (mode === 'agent' && !agentContext)}
+              disabled={reviewActive}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && event.ctrlKey && !event.nativeEvent.isComposing) {
@@ -1035,9 +1159,33 @@ export function ChatPanel({
             />
             <div className="ai-chat-actions">
               <div className="ai-chat-controls">
+                <div className="ai-mode-switch" role="group" aria-label="Assistant mode">
+                  <button
+                    type="button"
+                    aria-pressed={mode === 'chat'}
+                    disabled={loading || reviewActive || historyBusy}
+                    onClick={() => setMode('chat')}
+                    title="Chat answers without reading the active document."
+                  >
+                    Chat
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={mode === 'agent'}
+                    disabled={loading || reviewActive || historyBusy || !agentContext}
+                    onClick={() => setMode('agent')}
+                    title={
+                      agentContext
+                        ? 'Agent can read the active document and stage edits for review.'
+                        : 'Open an eligible .tex document to use Agent mode.'
+                    }
+                  >
+                    Agent
+                  </button>
+                </div>
                 <ModelPicker
                   settings={settings}
-                  role={mode}
+                  role="assistant"
                   value={model}
                   onChange={setModel}
                   variant="compact"
@@ -1045,24 +1193,6 @@ export function ChatPanel({
                   label="Model"
                   disabled={loading || reviewActive || historyBusy}
                 />
-                <div className="ai-mode-toggle" role="group" aria-label="AI mode">
-                  <button
-                    type="button"
-                    aria-pressed={mode === 'chat'}
-                    disabled={loading || reviewActive || historyBusy}
-                    onClick={() => changeMode('chat')}
-                  >
-                    Chat
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={mode === 'agent'}
-                    disabled={loading || reviewActive || historyBusy}
-                    onClick={() => changeMode('agent')}
-                  >
-                    Agent
-                  </button>
-                </div>
               </div>
               {loading ? (
                 <button
@@ -1081,13 +1211,7 @@ export function ChatPanel({
                   type="submit"
                   className="ai-chat-send"
                   data-active={Boolean(input.trim())}
-                  disabled={
-                    !input.trim() ||
-                    !modelAvailable ||
-                    reviewActive ||
-                    historyBusy ||
-                    (mode === 'agent' && !agentContext)
-                  }
+                  disabled={!input.trim() || !modelAvailable || reviewActive || historyBusy}
                   aria-label="Send message"
                   title="Send message"
                 >
@@ -1095,6 +1219,11 @@ export function ChatPanel({
                 </button>
               )}
             </div>
+            {lastAccess === 'unsupported' && (
+              <p className="ai-agent-context-hint" role="status">
+                The last reply was text only because this connection does not use tool calls.
+              </p>
+            )}
           </form>
         </>
       ) : null}

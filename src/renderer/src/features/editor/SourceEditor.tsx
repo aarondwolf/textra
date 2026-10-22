@@ -456,14 +456,12 @@ function EditorFormattingToolbar({ disabled }: { disabled: boolean }) {
   );
 }
 
-const MINIMAP_MINIMUM_LINES = 200;
-
 function isTexPath(path: string): boolean {
   return /\.tex$/i.test(path);
 }
 
-function minimapEnabled(model: monaco.editor.ITextModel | null, preference: boolean): boolean {
-  return preference && (model?.getLineCount() ?? 0) >= MINIMAP_MINIMUM_LINES;
+function minimapEnabled(_model: monaco.editor.ITextModel | null, preference: boolean): boolean {
+  return preference;
 }
 
 /** Avoid asking language tools about prose that is explicitly commented out. */
@@ -558,13 +556,16 @@ export function SourceEditor({
   const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
   const bibliographyEntriesRef = useRef(bibliographyEntries);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { autoSave, autoSaveDelayMs, editorMinimap } = useUI((state) => state.preferences);
+  const { autoSave, autoSaveDelayMs, editorMinimap, editorFont } = useUI(
+    (state) => state.preferences,
+  );
   const autoSavePreferences = useRef({
     enabled: autoSave && !autoSavePaused,
     delayMs: autoSaveDelayMs,
     readOnly,
   });
   const minimapPreference = useRef(editorMinimap);
+  const editorFontPreference = useRef(editorFont);
   const [cursorPos, setCursorPos] = useState({ line: 1, column: 1 });
   const [selectionStats, setSelectionStats] = useState<{ words: number; chars: number } | null>(
     null,
@@ -592,13 +593,19 @@ export function SourceEditor({
     minimapPreference.current = editorMinimap;
   }, [editorMinimap]);
   useEffect(() => {
+    editorFontPreference.current = editorFont;
+    editor.current?.updateOptions({
+      fontFamily: editorFont || "'Cascadia Code', Consolas, monospace",
+    });
+  }, [editorFont]);
+  useEffect(() => {
     const instance = monaco.editor.create(container.current!, {
       ariaLabel: 'LaTeX source editor',
       editContext: false,
       automaticLayout: true,
       scrollbar: minimalEditorScrollbars,
       minimap: { enabled: false },
-      fontFamily: "'Cascadia Code', Consolas, monospace",
+      fontFamily: editorFontPreference.current || "'Cascadia Code', Consolas, monospace",
       fontSize: 14,
       lineHeight: 23,
       padding: { top: 16 },
@@ -1286,9 +1293,10 @@ export function SourceEditor({
       fontSize,
       wordWrap: wrap ? 'on' : 'off',
       readOnly,
+      fontFamily: editorFont || "'Cascadia Code', Consolas, monospace",
       minimap: { enabled: minimapEnabled(editor.current?.getModel() ?? null, editorMinimap) },
     });
-  }, [fontSize, wrap, readOnly, editorMinimap]);
+  }, [fontSize, wrap, readOnly, editorMinimap, editorFont]);
   useEffect(() => {
     if (navigation && navigation.path === activePath) {
       editor.current?.setPosition({ lineNumber: navigation.line, column: navigation.column });

@@ -49,6 +49,7 @@ export {
   ClockCounterClockwise as History,
   Code,
   CaretDown as ChevronDown,
+  CaretUp as ChevronUp,
   CaretLeft as ChevronLeft,
   CaretRight as ChevronRight,
   Columns as Columns2,
@@ -86,5 +87,8 @@ export {
   Scroll,
   Key,
   Star,
+  TextIndent,
+  Lock,
+  LockOpen,
   X,
 } from '@phosphor-icons/react';

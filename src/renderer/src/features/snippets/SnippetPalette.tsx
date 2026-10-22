@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Plus, Trash2 } from '../../icons';
+import { Sparkle } from '@phosphor-icons/react';
+import { Check, ChevronDown, ChevronRight, Copy, Lock, LockOpen, Plus, Trash2 } from '../../icons';
 import { insertIntoSource } from '../equations/EquationPalette';
 import { SYMBOL_GROUPS } from '../equations/symbols';
 import { DEFAULT_SNIPPETS, type Snippet } from './snippets';
+import { createSnippetPrompt } from './snippet-prompt';
+import { useUI } from '../../state/ui';
 import '../equations/equations.css';
 import './snippets.css';
 
@@ -27,18 +30,31 @@ function saveCustomSnippets(snippets: Snippet[]): void {
   }
 }
 
-export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
+export default function SnippetPalette({
+  canInsert,
+  onAskChat,
+}: {
+  canInsert: boolean;
+  onAskChat?: (prompt: string) => void;
+}) {
+  const preferences = useUI((state) => state.preferences);
+  const updatePreferences = useUI((state) => state.updatePreferences);
+
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [hint, setHint] = useState<string | null>(null);
-  const [symbolsOpen, setSymbolsOpen] = useState(true);
-  const [snippetsOpen, setSnippetsOpen] = useState(true);
-  const [customOpen, setCustomOpen] = useState(true);
+  const [symbolsOpen, setSymbolsOpen] = useState(
+    () => preferences.snippetsSymbolsOpenDefault ?? false,
+  );
+  const [snippetsOpen, setSnippetsOpen] = useState(
+    () => preferences.snippetsTemplatesOpenDefault ?? false,
+  );
   const [customSnippets, setCustomSnippets] = useState<Snippet[]>(loadCustomSnippets);
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newTex, setNewTex] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
 
   const timer = useRef(0);
 
@@ -79,6 +95,17 @@ export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
     setCustomSnippets((prev) => prev.filter((_, i) => i !== index));
   }
 
+  async function copySnippetPrompt() {
+    const result = await window.textra.copyText(createSnippetPrompt(newName, newDesc));
+    setStatus(result.ok ? 'Prompt copied.' : result.error);
+    setPromptCopied(result.ok);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      setStatus('');
+      setPromptCopied(false);
+    }, 2000);
+  }
+
   const needle = query.trim().toLowerCase();
 
   // Filtered symbols
@@ -117,6 +144,8 @@ export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
     );
   }, [customSnippets, needle]);
 
+  const totalSnippetsCount = filteredCustomSnippets.length + filteredDefaultSnippets.length;
+
   return (
     <div className="snippet-palette">
       <div className="palette-search-bar">
@@ -136,18 +165,37 @@ export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
       <div className="palette-sections">
         {/* Math Symbols Collapsible Section */}
         <section className="palette-section">
-          <button
-            type="button"
-            className="palette-section-header"
-            aria-expanded={symbolsOpen}
-            onClick={() => setSymbolsOpen(!symbolsOpen)}
-          >
-            {symbolsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span>Math Symbols</span>
-            <span className="palette-count">
-              {filteredSymbolGroups.reduce((acc, g) => acc + g.symbols.length, 0)}
-            </span>
-          </button>
+          <div className="palette-section-header-row">
+            <button
+              type="button"
+              className="palette-section-header"
+              aria-expanded={symbolsOpen}
+              onClick={() => setSymbolsOpen(!symbolsOpen)}
+            >
+              {symbolsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <span>Math Symbols</span>
+              <span className="palette-count">
+                {filteredSymbolGroups.reduce((acc, g) => acc + g.symbols.length, 0)}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`palette-lock-btn ${preferences.snippetsSymbolsOpenDefault ? 'locked' : ''}`}
+              title={
+                preferences.snippetsSymbolsOpenDefault
+                  ? 'Keep open by default: On (click to toggle off)'
+                  : 'Keep open by default: Off (click to keep this section open by default)'
+              }
+              aria-label="Keep Math Symbols open by default"
+              onClick={() => {
+                const next = !preferences.snippetsSymbolsOpenDefault;
+                updatePreferences({ snippetsSymbolsOpenDefault: next });
+                if (next) setSymbolsOpen(true);
+              }}
+            >
+              {preferences.snippetsSymbolsOpenDefault ? <Lock size={12} /> : <LockOpen size={12} />}
+            </button>
+          </div>
 
           {symbolsOpen && (
             <div className="palette-section-content">
@@ -195,22 +243,141 @@ export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
           )}
         </section>
 
-        {/* Built-in Snippets Collapsible Section */}
+        {/* Templates & Snippets Section (with Custom Snippets consolidated inside) */}
         <section className="palette-section">
-          <button
-            type="button"
-            className="palette-section-header"
-            aria-expanded={snippetsOpen}
-            onClick={() => setSnippetsOpen(!snippetsOpen)}
-          >
-            {snippetsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span>Templates & Snippets</span>
-            <span className="palette-count">{filteredDefaultSnippets.length}</span>
-          </button>
+          <div className="palette-section-header-row">
+            <button
+              type="button"
+              className="palette-section-header"
+              aria-expanded={snippetsOpen}
+              onClick={() => setSnippetsOpen(!snippetsOpen)}
+            >
+              {snippetsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <span>Templates & Snippets</span>
+              <span className="palette-count">{totalSnippetsCount}</span>
+            </button>
+            <div className="palette-header-actions">
+              <button
+                type="button"
+                className="palette-add-btn"
+                title="Add custom snippet"
+                aria-label="Add custom snippet"
+                onClick={() => {
+                  setIsAdding(!isAdding);
+                  if (!snippetsOpen) setSnippetsOpen(true);
+                }}
+              >
+                <Plus size={13} />
+              </button>
+              <button
+                type="button"
+                className={`palette-lock-btn ${preferences.snippetsTemplatesOpenDefault ? 'locked' : ''}`}
+                title={
+                  preferences.snippetsTemplatesOpenDefault
+                    ? 'Keep open by default: On (click to toggle off)'
+                    : 'Keep open by default: Off (click to keep this section open by default)'
+                }
+                aria-label="Keep Templates & Snippets open by default"
+                onClick={() => {
+                  const next = !preferences.snippetsTemplatesOpenDefault;
+                  updatePreferences({ snippetsTemplatesOpenDefault: next });
+                  if (next) setSnippetsOpen(true);
+                }}
+              >
+                {preferences.snippetsTemplatesOpenDefault ? (
+                  <Lock size={12} />
+                ) : (
+                  <LockOpen size={12} />
+                )}
+              </button>
+            </div>
+          </div>
 
           {snippetsOpen && (
             <div className="palette-section-content">
+              {isAdding && (
+                <form className="palette-custom-form" onSubmit={handleAddCustomSnippet}>
+                  <input
+                    placeholder="Snippet name (e.g. My Theorem)"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    required
+                  />
+                  <input
+                    placeholder="Description (optional)"
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                  />
+                  <textarea
+                    placeholder="LaTeX code (use $0 for cursor position)"
+                    value={newTex}
+                    onChange={(e) => setNewTex(e.target.value)}
+                    rows={4}
+                    required
+                  />
+                  <div className="palette-prompt-actions">
+                    <button type="button" onClick={() => void copySnippetPrompt()}>
+                      {promptCopied ? <Check size={13} /> : <Copy size={13} />}
+                      {promptCopied ? 'Copied' : 'Copy prompt'}
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-pill"
+                      disabled={!onAskChat}
+                      onClick={() => onAskChat?.(createSnippetPrompt(newName, newDesc))}
+                    >
+                      <Sparkle size={13} />
+                      Ask in Chat
+                    </button>
+                  </div>
+                  <div className="palette-form-actions">
+                    <button type="button" onClick={() => setIsAdding(false)}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="primary-pill">
+                      Save
+                    </button>
+                  </div>
+                </form>
+              )}
+
               <ul className="snippet-list">
+                {/* Custom Snippets */}
+                {filteredCustomSnippets.map((snippet, idx) => (
+                  <li key={`custom-${snippet.name}-${idx}`} className="custom-snippet-item">
+                    <button
+                      type="button"
+                      className="snippet"
+                      title={snippet.tex.replace('$0', '')}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setHint(`${snippet.name} (Custom)`)}
+                      onMouseLeave={() => setHint(null)}
+                      onClick={(event) => {
+                        if (event.detail === 2) insertSnippet(snippet);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          insertSnippet(snippet);
+                        }
+                      }}
+                    >
+                      <strong>{snippet.name}</strong>
+                      <span>{snippet.description}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="snippet-delete-btn"
+                      title="Delete custom snippet"
+                      aria-label={`Delete custom snippet ${snippet.name}`}
+                      onClick={() => handleDeleteCustomSnippet(idx)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </li>
+                ))}
+
+                {/* Built-in Snippets */}
                 {filteredDefaultSnippets.map((snippet) => (
                   <li key={snippet.name}>
                     <button
@@ -241,109 +408,9 @@ export default function SnippetPalette({ canInsert }: { canInsert: boolean }) {
                     </button>
                   </li>
                 ))}
-                {!filteredDefaultSnippets.length && (
+
+                {!filteredDefaultSnippets.length && !filteredCustomSnippets.length && !isAdding && (
                   <p className="palette-empty-note">No snippets match.</p>
-                )}
-              </ul>
-            </div>
-          )}
-        </section>
-
-        {/* Custom Snippets Collapsible Section */}
-        <section className="palette-section">
-          <div className="palette-section-header-row">
-            <button
-              type="button"
-              className="palette-section-header"
-              aria-expanded={customOpen}
-              onClick={() => setCustomOpen(!customOpen)}
-            >
-              {customOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              <span>Custom Snippets</span>
-              <span className="palette-count">{filteredCustomSnippets.length}</span>
-            </button>
-            <button
-              type="button"
-              className="palette-add-btn"
-              title="Add Custom Snippet"
-              aria-label="Add custom snippet"
-              onClick={() => setIsAdding(!isAdding)}
-            >
-              <Plus size={13} />
-            </button>
-          </div>
-
-          {customOpen && (
-            <div className="palette-section-content">
-              {isAdding && (
-                <form className="palette-custom-form" onSubmit={handleAddCustomSnippet}>
-                  <input
-                    placeholder="Snippet name (e.g. My Theorem)"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    required
-                  />
-                  <input
-                    placeholder="Description (optional)"
-                    value={newDesc}
-                    onChange={(e) => setNewDesc(e.target.value)}
-                  />
-                  <textarea
-                    placeholder="LaTeX code (use $0 for cursor position)"
-                    value={newTex}
-                    onChange={(e) => setNewTex(e.target.value)}
-                    rows={4}
-                    required
-                  />
-                  <div className="palette-form-actions">
-                    <button type="button" onClick={() => setIsAdding(false)}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="primary-pill">
-                      Save
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              <ul className="snippet-list">
-                {filteredCustomSnippets.map((snippet, idx) => (
-                  <li key={`${snippet.name}-${idx}`} className="custom-snippet-item">
-                    <button
-                      type="button"
-                      className="snippet"
-                      title={snippet.tex.replace('$0', '')}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setHint(snippet.name)}
-                      onMouseLeave={() => setHint(null)}
-                      onClick={(event) => {
-                        if (event.detail === 2) insertSnippet(snippet);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          insertSnippet(snippet);
-                        }
-                      }}
-                    >
-                      <strong>{snippet.name}</strong>
-                      <span>{snippet.description}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="snippet-delete-btn"
-                      title="Delete snippet"
-                      aria-label={`Delete ${snippet.name}`}
-                      onClick={() => handleDeleteCustomSnippet(idx)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </li>
-                ))}
-                {!filteredCustomSnippets.length && !isAdding && (
-                  <p className="palette-empty-note">
-                    No custom snippets yet. Click + to add your own.
-                  </p>
                 )}
               </ul>
             </div>

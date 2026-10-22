@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as Monaco from 'monaco-editor/editor/editor.api.js';
 import type { AISettings } from '../../src/shared/api';
 import { installAICompletion } from '../../src/renderer/src/features/editor/ai-completion';
-import { installInlineEdit } from '../../src/renderer/src/features/editor/inline-edit';
+import {
+  inlineEditPreview,
+  installInlineEdit,
+} from '../../src/renderer/src/features/editor/inline-edit';
 vi.mock('../../src/renderer/src/features/chat/ModelPicker', () => ({ ModelPicker: () => null }));
 
 interface PromptHarness {
@@ -14,6 +17,7 @@ interface PromptHarness {
   status: string;
   instruction: string;
   blocked: boolean;
+  loading: boolean;
 }
 const promptHarness = vi.hoisted(() => ({
   current: null as PromptHarness | null,
@@ -106,8 +110,16 @@ function inlineFixture(selected = '') {
     },
   }));
   const cancelAIInlineEdit = vi.fn(async () => ({ ok: true }));
+  const chunkListeners = new Set<(chunk: { requestId: string; text: string }) => void>();
+  const onAIInlineEditChunk = vi.fn((listener) => {
+    chunkListeners.add(listener);
+    return () => chunkListeners.delete(listener);
+  });
   const dispatchEvent = vi.fn();
-  vi.stubGlobal('window', { textra: { requestAIInlineEdit, cancelAIInlineEdit }, dispatchEvent });
+  vi.stubGlobal('window', {
+    textra: { requestAIInlineEdit, cancelAIInlineEdit, onAIInlineEditChunk },
+    dispatchEvent,
+  });
   vi.stubGlobal('document', {
     createElement: () => ({
       className: '',
@@ -137,6 +149,10 @@ function inlineFixture(selected = '') {
     cancelAIInlineEdit,
     keyboardTarget,
     dispatchEvent,
+    chunk: (requestId: string, text: string) => {
+      for (const listener of chunkListeners) listener({ requestId, text });
+    },
+    chunkListeners,
     saved: () => {
       revision = 'saved-revision';
     },
@@ -196,7 +212,7 @@ function fixture(source = 'Some prose', local = false) {
     model: local ? 'qwen2.5-coder:1.5b' : 'gemini-test',
   };
   const settings = {
-    roleDefaults: { chat: ref, agent: ref, completion: ref, inlineCompletion: ref },
+    roleDefaults: { assistant: ref, completion: ref, inlineCompletion: ref },
     completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
     providers: [
       {
@@ -256,6 +272,66 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('prompted inline AI edits', () => {
+  it('hides partial fence wrappers without normalizing document whitespace', () => {
+    expect(inlineEditPreview('``')).toBe('');
+    expect(inlineEditPreview('```latex')).toBe('');
+    expect(inlineEditPreview('```latex\r\n  new\r\n`')).toBe('  new');
+    expect(inlineEditPreview('```latex\n  new\n```')).toBe('  new');
+    expect(inlineEditPreview('  text\n')).toBe('  text\n');
+  });
+  it('streams cumulative previews but blocks acceptance until successful completion', async () => {
+    const f = inlineFixture('selected');
+    let resolve!: (value: unknown) => void;
+    f.requestAIInlineEdit.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }) as never,
+    );
+    f.controller.open();
+    promptHarness.current!.onInstruction('Rewrite');
+    promptHarness.current!.generate();
+    const request = f.requestAIInlineEdit.mock.calls[0][0];
+    expect(f.chunkListeners.size).toBe(1);
+    f.chunk('unrelated', 'wrong response');
+    expect(promptHarness.current!.replacement).toBeNull();
+    f.chunk(request.requestId, '```latex\nnew');
+    expect(promptHarness.current!.replacement).toBe('new');
+    f.chunk(request.requestId, '```latex\nnew text\n```');
+    expect(promptHarness.current!.replacement).toBe('new text');
+    expect(promptHarness.current!.loading).toBe(true);
+    expect(f.controller.accept()).toBe(false);
+    expect(f.editor.executeEdits).not.toHaveBeenCalled();
+    resolve({ ok: true, value: { ...request, text: 'new text' } });
+    await Promise.resolve();
+    expect(f.chunkListeners.size).toBe(0);
+    expect(promptHarness.current!.loading).toBe(false);
+    expect(f.controller.accept()).toBe(true);
+    expect(f.editor.pushUndoStop).toHaveBeenCalledTimes(2);
+    f.controller.dispose();
+  });
+  it('clears failed partial previews and unsubscribes after cancellation', async () => {
+    const f = inlineFixture();
+    let resolve!: (value: unknown) => void;
+    f.requestAIInlineEdit.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }) as never,
+    );
+    f.controller.open();
+    promptHarness.current!.onInstruction('Continue');
+    promptHarness.current!.generate();
+    const request = f.requestAIInlineEdit.mock.calls[0][0];
+    f.chunk(request.requestId, 'partial');
+    resolve({ ok: false, error: 'Connection interrupted' });
+    await Promise.resolve();
+    expect(promptHarness.current!.replacement).toBeNull();
+    expect(promptHarness.current!.status).toBe('Connection interrupted');
+    expect(f.chunkListeners.size).toBe(0);
+    expect(f.controller.accept()).toBe(false);
+    f.controller.dispose();
+  });
   it('preserves the instruction when Ctrl+I reopens the same anchor and explains oversized selections', () => {
     const f = inlineFixture();
     f.controller.open();

@@ -1,4 +1,13 @@
-import { Article, Check, LocateFixed, Scroll, WarningCircle } from '../../icons';
+import { useState, useRef, useCallback } from 'react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  LocateFixed,
+  Scroll,
+  TextIndent,
+  WarningCircle,
+} from '../../icons';
 import './writing.css';
 
 /** One heading in the active document's source outline. Lines are one-based. */
@@ -42,10 +51,6 @@ export interface WritingPanelProps {
   formatAvailable?: boolean;
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat().format(Math.max(0, value));
-}
-
 function activeOutlineId(outline: WritingOutlineItem[], line: number | null): string | null {
   if (line === null || line < 1) return null;
   let active: WritingOutlineItem | undefined;
@@ -57,8 +62,8 @@ function activeOutlineId(outline: WritingOutlineItem[], line: number | null): st
 }
 
 /**
- * Compact, source-agnostic writing utilities for an active LaTex document.
- * Parsing and editor navigation are deliberately injected by the workspace.
+ * Compact, source-agnostic writing utilities for an active LaTeX document.
+ * Includes Outline and Notes in two collapsible, vertically-resizable panes.
  */
 export function WritingPanel({
   summary,
@@ -70,160 +75,193 @@ export function WritingPanel({
   formatAvailable = false,
 }: WritingPanelProps) {
   const activeId = activeOutlineId(summary.outline, activeLine);
+  const [outlineOpen, setOutlineOpen] = useState(true);
+  const [notesOpen, setNotesOpen] = useState(true);
+  const [notesHeight, setNotesHeight] = useState(130);
+  const isDragging = useRef(false);
+  const startY = useRef(0);
+  const startHeight = useRef(0);
+
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isDragging.current = true;
+      startY.current = e.clientY;
+      startHeight.current = notesHeight;
+      document.body.style.cursor = 'ns-resize';
+      document.body.style.userSelect = 'none';
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        if (!isDragging.current) return;
+        const delta = startY.current - moveEvent.clientY;
+        const newHeight = Math.max(70, Math.min(450, startHeight.current + delta));
+        setNotesHeight(newHeight);
+      };
+
+      const onMouseUp = () => {
+        isDragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [notesHeight],
+  );
 
   return (
     <div className="writing-panel">
       <div className="sidebar-title writing-title">
         <span className="sidebar-heading">Writing</span>
-        <button
-          type="button"
-          className={'writing-focus-button' + (focusMode ? ' active' : '')}
-          aria-pressed={focusMode}
-          title={focusMode ? 'Leave focus mode' : 'Enter focus mode'}
-          onClick={onToggleFocusMode}
-        >
-          <LocateFixed size={14} aria-hidden="true" />
-          <span>{focusMode ? 'Focus on' : 'Focus'}</span>
-        </button>
+        <div className="writing-header-actions">
+          <button
+            type="button"
+            className="icon-button small writing-header-button"
+            aria-label="Format document with latexindent"
+            title={
+              formatAvailable
+                ? 'Format document with latexindent'
+                : 'latexindent is not available. Install it to format LaTeX.'
+            }
+            disabled={!onFormatDocument || !formatAvailable}
+            onClick={onFormatDocument}
+          >
+            <TextIndent size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={'icon-button small writing-header-button' + (focusMode ? ' active' : '')}
+            aria-label={focusMode ? 'Leave focus mode' : 'Enter focus mode'}
+            title={focusMode ? 'Leave focus mode' : 'Enter focus mode'}
+            aria-pressed={focusMode}
+            onClick={onToggleFocusMode}
+          >
+            <LocateFixed size={14} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
-      <section className="writing-section" aria-labelledby="writing-stats-heading">
-        <h3 id="writing-stats-heading" className="writing-section-title">
-          <Article size={14} aria-hidden="true" />
-          Document
-        </h3>
-        <dl className="writing-stats">
-          <div>
-            <dt>Words</dt>
-            <dd>{formatNumber(summary.words)}</dd>
-          </div>
-          <div>
-            <dt>Characters</dt>
-            <dd>{formatNumber(summary.characters)}</dd>
-          </div>
-          <div>
-            <dt>Sections</dt>
-            <dd>{formatNumber(summary.sections)}</dd>
-          </div>
-          <div>
-            <dt>Equations</dt>
-            <dd>{formatNumber(summary.equations)}</dd>
-          </div>
-          <div>
-            <dt>Figures</dt>
-            <dd>{formatNumber(summary.figures)}</dd>
-          </div>
-          <div>
-            <dt>Tables</dt>
-            <dd>{formatNumber(summary.tables)}</dd>
-          </div>
-          <div>
-            <dt>Citations</dt>
-            <dd>{formatNumber(summary.citations)}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section
-        className="writing-section writing-format-section"
-        aria-labelledby="writing-format-heading"
-      >
-        <h3 id="writing-format-heading" className="writing-section-title">
-          Document formatting
-        </h3>
-        <p className="writing-help">
-          Format Document uses latexindent to propose cleaner indentation and line breaks. TeXtra
-          always shows the proposed rewrite before it replaces your open text.
-        </p>
-        <button
-          type="button"
-          className="writing-format-button"
-          disabled={!onFormatDocument || !formatAvailable}
-          title={
-            formatAvailable ? 'Preview formatting with latexindent' : 'latexindent is not available'
-          }
-          onClick={onFormatDocument}
+      <div className="writing-content">
+        {/* Section 1: Outline */}
+        <section
+          className={`writing-section writing-outline-section ${outlineOpen ? 'expanded' : 'collapsed'}`}
+          aria-labelledby="writing-outline-heading"
+          style={{
+            flex: outlineOpen ? (notesOpen ? '1 1 auto' : '1 0 100%') : '0 0 auto',
+          }}
         >
-          Format document…
-        </button>
-        {!formatAvailable && (
-          <p className="writing-help">Install latexindent in Settings to use this.</p>
-        )}
-      </section>
+          <button
+            type="button"
+            className="writing-section-toggle"
+            aria-expanded={outlineOpen}
+            onClick={() => setOutlineOpen((open) => !open)}
+          >
+            {outlineOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span id="writing-outline-heading" className="writing-section-title-text">
+              <Scroll size={13} aria-hidden="true" />
+              Outline
+            </span>
+            <span className="writing-count">{summary.outline.length}</span>
+          </button>
 
-      <section
-        className="writing-section writing-outline-section"
-        aria-labelledby="writing-outline-heading"
-      >
-        <h3 id="writing-outline-heading" className="writing-section-title">
-          <Scroll size={14} aria-hidden="true" />
-          Outline
-          <span className="writing-count">{summary.outline.length}</span>
-        </h3>
-        {summary.outline.length === 0 ? (
-          <p className="writing-empty">No section headings yet.</p>
-        ) : (
-          <ul className="writing-list">
-            {summary.outline.map((item) => {
-              const depth = Math.min(Math.max(0, item.level - 1), 4);
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className="writing-outline-item"
-                    aria-current={item.id === activeId ? 'location' : undefined}
-                    style={{ paddingLeft: 10 + depth * 12 }}
-                    title={`Go to line ${item.line}`}
-                    onClick={() => onJumpToLine(item.line)}
-                  >
-                    <span>{item.title}</span>
-                    <small>Ln {item.line}</small>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+          {outlineOpen && (
+            <div className="writing-section-body">
+              {summary.outline.length === 0 ? (
+                <p className="writing-empty">No section headings yet.</p>
+              ) : (
+                <ul className="writing-list">
+                  {summary.outline.map((item) => {
+                    const depth = Math.min(Math.max(0, item.level - 1), 4);
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          className="writing-outline-item"
+                          aria-current={item.id === activeId ? 'location' : undefined}
+                          style={{ paddingLeft: 10 + depth * 12 }}
+                          title={`Go to line ${item.line}`}
+                          onClick={() => onJumpToLine(item.line)}
+                        >
+                          <span>{item.title}</span>
+                          <small>Ln {item.line}</small>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
 
-      <section
-        className="writing-section writing-todos-section"
-        aria-labelledby="writing-todos-heading"
-      >
-        <h3 id="writing-todos-heading" className="writing-section-title">
-          <Check size={14} aria-hidden="true" />
-          Notes
-          <span className="writing-count">{summary.todos.length}</span>
-        </h3>
-        <p className="writing-help">
-          Add a note anywhere in your source with <code>% TODO: describe the work</code> or{' '}
-          <code>% FIXME: explain the problem</code>. Notes stay comments and do not appear in the
-          compiled document.
-        </p>
-        {summary.todos.length === 0 ? (
-          <p className="writing-empty">No TODO or FIXME notes.</p>
-        ) : (
-          <ul className="writing-list">
-            {summary.todos.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="writing-todo-item"
-                  title={`Go to ${item.kind} on line ${item.line}`}
-                  onClick={() => onJumpToLine(item.line)}
-                >
-                  {item.kind === 'FIXME' && <WarningCircle size={13} aria-hidden="true" />}
-                  <span className={'writing-tag ' + item.kind.toLowerCase()}>{item.kind}</span>
-                  <span className="writing-todo-text">
-                    {item.text || `${item.kind} on line ${item.line}`}
-                  </span>
-                  <small>Ln {item.line}</small>
-                </button>
-              </li>
-            ))}
-          </ul>
+        {/* Resizer Splitter between Outline and Notes */}
+        {outlineOpen && notesOpen && (
+          <div
+            className="writing-resizer"
+            onMouseDown={onMouseDown}
+            role="separator"
+            aria-orientation="horizontal"
+            title="Drag to resize Outline and Notes"
+          />
         )}
-      </section>
+
+        {/* Section 2: Notes */}
+        <section
+          className={`writing-section writing-todos-section ${notesOpen ? 'expanded' : 'collapsed'}`}
+          aria-labelledby="writing-todos-heading"
+          style={{
+            height: notesOpen ? (outlineOpen ? `${notesHeight}px` : '100%') : 'auto',
+            flex: notesOpen ? (outlineOpen ? `0 0 ${notesHeight}px` : '1 0 100%') : '0 0 auto',
+          }}
+        >
+          <button
+            type="button"
+            className="writing-section-toggle"
+            aria-expanded={notesOpen}
+            onClick={() => setNotesOpen((open) => !open)}
+          >
+            {notesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span id="writing-todos-heading" className="writing-section-title-text">
+              <Check size={13} aria-hidden="true" />
+              Notes
+            </span>
+            <span className="writing-count">{summary.todos.length}</span>
+          </button>
+
+          {notesOpen && (
+            <div className="writing-section-body">
+              {summary.todos.length === 0 ? (
+                <p className="writing-empty">No % TODO or % FIXME notes.</p>
+              ) : (
+                <ul className="writing-list">
+                  {summary.todos.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        className="writing-todo-item"
+                        title={`Go to ${item.kind} on line ${item.line}`}
+                        onClick={() => onJumpToLine(item.line)}
+                      >
+                        {item.kind === 'FIXME' && <WarningCircle size={13} aria-hidden="true" />}
+                        <span className={'writing-tag ' + item.kind.toLowerCase()}>
+                          {item.kind}
+                        </span>
+                        <span className="writing-todo-text">
+                          {item.text || `${item.kind} on line ${item.line}`}
+                        </span>
+                        <small>Ln {item.line}</small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

@@ -26,70 +26,108 @@ uses LaTeX Workshop recipe/tool keys; shared shape validation is followed by mai
 strict command/argument/path checks. Popup writes use an expected settings snapshot
 and atomic publication. Every compile reads current settings. A PDF version counter
 refreshes stable output paths in the viewer. No credentials in portable settings. Optional
-AI chat is not a prerequisite for editing. Main's AIService owns per-provider
+AI is not a prerequisite for editing. Main's AIService owns per-provider
 safeStorage-encrypted keys, cached model lists, provider preferences, role defaults and
-request-kind coordination; ai-providers.ts holds the validated-endpoint wire adapters (Gemini via
-`@google/genai`, shared OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, Ollama `/api/chat` for
-ollama.com and 127.0.0.1:11434). Preload exposes settings views without keys, provider
-save/remove/refresh/default calls, local Ollama status/start, bounded text conversation,
-cancellation, and fixed provider links.
-Chat has no project service or tools. The renderer explicitly builds Problems snippets
-from the chosen diagnostic and current buffer (or a normal validated file read), then
-shows a draft by default. Chat and Settings open the same AI settings dialog. AIChatStore persists
-bounded transcripts in userData by canonical workspace hash; opaque scope registration isolates
-queued saves across project switches. Chat history survives mode switches, and Agent receives
-validated prior conversation for handoff. Saved transcripts can be deleted through a
-workspace-scoped main-process request after native confirmation. Drafts and pending proposals
-are not persisted.
-Chat streams from every provider (SSE or NDJSON). A narrow response event carries a request ID and
-bounded cumulative text; the renderer accepts only its current request's updates. Successful
-responses enter the conversation once. Interrupted partial text stays visible for review but
-is excluded from subsequent requests. Markdown uses the existing React-node preview renderer
-without HTML injection. The chat follows arriving text only while the reader is near the bottom.
+request-kind coordination. Generation runs through the Vercel AI SDK (`ai` 7) in main:
+ai-sdk-runtime.ts is the model factory. It lazily imports one provider package per real request
+(`@ai-sdk/openai` using Chat Completions, `@ai-sdk/google`, `@ai-sdk/anthropic`,
+`@ai-sdk/mistral`, `@ai-sdk/deepseek`, `@openrouter/ai-sdk-provider`, and
+`@ai-sdk/openai-compatible` for local Ollama, Ollama Cloud and custom endpoints), builds the
+model directly from the configured connection (no gateway, hosted backend or environment keys),
+and injects a guarded fetch. The guarded fetch pins every request to the configured origin and
+path prefix, refuses redirects, joins the shared foreground cancellation signal, and every call
+sets `maxRetries: 0`. SDK errors are mapped to TeXtra's error vocabulary without request bodies,
+URLs or keys. ai-providers.ts keeps only what the SDK does not own: model discovery and the two
+native fill-in-the-middle adapters (Mistral Codestral FIM and verified local Ollama generate).
 
-Models are provider-qualified `{ provider, model }` refs. Main accepts only models present in
-the provider's cached/manual catalogue, enabled state, role visibility and capabilities. Four saved role defaults and
-independent workspace session choices replace the overall default. Config v3 migrates
-v2 atomically; v4 adds provider endpoints, enabled state, manual models and role visibility
-without touching retained encrypted keys, catalogues or conversation storage.
-Model discovery filters text chat capabilities (Mistral completion_chat, Ollama
-/api/show completion, output modalities when supplied), with provider-family
-fallbacks for sparse catalogues. ai-models.ts also filters old cached catalogues
-and retains unavailable role bindings without a network request or silent rerouting; provider deletion clears its bindings. Ollama metadata requests run in
-batches of four under the existing listing deadline; 404/405 falls back to names.
-CHAT_SYSTEM_PROMPT is shared verbatim by every Chat adapter. Compatible providers
-use one Mistral connection for Codestral FIM and Mistral chat. The unused legacy
-Codestral profile is removed in v4. One custom OpenAI-compatible connection supports
-standard model discovery/chat and optional keys; Agent requires explicit tool support.
-Connections save offline, refresh explicitly, and silence without decrypting/loading SDKs
-or making requests. Main validates saved endpoints; endpoint changes revoke automatic consent.
-Compatible providers share listing/chat/tool transport; token field differences
-stay in main. OpenRouter
-uses /models/user?output_modalities=text, checks architecture.output_modalities,
-and excludes automatic multi-model router IDs. Requests use require_parameters=true
-and allow_fallbacks=false; reasoning_details/reasoning survive tool replay. DeepSeek
-reasoning metadata is retained for tool replay, outside displayed response text.
-The concise Chat prompt labels actionable fixes; the renderer offers an explicit
-Implement Suggested Fix action that switches modes and submits the existing conversation
-with a short implementation instruction. It uses the normal Agent scope/review path.
-The first-selection Agent notice fades out and stores only a local UI dismissal flag.
-BoundedAgentService runs a provider-neutral transcript (user, assistant with tool calls and
-raw provider content, tool results); each adapter converts it to its own tool-calling format
-and replays raw content such as Gemini thought signatures unchanged.
-It stages active `.tex` text tools in memory with a fixed call budget;
-it has no filesystem or process dependency. AgentWorkspaceService binds its opaque context
-to a validated ProjectService path and disk revision. Narrow document/run/accept/reject
-IPC methods expose no tool dispatcher. Renderer syncs the active buffer snapshot, shows
-a read-only inline Monaco diff, and immediately applies each approved hunk as an undoable
-editor edit. Main validates hunk IDs, consumes the old proposal, advances the expected buffer
-and context, and rebases only undecided changes into a fresh proposal. Renderer rechecks the
-old live buffer before applying and echoes the new snapshot. Rejections remove only their
-changes; Approve all applies the remainder together. Auto-save pauses until review finishes.
-Context changes revoke in-flight work and proposals. AIService serializes settings writes,
-coordinates foreground Chat/Agent/manual-completion requests and preempts only automatic
-completion work. Cancellation for completion is request-specific; main enforces model
-capabilities, exact automatic consent, context bounds and timeouts. A canonical project/file
-reference is validated before completion routing. No completion tools are exposed.
+One SDK-backed assistant exposes Chat and Agent modes. Chat is the default, sends only the
+conversation, and has no document tools. Agent is selected explicitly and includes the captured
+active `.tex` snapshot in the request context; its first tool call can stage an edit immediately
+without a separate full-file read. The renderer uses
+`useChat` from `@ai-sdk/react` with a custom Electron IPC transport (assistant-transport.ts);
+provider calls and credentials stay in main. A typed `runAIAssistant` request carries a request
+ID, a configured model ref, bounded text turns and, only for a manual Send with an eligible
+active `.tex` file, an opaque document context ID. Main validates it with Zod and never accepts
+renderer-supplied system instructions, tools or tool results. `onAIAssistantEvent` streams
+display-only events (cumulative answer text, optional provider reasoning text and bounded tool
+status) that preload validates; raw tool results, document reads, reasoning metadata and provider
+payloads never reach display streams or persisted history. Reasoning appears collapsed by default
+and remains ephemeral; it is excluded from provider transcripts and saved chat history.
+`cancelAIAssistant` is request-specific, and a cancellation that arrives
+before its request starts is remembered so the request never runs. The transport registers its
+listener before invoking and removes it on completion, cancellation, workspace change and
+unmount; stale events are ignored and interrupted replies stay visible as incomplete but are
+excluded from later model context.
+
+assistant-runner.ts runs a request. Without an authorized document (or when a connection has tool
+calls turned off) it streams plain text with `streamText`. With one it uses `ToolLoopAgent`, which
+owns tool-call parsing, transcript conversion, provider metadata replay (for example Gemini thought
+signatures, Anthropic thinking signatures, DeepSeek reasoning_content and OpenRouter
+reasoning_details) and multi-step orchestration. Only the pathless tools exist:
+`read_current_file`, `insert_text`, `replace_range` and `delete_range`; any other tool name is fatal. Agent mode
+shares the active document only on explicit Send, while Chat and automatically sent Problems
+prompts remain tool-free. Gemini 2.5/3 models can return their provider-exposed thought text;
+Gemini 3.5 Flash-Lite uses minimal thinking in Chat and low in Agent. Other Google-compatible
+models receive no thought configuration and may return no reasoning. SDK HTTP errors are normalized at the runner boundary,
+so provider outages retain their status and safe response detail. Tool calls
+execute one at a time in emitted order (`toolCallConcurrency: 1`), and every operation rechecks
+cancellation and document validity first. Budgets are unchanged: 24 responses, 64 tool calls,
+32,000 characters of output, the whole-request deadline, and a document limit of 64,000
+32,000 characters of output, the whole-request deadline, and a document limit of 64,000
+characters. A proposal is published only after successful completion; errors, truncation,
+cancellation or budget exhaustion discard staging. agent-staging.ts holds the in-memory staging
+buffer and validated edit operations (exact-field arguments, recoverable correction messages,
+exact-source deletions staged for explicit user review); SDK tool handlers call it and never write
+files or touch Monaco.
+BoundedAgentService (agent.ts) owns the captured document context, proposals and review, and
+AgentWorkspaceService binds its opaque context to a validated ProjectService path and disk
+revision. Renderer syncs the active buffer snapshot, shows a read-only inline Monaco diff, and
+immediately applies each approved hunk as an undoable editor edit. Main validates hunk IDs,
+consumes the old proposal, advances the expected buffer and context, and rebases only undecided
+changes into a fresh proposal. Rejections remove only their changes; Approve all applies the
+remainder together. Auto-save pauses until review finishes. Context changes revoke in-flight work
+and proposals. When review of a reply's proposal finishes, the workspace records an
+application-owned outcome (applied, partial or rejected) on that reply; main turns it into a fixed
+bracketed note in later model context so rejected changes are never treated as applied.
+
+Problems snippets are built by the renderer from the chosen diagnostic and current buffer. An
+automatically sent Problems prompt carries no document context and is therefore tool-free; a
+later manual instruction can use the document tools. The former Implement Suggested Fix action is
+replaced by an ordinary follow-up instruction. AIChatStore persists bounded text transcripts (plus
+the review outcome) in userData by canonical workspace hash; SDK tool transcripts, drafts and
+pending proposals are not persisted. Stored turns convert to SDK UI messages on load. Markdown uses
+the existing React-node preview renderer without HTML injection, and the chat follows arriving
+text only while the reader is near the bottom.
+
+Models are provider-qualified `{ provider, model }` refs. Main accepts only models present in the
+provider's cached/manual catalogue, enabled state, role visibility and capabilities. Three saved
+roles (Assistant, Ctrl+I and automatic completion) plus independent workspace session choices
+replace the overall default. Settings v5 migrates v2 to v4 atomically and offline: the Assistant
+role takes the saved Chat model, otherwise the saved Agent model; unavailable selections are
+preserved and shown as unavailable rather than substituted. Chat and Agent shared each provider's
+chat visibility rule, so the unified role keeps exactly that rule. Credentials, endpoints,
+catalogues and automatic-completion consent are untouched. Model discovery filters text chat
+capabilities (Mistral completion_chat, Ollama /api/show completion, output modalities when
+supplied), with provider-family fallbacks for sparse catalogues. ai-models.ts also filters old
+cached catalogues and retains unavailable role bindings without a network request or silent
+rerouting; provider deletion clears its bindings. One Mistral connection serves Codestral FIM and
+Mistral chat; the legacy Codestral profile is removed during migration. One custom
+OpenAI-compatible connection supports standard model discovery and optional keys; when its tool
+capability is off, the assistant still answers in text and the composer says so. Connections
+save offline, refresh explicitly, and silence without decrypting or loading provider packages.
+OpenRouter uses /models/user?output_modalities=text, excludes automatic router IDs, and every
+request sends `provider.require_parameters=true` and `provider.allow_fallbacks=false`.
+
+Ctrl+I uses `streamText` through the same model factory, deadline (60 seconds), cancellation and
+error mapping, with its own focused prompt and bounded selection/prefix/suffix context and no
+history or tools. Main streams cumulative preview text over `onAIInlineEditChunk`; the renderer
+shows a growing replacement diff or insertion preview, and Accept (button or Tab) is enabled only
+after the final normalized result arrives. Chat-based automatic completion also uses
+`streamText`; Codestral FIM and verified Ollama generate keep their native adapters. AIService
+coordinates foreground Assistant/Ctrl+I requests and preempts only automatic completion work.
+Cancellation for completion is request-specific; main enforces model capabilities, exact
+automatic consent, context bounds and timeouts. A canonical project/file reference is validated
+before completion routing. No completion tools are exposed.
 
 SourceEditor installs a dedicated completion coordinator and Monaco inline provider.
 The shared cursor-aware LaTeX scanner preserves literal blocks and tracks unfinished

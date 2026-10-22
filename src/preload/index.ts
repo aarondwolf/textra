@@ -1,5 +1,31 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { AppInfo, Preferences, Result, TextraAPI } from '../shared/api';
+import { AI_ASSISTANT_STATUS_LIMIT, type AIAssistantEvent } from '../shared/ai';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Validates main's display-only assistant events before they reach the renderer. */
+function assistantEvent(value: unknown): AIAssistantEvent | null {
+  if (
+    !isRecord(value) ||
+    typeof value.requestId !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,128}$/.test(value.requestId)
+  )
+    return null;
+  if (value.type === 'text' && typeof value.text === 'string' && value.text.length <= 32_000)
+    return { requestId: value.requestId, type: 'text', text: value.text };
+  if (value.type === 'reasoning' && typeof value.text === 'string' && value.text.length <= 32_000)
+    return { requestId: value.requestId, type: 'reasoning', text: value.text };
+  if (
+    value.type === 'status' &&
+    typeof value.message === 'string' &&
+    value.message.length <= AI_ASSISTANT_STATUS_LIMIT
+  )
+    return { requestId: value.requestId, type: 'status', message: value.message };
+  return null;
+}
 
 const api: TextraAPI = {
   getAISettings: () => ipcRenderer.invoke('textra:ai:settings'),
@@ -18,9 +44,9 @@ const api: TextraAPI = {
   setAIAutoSend: (request) => ipcRenderer.invoke('textra:ai:auto-send', request),
   getOllamaStatus: () => ipcRenderer.invoke('textra:ai:ollama:status'),
   startOllama: () => ipcRenderer.invoke('textra:ai:ollama:start'),
-  sendAIMessage: (request) => ipcRenderer.invoke('textra:ai:send', request),
   syncAIAgentDocument: (document) => ipcRenderer.invoke('textra:agent:document', document),
-  runAIAgent: (request) => ipcRenderer.invoke('textra:agent:run', request),
+  runAIAssistant: (request) => ipcRenderer.invoke('textra:ai:assistant:run', request),
+  cancelAIAssistant: (request) => ipcRenderer.invoke('textra:ai:assistant:cancel', request),
   acceptAIAgentProposal: (request) => ipcRenderer.invoke('textra:agent:accept', request),
   rejectAIAgentProposal: (id) => ipcRenderer.invoke('textra:agent:reject', id),
   reviewAIAgentProposal: (request) => ipcRenderer.invoke('textra:agent:review', request),
@@ -28,24 +54,28 @@ const api: TextraAPI = {
   listAIChats: (projectId) => ipcRenderer.invoke('textra:ai:chats:list', projectId),
   saveAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:save', request),
   deleteAIChat: (request) => ipcRenderer.invoke('textra:ai:chats:delete', request),
-  onAIResponseChunk: (listener) => {
+  onAIAssistantEvent: (listener) => {
+    const receive = (_event: IpcRendererEvent, value: unknown) => {
+      const event = assistantEvent(value);
+      if (event) listener(event);
+    };
+    ipcRenderer.on('textra:ai:assistant:event', receive);
+    return () => ipcRenderer.removeListener('textra:ai:assistant:event', receive);
+  },
+  onAIInlineEditChunk: (listener) => {
     const receive = (_event: IpcRendererEvent, value: unknown) => {
       if (
-        value &&
-        typeof value === 'object' &&
-        'requestId' in value &&
+        isRecord(value) &&
         typeof value.requestId === 'string' &&
         /^[A-Za-z0-9-]{1,64}$/.test(value.requestId) &&
-        'text' in value &&
         typeof value.text === 'string' &&
         value.text.length <= 32_000
       )
         listener({ requestId: value.requestId, text: value.text });
     };
-    ipcRenderer.on('textra:ai:chunk', receive);
-    return () => ipcRenderer.removeListener('textra:ai:chunk', receive);
+    ipcRenderer.on('textra:ai:inline-edit:chunk', receive);
+    return () => ipcRenderer.removeListener('textra:ai:inline-edit:chunk', receive);
   },
-  cancelAIMessage: () => ipcRenderer.invoke('textra:ai:cancel'),
   getAppInfo: () => ipcRenderer.invoke('textra:app-info') as Promise<Result<AppInfo>>,
   getPreferences: () =>
     ipcRenderer.invoke('textra:preferences:get') as Promise<Result<Preferences>>,

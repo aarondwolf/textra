@@ -65,10 +65,14 @@ test('opt-in live Gemini 3.5 Flash Lite stages both lipsum edits and reviews the
       const context = await window.textra.syncAIAgentDocument(file.value);
       if (!context.ok) return context;
       if (!context.value) return { ok: false, error: 'No active tex context.' };
-      const proposed = await window.textra.runAIAgent({
+      const proposed = await window.textra.runAIAssistant({
         contextId: context.value.contextId,
-        prompt:
-          'Add the lipsum package to the preamble and replace the current line 28 (Lorem ipsum dolor sit amet.) with \\lipsum[1-4]. Complete BOTH requested edits in one proposal. Make no other changes.',
+        messages: [
+          {
+            role: 'user',
+            text: 'Add the lipsum package to the preamble and replace the current line 28 (Lorem ipsum dolor sit amet.) with \\lipsum[1-4]. Complete BOTH requested edits in one proposal. Make no other changes.',
+          },
+        ],
         model: { provider: 'google', model: 'gemini-3.5-flash-lite' },
         requestId: crypto.randomUUID(),
       });

@@ -18,8 +18,13 @@ TeX is executable input. Compilers run only after user action, with shell escape
 disabled, a timeout and cancellation. This is not an OS-level TeX sandbox: open
 and compile trusted projects only. External installation is not automatic.
 
-Optional AI chat transmits only user-submitted conversations and Problems snippets to the
-saved endpoint of the selected model's provider from the main process. Built-in
+The optional AI assistant transmits only user-submitted conversations and Problems snippets to
+the saved endpoint of the selected model's provider from the main process. All generation uses
+the Vercel AI SDK in main with provider objects built directly from the saved connection: no
+Vercel gateway, hosted backend, account or environment-derived key is involved. Provider
+packages load only when a connection receives a real request. Every SDK request goes through a
+guarded fetch that pins the configured origin and path prefix, rejects URL credentials and
+redirects, joins the shared cancellation signal, and runs with `maxRetries: 0`. Built-in
 endpoints are prefilled; users can explicitly configure a replacement or one custom
 OpenAI-compatible connection. Main rejects URL credentials, query strings, fragments
 and redirects. HTTPS is required except loopback/private IP HTTP endpoints, which are
@@ -44,24 +49,37 @@ Keys, pending proposals, streaming partials and drafts are not serialized as his
 Requests have a 90-second timeout (180 seconds for local Ollama), one attempt, no automatic 429 retry, at most 40 turns,
 64,000 input characters and 4,096 output tokens. Cancellation stops local waiting; it cannot
 guarantee a provider stops work on a request it has received. Raw provider errors never reach logs; bounded completion diagnostics contain only provider/model, transport, timing, HTTP status, finish reason and response size/outcome.
-the renderer gets a mapped message with at most 240 characters of provider detail, with the
+The renderer gets a mapped message with at most 240 characters of provider detail, with the
 key redacted. Provider key and usage pages open through a fixed-URL main handler.
-Streaming updates use a fixed IPC event with validated request IDs and at most 32,000 text
-characters. Preload validates event shape and the chat ignores stale requests. Cancelled or
+Streaming updates use a fixed IPC event with validated request IDs, at most 32,000 answer or
+provider-exposed reasoning characters, and bounded tool-status strings; no tool arguments,
+tool results, document reads, reasoning metadata or provider payloads are emitted. Optional
+reasoning text is display-only, collapsed by default, and is not persisted or sent back in later
+provider transcripts. Preload validates event shape and the
+transport ignores stale requests. Renderer requests are untrusted: main validates them with a
+strict Zod schema and never accepts renderer-supplied system instructions, tools or tool results. Cancelled or
 failed partial replies do not become completed conversation turns. Markdown is rendered as
 React nodes without interpreting raw HTML; renderer navigation/window restrictions remain.
 
-Optional Agent mode uses the same model allowlist, main-process SDK and encrypted key.
-Only an explicit Agent submit or **Implement Suggested Fix** click shares the active
-`.tex` snapshot (at most 64,000 UTF-16 characters) and prompt (12,000 characters).
+Document access uses the same model allowlist, main-process SDK and encrypted key.
+The active `.tex` file is shown beside the composer as available context. Chat is the default
+and sends only the conversation. Selecting Agent and pressing Send explicitly authorizes sending
+the captured active-file snapshot (at most 64,000 UTF-16 characters) through an opaque context
+ID. Main adds that validated snapshot as untrusted source context, allowing the model to stage a
+direct edit without a separate initial read call. Automatically sent Problems prompts carry no
+context and stay tool-free. Without an eligible document, or when a connection has tool calls
+turned off, Agent mode cannot run and the request has no tools.
 Main validates the canonical project path and disk revision before requesting or accepting
 a proposal. The staging service has no filesystem/process dependencies: tools are exactly
-`read_current_file`, `insert_text`, and `replace_range`. Arguments cannot include paths;
-line/column insert positions or exact expected text must match (UTF-16 offsets remain compatible),
-and empty replacement/deletion-only edits are rejected. Omitted arguments are normalized only
-for the zero-argument read. Recoverable position mistakes return bounded feedback to the model;
-unknown tools, paths and extra arguments fail closed. Prior conversation is bounded context;
-the latest explicit user request controls the task.
+`read_current_file`, `insert_text`, `replace_range`, and `delete_range`, executed one at a time in emitted
+order with a cancellation and document-validity check before each. Arguments cannot include
+paths; line/column insert positions or exact expected text must match (UTF-16 offsets remain
+compatible), replacement text must be non-empty, and deletions must match exact non-empty source
+text; deletions still stage as proposals and never write files directly. Recoverable position
+mistakes and calls to nonexistent tools return bounded feedback to the model (still limited by
+the response budget); paths and extra arguments on real tools fail closed. Prior conversation is bounded context; the latest explicit user request controls the
+task. Review outcomes recorded by TeXtra are added as fixed application notes, so earlier
+rejected proposals are not presented to the model as applied.
 Reads return only the current in-memory staging buffer. Sixty-four total tools, 24 provider
 calls, 32,000 cumulative response characters and a 90-second whole-request timeout
 (180 seconds for Local Ollama) bound each run. Each call requests 4,096 output tokens;
@@ -80,11 +98,9 @@ the buffer after asynchronous main validation and uses Monaco's undoable edit AP
 never saves a file. Auto-save pauses while review is pending so it cannot invalidate the
 remaining review with an intermediate revision; normal guarded auto-save resumes for approved
 text when review finishes. Manual/external edits still invalidate the remaining proposal.
-Agent Problems drafts always require manual submit. 429/budget notices use a fixed main-process
-AI Studio rate-limit URL; provider errors and keys are never shown verbatim.
-The one-time Agent reminder uses a profile-local UI flag only; dismissing it never enables
-automatic sending. Suggested-fix detection only offers a button on a completed reply;
-it cannot initiate requests or approve edits without a click.
+Provider usage pages open through a fixed main-process URL; provider errors and keys are never
+shown verbatim. A follow-up such as "apply that fix" is an ordinary manual instruction; nothing
+initiates requests or approves edits without a click.
 
 MVP keys use Electron `safeStorage` encryption in git-ignored repository-local
 `.textra-local/ai.json`, with atomic writes, version validation and symlink rejection.

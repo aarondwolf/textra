@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AIStoredChat } from '../../shared/ai';
+import { AI_REVIEW_OUTCOMES, type AIReviewOutcome, type AIStoredChat } from '../../shared/ai';
 import type { AIMessage } from '../../shared/api';
 import { AIError } from './ai-service';
 
@@ -41,8 +41,14 @@ function validateChat(value: unknown): AIStoredChat {
       message.text.length > 32_000
     )
       return invalid();
+    // Only the application-owned review outcome is kept; tool transcripts are never stored.
+    const review =
+      message.role === 'model' &&
+      (AI_REVIEW_OUTCOMES as readonly unknown[]).includes(message.review)
+        ? (message.review as AIReviewOutcome)
+        : undefined;
     size += message.text.length;
-    return { role: message.role, text: message.text };
+    return { role: message.role, text: message.text, ...(review ? { review } : {}) };
   });
   if (size > 128_000) return invalid();
   return { id: value.id, title: value.title, updatedAt: value.updatedAt, messages };

@@ -1,5 +1,12 @@
 # Architecture memory
 
+Current redesign (2026-10-21; verification in progress): provider configuration v4
+owns enabled state, validated base URL, manual models and per-role exact ID filters.
+SDKs load lazily for real requests. Ctrl+I uses a separate scoped inline-edit service
+and editor view zone; automatic completion remains native Monaco ghost text.
+Endpoint changes revoke automatic-sharing consent. No fallback routes.
+See AI_SETTINGS_IMPLEMENTATION.md.
+
 TexLab request-loop fix: SourceEditor sync depends on document content/readiness,
 not diagnostic-driven adapter identity. Shared adapter sessions coalesce source
 updates and duplicate queries across recreated adapters. Main ignores identical
@@ -8,7 +15,7 @@ through closeTexlabDocument(FileRef). LSP supersession/edits/timeouts cancel ser
 work; queues cap at 8 active and 64 total with whole-request deadlines. Local FIM
 generation stops at its line budget or echoed suffix instead of EOS, using smaller
 CPU context. Automatic completion targets 1–10 lines/384 tokens with 30s local or
-10s remote deadlines; Ctrl+I remains 20 lines/512 tokens and 30s local/15s remote.
+10s remote deadlines; prompted Ctrl+I allows 4,096 output tokens/32,000 characters/60s.
 New bindings prefer installed Qwen2.5-Coder0.5B. Monaco word-based suggestions are
 off; deterministic completion is gated to LaTeX commands/structured arguments.
 
@@ -19,14 +26,12 @@ identity and bounds in main, with request-kind scheduling and no tools/fallback.
 SourceEditor delegates to ai-completion.ts; latex-completion.ts scans cursor context.
 The role selection Zustand store is memory-only per workspace, clears unavailable
 overrides, and never changes another role. Monaco inline contribution is prebundled.
-Native FIM uses Mistral/Codestral fixed hosts or verified Ollama suffix templates;
+Native FIM uses the configured Mistral endpoint or verified Ollama suffix templates;
 ordinary chat models share one completion instruction. Source/suggestion cache is
 memory-only (32 entries/30 seconds), separate from persisted conversations.
 
-Codestral is a separate credential profile at codestral.mistral.ai/v1. It reuses
-Chat Completions transport and shared prompts but accepts only Codestral model IDs.
-AI_PROVIDERS.codestral.parent='mistral' renders its own ProviderCard nested inside
-Mistral; no key sharing or parent-configured prerequisite. GitHub explicitly deferred.
+Codestral uses the standard Mistral key and /v1/fim/completions. The unused legacy
+dedicated connection is removed in v4. Prompted edits require chat capability.
 
 OpenRouter shares Chat Completions transport at openrouter.ai/api/v1. Catalogue
 uses authenticated /models/user?output_modalities=text and strict architecture

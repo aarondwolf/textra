@@ -1,5 +1,14 @@
 # Decisions
 
+- 2026-10-21 approved provider/inline redesign: keep native Monaco, without
+  monacopilot. Ctrl+I becomes explicit prompted insertion/selection replacement
+  with preview, 4k instruction/16k selection/4096 output tokens/32k characters/60s.
+  One connection per built-in plus one custom OpenAI-compatible connection.
+  Retain and block hidden/silenced bindings. v4 saves offline configuration and
+  binds automatic consent to destination changes. Mistral uses its standard key
+  and /v1/fim/completions; remove unused dedicated Codestral. Automatic ghost text
+  only; health/retry in Settings. See AI_SETTINGS_IMPLEMENTATION.md for evidence.
+
 - 2026-10-21 owner requests automatic continuation through 1–10 lines/384 tokens,
   replacing the first-useful-line stop. Automatic deadlines are 30s for local-only
   Ollama and 10s remotely; manual stays 30s local/15s remote and 20 lines/512 tokens.

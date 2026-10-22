@@ -37,8 +37,9 @@ try {
     .find((value) => value.startsWith('--provider='))
     ?.split('=')[1];
   const automatic = process.argv.includes('--automatic');
+  const inlineEdit = process.argv.includes('--inline-edit');
   const report = await page.evaluate(
-    async ({ selectedProvider, automatic, figure }) => {
+    async ({ selectedProvider, automatic, figure, inlineEdit }) => {
       const bridge = window.textra;
       const opened = await bridge.chooseProject();
       if (!opened.ok || !opened.value)
@@ -48,10 +49,10 @@ try {
       let loaded = await bridge.getAISettings();
       if (!loaded.ok) throw new Error(loaded.error);
       const evidence = [];
-      for (const id of ['ollama-local', 'codestral', 'google']) {
+      for (const id of ['ollama-local', 'mistral', 'google']) {
         if (selectedProvider && id !== selectedProvider) continue;
         let provider = loaded.value.providers.find((item) => item.id === id);
-        if (!provider?.configured) {
+        if (!provider?.configured || provider.enabled === false) {
           evidence.push({ provider: id, outcome: 'unconfigured — not tested live' });
           continue;
         }
@@ -66,7 +67,9 @@ try {
         }
         loaded = refreshed;
         provider = loaded.value.providers.find((item) => item.id === id);
-        const models = provider.models.filter((item) => item.capabilities?.completion !== false);
+        const models = provider.models.filter((item) =>
+          inlineEdit ? item.capabilities?.chat !== false : item.capabilities?.completion !== false,
+        );
         const automaticModel = loaded.value.roleDefaults.completion;
         if (automatic && (!loaded.value.completion.enabled || automaticModel?.provider !== id)) {
           evidence.push({
@@ -79,7 +82,7 @@ try {
           ? models.find((item) => item.id === automaticModel.model)
           : id === 'ollama-local'
             ? models.find((item) => /^qwen2\.5-coder:3b$/i.test(item.id))
-            : id === 'codestral'
+            : id === 'mistral'
               ? (models.find(
                   (item) =>
                     item.id === provider.defaultModel &&
@@ -124,12 +127,23 @@ try {
           }),
         };
         const start = performance.now();
-        const result = await bridge.requestAICompletion(request);
+        const result = inlineEdit
+          ? await bridge.requestAIInlineEdit({
+              ...request,
+              endOffset: offset,
+              selection: '',
+              instruction: figure
+                ? 'Insert a concise TikZ supply and demand diagram with labeled axes and curves inside this environment. Do not repeat the closing environment.'
+                : code
+                  ? 'Complete this Python return statement.'
+                  : 'Continue this prose in one concise sentence.',
+            })
+          : await bridge.requestAICompletion(request);
         evidence.push({
           provider: id,
-          role: request.role,
+          role: inlineEdit ? 'inlineEdit' : request.role,
           model: model.id,
-          transport: model.capabilities?.transport ?? 'chat',
+          transport: inlineEdit ? 'chat' : (model.capabilities?.transport ?? 'chat'),
           milliseconds: Math.round(performance.now() - start),
           outcome: result.ok ? 'passed live insertion response' : 'failed live request',
           ...(result.ok
@@ -146,7 +160,7 @@ try {
       }
       return evidence;
     },
-    { selectedProvider, automatic, figure },
+    { selectedProvider, automatic, figure, inlineEdit },
   );
   // Report only model identifiers, timings and response sizes; no keys or source.
   console.log(JSON.stringify(report, null, 2));

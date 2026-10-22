@@ -28,7 +28,7 @@ and atomic publication. Every compile reads current settings. A PDF version coun
 refreshes stable output paths in the viewer. No credentials in portable settings. Optional
 AI chat is not a prerequisite for editing. Main's AIService owns per-provider
 safeStorage-encrypted keys, cached model lists, provider preferences, role defaults and
-request-kind coordination; ai-providers.ts holds the fixed-endpoint wire adapters (Gemini via
+request-kind coordination; ai-providers.ts holds the validated-endpoint wire adapters (Gemini via
 `@google/genai`, shared OpenAI/Mistral/DeepSeek Chat Completions, Anthropic Messages, Ollama `/api/chat` for
 ollama.com and 127.0.0.1:11434). Preload exposes settings views without keys, provider
 save/remove/refresh/default calls, local Ollama status/start, bounded text conversation,
@@ -48,18 +48,21 @@ is excluded from subsequent requests. Markdown uses the existing React-node prev
 without HTML injection. The chat follows arriving text only while the reader is near the bottom.
 
 Models are provider-qualified `{ provider, model }` refs. Main accepts only models present in
-the provider's cached listing and its role capabilities. Four saved role defaults and
+the provider's cached/manual catalogue, enabled state, role visibility and capabilities. Four saved role defaults and
 independent workspace session choices replace the overall default. Config v3 migrates
-v2 atomically without touching encrypted keys, catalogues or conversation storage.
+v2 atomically; v4 adds provider endpoints, enabled state, manual models and role visibility
+without touching retained encrypted keys, catalogues or conversation storage.
 Model discovery filters text chat capabilities (Mistral completion_chat, Ollama
 /api/show completion, output modalities when supplied), with provider-family
 fallbacks for sparse catalogues. ai-models.ts also filters old cached catalogues
-and clears unavailable role bindings without a network request or silent rerouting. Ollama metadata requests run in
+and retains unavailable role bindings without a network request or silent rerouting; provider deletion clears its bindings. Ollama metadata requests run in
 batches of four under the existing listing deadline; 404/405 falls back to names.
 CHAT_SYSTEM_PROMPT is shared verbatim by every Chat adapter. Compatible providers
-include a dedicated Codestral profile at codestral.mistral.ai/v1. It has its own
-encrypted key and Codestral-only model list, nested in Mistral through catalogue
-parent metadata. Child setup and draft saves are independent of the parent.
+use one Mistral connection for Codestral FIM and Mistral chat. The unused legacy
+Codestral profile is removed in v4. One custom OpenAI-compatible connection supports
+standard model discovery/chat and optional keys; Agent requires explicit tool support.
+Connections save offline, refresh explicitly, and silence without decrypting/loading SDKs
+or making requests. Main validates saved endpoints; endpoint changes revoke automatic consent.
 Compatible providers share listing/chat/tool transport; token field differences
 stay in main. OpenRouter
 uses /models/user?output_modalities=text, checks architecture.output_modalities,
@@ -98,12 +101,15 @@ insertion. Main normalizes fences, exact context echoes, suffix overlap, line en
 and response bounds. Native Mistral/Codestral FIM and verified local Ollama generate
 receive contiguous prefix/suffix; chat transports share COMPLETION_SYSTEM_PROMPT.
 
-Automatic completion targets 1–10 lines with 384 tokens; manual completion permits
-20 lines with 512 tokens. Chat adapters receive the line budget as shared context.
+Automatic completion targets 1–10 lines with 384 tokens. The editor displays only
+ghost text; health/retry lives in settings. Prompted Ctrl+I is a separate view-zone
+controller and main-owned inline-edit service: explicit instructions, bounded selected
+replacement or insertion, preview and guarded one-step undo. It uses the selected
+chat transport with a shared edit instruction, 4,096 tokens/32,000 characters and 60s. Chat adapters receive the line budget as shared context.
 Native local generation stops at its requested line budget or an exact
 distinctive suffix line instead of waiting for the model's explanation/EOS.
 Shared completionTimeout keeps renderer and main deadlines consistent: remote
-10/15 seconds, local-only Ollama 30/30 seconds. The renderer shrinks local context
+10 seconds for automatic remote and 30 seconds for automatic local-only Ollama. The renderer shrinks local context
 to avoid unnecessary CPU prefill. Expected supersession is separate from timeout.
 New automatic bindings prefer installed Qwen2.5-Coder 0.5B without pulling models.
 Monaco word-based suggestions are disabled; deterministic LaTeX/TexLab completion

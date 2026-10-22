@@ -1,5 +1,20 @@
 # Test evidence
 
+2026-10-21 provider v4 / prompted inline-edit redesign: full unit suite passes
+557/557 (43 files, 98.40s). Typecheck and repository ESLint pass. Standard production
+build passes (no cleanup workaround needed in final run). Serial native matrix
+passes 7/7 (4.3m): Agent review, chat/provider onboarding, prompted Ctrl+I and ghost
+completion, word selection, custom-provider settings, shell and UI consistency.
+AI/build execution are explicitly mocked in completion acceptance; real native
+Monaco, preload and project IO run. Custom settings additionally passes 31.4s after
+final filter Reset controls, counts and catalogue-age copy. Live local Qwen3B prompted
+edit passes 21.594s (16 characters/one line, matching identity). Live Mistral FIM and
+Google prompted-edit attempts are blocked before routing by key decryption in the
+isolated test profile; credentials preserved, no claim of invalid production keys.
+Local Qwen3B native FIM also passes3.592s (five characters/one line, identity matches).
+Changed-file formatting and whitespace checks pass; whole format:check only warns
+for unchanged docs/ROADMAP.md and sandbox/issues.md.
+
 2026-10-21 multiline automatic-completion revision: provider checks pass 53/53
 (`npx vitest run tests/unit/ai-providers.test.ts`). Focused provider lint and
 formatting pass. Mock streams verify automatic ten-line and manual twenty-line

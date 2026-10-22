@@ -1678,6 +1678,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
   }
   useEffect(() => {
     const keyboard = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -1696,6 +1697,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings: () => void }) {
         }
       }
       if (event.key === 'Enter') {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('input, textarea, [role="dialog"], [data-inline-edit]')) return;
         event.preventDefault();
         void compile();
       }

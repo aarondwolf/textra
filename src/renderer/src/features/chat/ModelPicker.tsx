@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import type { AISettings } from '../../../../shared/api';
 import {
   AI_PROVIDERS,
+  AI_DEFAULT_ENDPOINTS,
   sameModel,
   supportsAIRole,
   type AIRole,
@@ -9,7 +10,7 @@ import {
   type AIProviderId,
 } from '../../../../shared/ai';
 import { Check, ChevronDown, Search, Star } from '../../icons';
-import { findModel, modelGroups } from './useAISettings';
+import { findModel, modelGroups, modelUnavailableReason } from './useAISettings';
 import './model-picker.css';
 
 function matches(query: string, ...fields: string[]): boolean {
@@ -52,6 +53,8 @@ export function ModelPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [popupPlacement, setPopupPlacement] = useState(placement);
+  const [popupHeight, setPopupHeight] = useState(360);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -76,7 +79,7 @@ export function ModelPicker({
       ),
     [filtered],
   );
-  const found = findModel(settings, value);
+  const found = findModel(settings, value, role);
   const current = found && (!role || supportsAIRole(found, role)) ? found : null;
   const display = current?.label ?? (value ? `${value.model} (unavailable)` : placeholder);
   const optionId = (index: number) => `${listId}-option-${index}`;
@@ -100,6 +103,17 @@ export function ModelPicker({
 
   function show() {
     if (disabled) return;
+    const rect = button.current?.getBoundingClientRect();
+    if (rect) {
+      const container = root.current
+        ?.closest('.ai-settings-scroll, .ai-provider-editor-form')
+        ?.getBoundingClientRect();
+      const below = (container?.bottom ?? window.innerHeight) - rect.bottom;
+      const above = rect.top - (container?.top ?? 0);
+      const direction = placement === 'up' || (below < 250 && above > below) ? 'up' : 'down';
+      setPopupPlacement(direction);
+      setPopupHeight(Math.max(96, Math.min(360, (direction === 'up' ? above : below) - 10)));
+    }
     setQuery('');
     const all = groups.flatMap((group) =>
       group.models.map((model) => ({ provider: group.provider, model: model.id })),
@@ -151,8 +165,8 @@ export function ModelPicker({
         aria-label={`${label}: ${display}`}
         title={
           current && value
-            ? `${current.label} (${AI_PROVIDERS[value.provider].label})`
-            : placeholder
+            ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label}) · ${settings?.providers.find((provider) => provider.id === value.provider)?.endpoint ?? AI_DEFAULT_ENDPOINTS[value.provider]}`
+            : (modelUnavailableReason(settings, value, role) ?? placeholder)
         }
         onClick={() => (open ? setOpen(false) : show())}
         onKeyDown={(event) => {
@@ -165,13 +179,23 @@ export function ModelPicker({
         <span className="model-picker-value">
           <span className="model-picker-name">{display}</span>
           {variant === 'field' && value && current && !only && (
-            <small>{AI_PROVIDERS[value.provider].label}</small>
+            <small>
+              {settings?.providers.find((provider) => provider.id === value.provider)
+                ?.displayName || AI_PROVIDERS[value.provider].label}{' '}
+              ·{' '}
+              {settings?.providers.find((provider) => provider.id === value.provider)?.endpoint ??
+                AI_DEFAULT_ENDPOINTS[value.provider]}
+            </small>
           )}
         </span>
         <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
       </button>
       {open && (
-        <div className="model-picker-popup" data-placement={placement}>
+        <div
+          className="model-picker-popup"
+          data-placement={popupPlacement}
+          style={{ maxHeight: popupHeight }}
+        >
           <div className="model-picker-search">
             <Search size={12} aria-hidden="true" />
             <input

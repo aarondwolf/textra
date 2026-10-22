@@ -1,5 +1,11 @@
 # Phase log
 
+- 2026-10-21: Implemented prompted Ctrl+I insertion/selection editing, ghost-only
+  automatic completion, restored compile shortcut and provider v4 management with
+  silencing, custom endpoints, role visibility and standard Mistral FIM. Full
+  unit 557/557 and serial native7/7 pass; static/build pass. Final live evidence and
+  commit tracked in AI_SETTINGS_IMPLEMENTATION.md. Unrelated gates stay open.
+
 - 2026-10-21: Revised automatic completion to 1–10 lines/384 tokens, 30s local/10s
   remote deadlines and installed Qwen0.5B preference for new bindings. Generic word
   suggestions are off; deterministic suggestions require command/structured-argument

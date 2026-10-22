@@ -162,6 +162,7 @@ export function ChatPanel({
   const { settings, error: settingsLoadError, refresh: refreshSettings } = useAISettings(active);
   const [settingsWarning, setSettingsError] = useState('');
   const settingsError = settingsLoadError || settingsWarning;
+  const hasConnections = Boolean(settings?.providers.some((provider) => provider.configured));
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -822,7 +823,7 @@ export function ChatPanel({
         </div>
       )}
       {!settings && !settingsError && <p role="status">Loading AI settings…</p>}
-      {settings && !settings.configured ? (
+      {settings && !hasConnections ? (
         <div className="ai-chat-setup">
           <div className="ai-chat-setup-card">
             <strong>Set up AI</strong>
@@ -839,7 +840,7 @@ export function ChatPanel({
             </button>
           </div>
         </div>
-      ) : settings?.configured ? (
+      ) : hasConnections ? (
         <>
           {mode === 'agent' && agentNoticePhase !== 'hidden' && (
             <p
@@ -976,6 +977,9 @@ export function ChatPanel({
               {model
                 ? 'The selected model is unavailable. Choose another model.'
                 : `Choose a ${mode === 'agent' ? 'Agent' : 'Chat'} model to continue.`}
+              <button type="button" onClick={() => setShowSettings(true)}>
+                Edit providers
+              </button>
             </p>
           )}
           {mode === 'agent' && !agentContext && (

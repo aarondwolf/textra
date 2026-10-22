@@ -63,6 +63,7 @@ const tools: ToolSpec[] = [
 const access = (provider: ProviderAccess['provider'], key: string | null = 'secret-key') => ({
   provider,
   key,
+  ...(provider === 'custom' ? { endpoint: 'http://127.0.0.1:8000/v1' } : {}),
 });
 const chat = {
   system: 'Be concise.',
@@ -78,6 +79,18 @@ const chat = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('model listing', () => {
+  it('uses a configured custom catalogue endpoint without requiring a key', async () => {
+    const sent = stubFetch(jsonResponse({ data: [{ id: 'my-model', name: 'My model' }] }));
+    expect(
+      await listModels(
+        { provider: 'custom', key: null, endpoint: 'http://127.0.0.1:8000/v1' },
+        signal,
+      ),
+    ).toEqual([{ id: 'my-model', label: 'My model' }]);
+    expect(sent[0].url).toBe('http://127.0.0.1:8000/v1/models');
+    expect(sent[0].headers.get('authorization')).toBeNull();
+    expect(sent[0].redirect).toBe('error');
+  });
   it('lists Codestral chat and FIM-only models from its dedicated service', async () => {
     const sent = stubFetch(
       jsonResponse({
@@ -283,6 +296,26 @@ describe('model listing', () => {
 });
 
 describe('streamed chat formats', () => {
+  it('refuses a custom request without a base URL instead of routing through another provider', async () => {
+    const sent = stubFetch();
+    await expect(
+      streamChat({ provider: 'custom', key: null }, 'my-model', chat),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(sent).toHaveLength(0);
+  });
+  it('routes custom chat through its configured base URL and optional bearer key', async () => {
+    const sent = stubFetch(streamResponse(['data: {"choices":[{"delta":{"content":"OK"}}]}\n\n']));
+    expect(
+      await streamChat(
+        { provider: 'custom', key: 'optional-key', endpoint: 'https://gateway.example/v1' },
+        'my-model',
+        chat,
+      ),
+    ).toBe('OK');
+    expect(sent[0].url).toBe('https://gateway.example/v1/chat/completions');
+    expect(sent[0].headers.get('authorization')).toBe('Bearer optional-key');
+    expect(sent[0].body).not.toHaveProperty('tools');
+  });
   it.each(AI_PROVIDER_IDS)(
     'preserves the shared system instructions on the %s wire',
     async (provider) => {

@@ -17,6 +17,10 @@ import type {
   AIAutomaticSettings,
   AICompletionRequest,
   AICompletionResponse,
+  AIInlineEditRequest,
+  AIInlineEditResponse,
+  AIProviderConfiguration,
+  AIModelVisibility,
 } from './ai';
 export const PRODUCT_NAME = 'TeXtra';
 export type Theme = 'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
@@ -312,6 +316,12 @@ export interface SourceLocation {
 }
 export interface AIProviderSettings {
   id: AIProviderId;
+  enabled?: boolean;
+  endpoint?: string;
+  displayName?: string;
+  filters?: { chat: AIModelVisibility; completion: AIModelVisibility };
+  supportsTools?: boolean;
+  manualModels?: string[];
   /** A key is saved, or local Ollama has been enabled. */
   configured: boolean;
   /** This provider's preferred model, used when it is chosen without a specific model. */
@@ -347,6 +357,9 @@ export interface AIResponseChunk {
 }
 export interface TextraAPI {
   getAISettings(): Promise<Result<AISettings>>;
+  configureAIProvider(request: AIProviderConfiguration): Promise<Result<AISettings>>;
+  requestAIInlineEdit(request: AIInlineEditRequest): Promise<Result<AIInlineEditResponse>>;
+  cancelAIInlineEdit(request: { requestId: string }): Promise<Result<void>>;
   /** Tests a key (or local server) by listing models, then saves it with those models. */
   saveAIProvider(request: { provider: AIProviderId; apiKey?: string }): Promise<Result<AISettings>>;
   /** Confirms locally before removing a provider; null means cancelled. */

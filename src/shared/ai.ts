@@ -9,6 +9,7 @@ export const AI_PROVIDER_IDS = [
   'openrouter',
   'ollama-cloud',
   'ollama-local',
+  'custom',
 ] as const;
 export type AIProviderId = (typeof AI_PROVIDER_IDS)[number];
 export type AIProviderLink = 'keys' | 'limits' | 'download';
@@ -25,6 +26,14 @@ export interface AIProviderInfo {
   local: boolean;
 }
 export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
+  custom: {
+    id: 'custom',
+    label: 'OpenAI-compatible',
+    needsKey: false,
+    keyLabel: 'API key (optional)',
+    local: false,
+    links: {},
+  },
   google: {
     id: 'google',
     label: 'Google Gemini',
@@ -124,6 +133,40 @@ export const AI_PROVIDERS: Record<AIProviderId, AIProviderInfo> = {
   },
 };
 export const OLLAMA_LOCAL_URL = 'http://127.0.0.1:11434';
+export const AI_DEFAULT_ENDPOINTS: Record<AIProviderId, string> = {
+  google: 'https://generativelanguage.googleapis.com',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  codestral: 'https://codestral.mistral.ai/v1',
+  deepseek: 'https://api.deepseek.com',
+  openrouter: 'https://openrouter.ai/api/v1',
+  'ollama-cloud': 'https://ollama.com',
+  'ollama-local': OLLAMA_LOCAL_URL,
+  custom: '',
+};
+export interface AIModelVisibility {
+  mode: 'all' | 'include' | 'exclude';
+  models: string[];
+}
+export interface AIProviderConfiguration {
+  provider: AIProviderId;
+  apiKey?: string;
+  enabled: boolean;
+  endpoint: string;
+  displayName?: string;
+  defaultModel: string | null;
+  filters: { chat: AIModelVisibility; completion: AIModelVisibility };
+  supportsTools: boolean;
+  manualModels: string[];
+}
+export function isModelVisible(rule: AIModelVisibility | undefined, id: string): boolean {
+  return (
+    !rule ||
+    rule.mode === 'all' ||
+    (rule.mode === 'include' ? rule.models.includes(id) : !rule.models.includes(id))
+  );
+}
 export function isAIProviderId(value: unknown): value is AIProviderId {
   return typeof value === 'string' && (AI_PROVIDER_IDS as readonly string[]).includes(value);
 }
@@ -179,8 +222,30 @@ export interface AICompletionResponse {
   offset: number;
   text: string;
 }
+export interface AIInlineEditRequest {
+  requestId: string;
+  model: AIModelRef;
+  projectId: string;
+  path: string;
+  revision: string;
+  modelVersion: number;
+  offset: number;
+  endOffset: number;
+  prefix: string;
+  suffix: string;
+  metadata: string;
+  instruction: string;
+  selection: string;
+}
+export interface AIInlineEditResponse {
+  requestId: string;
+  modelVersion: number;
+  offset: number;
+  endOffset: number;
+  text: string;
+}
 export function supportsAIRole(model: AIModelInfo, role: AIRole): boolean {
-  return role === 'chat' || role === 'agent'
+  return role === 'chat' || role === 'agent' || role === 'inlineCompletion'
     ? (model.capabilities?.chat ?? true)
     : (model.capabilities?.completion ?? true);
 }

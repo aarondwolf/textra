@@ -1,5 +1,12 @@
 # Current state
 
+2026-10-21 provider v4 and prompted Ctrl+I redesign is implemented. Full unit 557/557,
+native matrix 7/7, typecheck, lint and production build pass. Live local Qwen3B prompted edit and FIM pass; paid-provider live checks are blocked
+by isolated-profile key decryption. Exact evidence and remaining normal-profile checks are in [implementation tally](AI_SETTINGS_IMPLEMENTATION.md).
+Preserve user sandbox/test.tex changes; no unrelated phase gates advance.
+Launch: npm run dev (restart for main/preload changes).
+Source milestone: Add prompted inline editing and provider management (see git log -1).
+
 2026-10-21 automatic-completion revision: target 1–10 lines/384 tokens instead of
 stopping after the first useful line. Local Ollama automatic requests get 30s;
 remote automatic requests get 10s. Ctrl+I stays 20 lines/512 tokens and 30s local,

@@ -3,6 +3,9 @@ import type { AppInfo, Preferences, Result, TextraAPI } from '../shared/api';
 
 const api: TextraAPI = {
   getAISettings: () => ipcRenderer.invoke('textra:ai:settings'),
+  configureAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:configure', request),
+  requestAIInlineEdit: (request) => ipcRenderer.invoke('textra:ai:inline-edit:request', request),
+  cancelAIInlineEdit: (request) => ipcRenderer.invoke('textra:ai:inline-edit:cancel', request),
   saveAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:save', request),
   removeAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:remove', request),
   refreshAIModels: (request) => ipcRenderer.invoke('textra:ai:models:refresh', request),

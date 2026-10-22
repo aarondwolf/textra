@@ -1,5 +1,11 @@
 # Known issues
 
+- 2026-10-21 prompted-edit native blocker resolved: interactive Monaco view zone
+  exposes its form to accessibility, defers focus until painted and raises its
+  pointer layer above source lines. Native acceptance passes for typing, selected
+  replacement, ghost insertion/Undo and Ctrl+Enter. See AI_SETTINGS_IMPLEMENTATION.md
+  for live-provider limitations and remaining external checks.
+
 - 2026-10-21 automatic-completion revision: saved automatic binding is local
   Qwen2.5-Coder0.5B. A live synthetic supply/demand figure returned four lines in
   13.669s; cold/larger requests can still exceed the 30s local bound. Output quality
@@ -11,7 +17,7 @@
   Ctrl+I; the later multiline revision raises local automatic to 30s. Live Qwen3B
   Ctrl+I and the consented Qwen1.5B automatic model return valid insertions. Large
   buffers/cold CPU models can still exceed bounded deadlines; no automatic fallback.
-  Dedicated Codestral remains unconfigured. The existing
+  The dedicated Codestral profile is retired; standard Mistral now owns FIM. The existing
   Google encrypted key cannot decrypt in the isolated native test profile; retry
   a live Google check from its intended desktop profile. This does not establish
   that the credential is invalid in the owner's normal app session. Synthetic/mock

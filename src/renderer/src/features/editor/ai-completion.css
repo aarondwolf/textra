@@ -1,32 +1,69 @@
-.source-editor-shell {
-  position: relative;
+.ai-inline-zone {
+  padding: 8px 12px 8px 56px;
+  box-sizing: border-box;
 }
-.ai-completion-toolbar {
-  position: absolute;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: calc(100% - 16px);
-  padding: 5px 7px;
+.ai-inline-prompt {
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--surface, var(--bg));
-  box-shadow: 0 3px 12px #0003;
-  font-size: 11px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px;
+  max-width: 900px;
+  font-size: 12px;
+  box-shadow: 0 4px 14px #0002;
 }
-.ai-completion-toolbar > span {
-  max-width: 240px;
+.ai-inline-prompt textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  max-height: 160px;
+  padding: 7px;
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
 }
-.ai-completion-toolbar > button {
+.ai-inline-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+.ai-inline-actions > span {
+  flex: 1;
+  min-width: 80px;
+}
+.ai-inline-actions > button {
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   color: inherit;
   background: transparent;
   cursor: pointer;
 }
-.ai-completion-toolbar > button:disabled {
+.ai-inline-actions > button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+.ai-inline-diff {
+  display: grid;
+  gap: 5px;
+  max-height: 130px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+.ai-inline-diff del {
+  background: #c4505022;
+  color: #c96d6d;
+}
+.ai-inline-diff ins {
+  background: #50a07022;
+  color: #70b990;
+  text-decoration: none;
 }

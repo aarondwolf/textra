@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type {
   AIProviderSettings,
@@ -7,339 +7,551 @@ import type {
   Result,
 } from '../../../../shared/api';
 import {
+  AI_DEFAULT_ENDPOINTS,
   AI_PROVIDERS,
-  AI_ROLES,
-  type AIRole,
+  AI_PROVIDER_IDS,
+  supportsAIRole,
+  type AIModelInfo,
+  type AIModelVisibility,
+  type AIProviderConfiguration,
   type AIProviderId,
   type AIProviderLink,
+  type AIRole,
 } from '../../../../shared/ai';
-import { Play, RefreshCw, X } from '../../icons';
+import { Pencil, Play, Plus, RefreshCw, Trash2, X } from '../../icons';
 import { ModelPicker } from './ModelPicker';
 import {
   aiSavesSettled,
+  currentAISaveState,
   publishAISettings,
   trackAISave,
   useAISaveState,
   useAISettings,
+  modelUnavailableReason,
+  modelGroups,
 } from './useAISettings';
 import { SaveFooter } from '../save-status/SaveFooter';
 import './ai-settings.css';
 
-const ROLE_LABELS: Record<AIRole, string> = {
+const LABELS: Record<AIRole, string> = {
   chat: 'Chat',
   agent: 'Agent',
-  completion: 'Automatic completion',
   inlineCompletion: 'Inline completion (Ctrl+I)',
+  completion: 'Automatic completion',
 };
+const allModels = (): AIModelVisibility => ({ mode: 'all', models: [] });
+const ids = (text: string) => [
+  ...new Set(
+    text
+      .split(/[\n,]/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+];
+const providerLabel = (provider: AIProviderSettings) =>
+  provider.displayName || AI_PROVIDERS[provider.id].label;
 
-function openLink(provider: AIProviderId, link: AIProviderLink, onError: (text: string) => void) {
-  void window.textra
-    .openAIProviderLink({ provider, link })
-    .then((result) => {
-      if (!result.ok) onError(result.error);
-    })
-    .catch(() => onError('Could not open the provider page.'));
+async function openLink(
+  provider: AIProviderId,
+  link: AIProviderLink,
+  onError: (text: string) => void,
+) {
+  try {
+    const result = await window.textra.openAIProviderLink({ provider, link });
+    if (!result.ok) onError(result.error);
+  } catch {
+    onError('Could not open the provider page.');
+  }
 }
 
-function fetchedLabel(time: number | null): string {
-  if (!time) return '';
-  const minutes = Math.round((Date.now() - time) / 60_000);
-  if (minutes < 1) return 'updated just now';
-  if (minutes < 60) return `updated ${minutes} min ago`;
-  return `updated ${new Date(time).toLocaleDateString()}`;
-}
-
-function ProviderCard({
-  provider,
-  settings,
-  ollama,
-  onOllamaStatus,
-  registerDraft,
+function VisibilityEditor({
+  title,
+  value,
+  models,
+  onChange,
 }: {
-  provider: AIProviderSettings;
-  settings: AISettings;
-  ollama: OllamaLocalStatus | null;
-  onOllamaStatus: (status: OllamaLocalStatus) => void;
-  /** Lets the dialog's Save settings button submit a typed but unsaved key. */
-  registerDraft: (provider: AIProviderId, save: (() => Promise<boolean>) | null) => void;
+  title: string;
+  value: AIModelVisibility;
+  models: AIModelInfo[];
+  onChange: (value: AIModelVisibility) => void;
 }) {
-  const info = AI_PROVIDERS[provider.id];
-  const Heading = info.parent ? 'h5' : 'h4';
-  const subproviders = settings.providers.filter(
-    (candidate) => AI_PROVIDERS[candidate.id].parent === provider.id,
+  const [search, setSearch] = useState('');
+  const [text, setText] = useState(value.models.join('\n'));
+  const visible = models.filter((model) =>
+    `${model.id} ${model.label}`.toLowerCase().includes(search.toLowerCase()),
   );
-  const keyId = useId();
-  const [apiKey, setApiKey] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState('');
-  const [status, setStatus] = useState('');
-
-  async function run(
-    label: string,
-    action: () => Promise<Result<AISettings | null>>,
-    done?: string,
-  ): Promise<boolean> {
-    if (busy) return false;
-    setBusy(label);
-    setError('');
-    setStatus('');
-    try {
-      const result = await trackAISave(action());
-      if (!result.ok) setError(result.error);
-      else if (result.value) {
-        publishAISettings(result.value);
-        if (done) setStatus(done);
-      }
-      return result.ok;
-    } catch {
-      setError('The request failed. Please try again.');
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function save(): Promise<boolean> {
-    if (info.needsKey && !apiKey.trim()) return true;
-    const ok = await run(
-      'save',
-      () =>
-        window.textra.saveAIProvider(
-          info.needsKey
-            ? { provider: provider.id, apiKey: apiKey.trim() }
-            : { provider: provider.id },
-        ),
-      'Connected. Models loaded.',
-    );
-    if (ok) {
-      setApiKey('');
-      setEditing(false);
-    }
-    return ok;
-  }
-
-  async function startOllama() {
-    if (busy) return;
-    setBusy('start');
-    setError('');
-    setStatus('');
-    try {
-      const result = await window.textra.startOllama();
-      if (result.ok) {
-        onOllamaStatus(result.value);
-        setStatus('Ollama is running.');
-      } else setError(result.error);
-    } catch {
-      setError('Could not start Ollama.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const local = info.local;
-  const running = Boolean(ollama?.running);
-  let pill: { text: string; tone: 'ok' | 'warn' | 'off' };
-  if (local)
-    pill = running
-      ? { text: ollama?.version ? `Running ${ollama.version}` : 'Running', tone: 'ok' }
-      : ollama === null
-        ? { text: 'Checking…', tone: 'off' }
-        : ollama.installed
-          ? { text: 'Not running', tone: 'warn' }
-          : { text: 'Not installed', tone: 'off' };
-  else
-    pill = provider.configured
-      ? { text: 'Connected', tone: 'ok' }
-      : { text: 'Not set up', tone: 'off' };
-  const showKeyForm = info.needsKey && (!provider.configured || editing);
-  const hasDraft = showKeyForm && Boolean(apiKey.trim());
-  useEffect(() => {
-    registerDraft(provider.id, hasDraft ? save : null);
-    return () => registerDraft(provider.id, null);
-    // save reads the latest key; re-register whenever the draft changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasDraft, apiKey, provider.id, registerDraft]);
-
   return (
-    <section
-      className={`ai-provider-card${info.parent ? ' ai-provider-subcard' : ''}`}
-      data-configured={provider.configured}
-      aria-label={info.label}
-    >
-      <header>
-        <Heading>{info.label}</Heading>
-        <span className="ai-provider-pill" data-tone={pill.tone}>
-          {pill.text}
-        </span>
-      </header>
-      {info.setupHint && <p className="ai-settings-note">{info.setupHint}</p>}
-
-      {local && !running && ollama && (
-        <div className="ai-provider-row">
-          {ollama.installed ? (
-            <button
-              type="button"
-              className="ai-primary"
-              disabled={Boolean(busy)}
-              onClick={() => void startOllama()}
-            >
-              <Play size={12} weight="fill" aria-hidden="true" />
-              {busy === 'start' ? 'Starting…' : 'Start Ollama'}
-            </button>
-          ) : (
-            <button type="button" onClick={() => openLink(provider.id, 'download', setError)}>
-              Download Ollama
-            </button>
-          )}
-          <small>Run models through Ollama.</small>
-        </div>
-      )}
-      {local && running && !provider.configured && (
-        <div className="ai-provider-row">
-          <button
-            type="button"
-            className="ai-primary"
-            disabled={Boolean(busy)}
-            onClick={() => void save()}
-          >
-            {busy === 'save' ? 'Loading models…' : 'Use local Ollama'}
-          </button>
-          <small>Use your Ollama models.</small>
-        </div>
-      )}
-
-      {showKeyForm && (
-        <form
-          className="ai-provider-key"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          <label htmlFor={keyId}>{info.keyLabel}</label>
-          <div className="ai-provider-row">
-            <input
-              id={keyId}
-              type="password"
-              value={apiKey}
-              placeholder="Paste your API key"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={Boolean(busy)}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-            <button type="submit" className="ai-primary" disabled={Boolean(busy) || !apiKey.trim()}>
-              {busy === 'save' ? 'Testing…' : 'Save & load models'}
-            </button>
-            {editing && (
-              <button
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() => {
-                  setApiKey('');
-                  setEditing(false);
-                }}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-          {info.links.keys && (
-            <small>
-              <a
-                href={info.links.keys}
-                onClick={(event) => {
-                  event.preventDefault();
-                  openLink(provider.id, 'keys', setError);
-                }}
-              >
-                Get a key
-              </a>
-            </small>
-          )}
-        </form>
-      )}
-
-      {provider.configured && (
+    <fieldset className="ai-visibility-editor">
+      <legend>{title}</legend>
+      <select
+        aria-label={`${title} visibility`}
+        value={value.mode}
+        onChange={(event) => {
+          const mode = event.target.value as AIModelVisibility['mode'];
+          if (mode === 'all') setText('');
+          onChange({ mode, models: mode === 'all' ? [] : value.models });
+        }}
+      >
+        <option value="all">All models</option>
+        <option value="include">Include selected models</option>
+        <option value="exclude">Exclude selected models</option>
+      </select>
+      <small>
+        {value.mode === 'all'
+          ? `${models.length} eligible models`
+          : `${value.models.length} selected · ${models.length} eligible models`}
+      </small>
+      <button
+        type="button"
+        className="text-button"
+        aria-label={`Reset ${title} visibility`}
+        onClick={() => {
+          setSearch('');
+          setText('');
+          onChange(allModels());
+        }}
+      >
+        Reset visibility
+      </button>
+      {value.mode !== 'all' && (
         <>
-          <div className="ai-provider-default">
-            <span>Default model</span>
-            <ModelPicker
-              settings={settings}
-              only={provider.id}
-              label={`${info.label} default model`}
-              value={
-                provider.defaultModel
-                  ? { provider: provider.id, model: provider.defaultModel }
-                  : null
-              }
-              disabled={Boolean(busy)}
-              onChange={(ref) => void run('default', () => window.textra.setAIProviderDefault(ref))}
+          <input
+            aria-label={`Search ${title.toLowerCase()} models`}
+            placeholder="Search models"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <div className="ai-visibility-list">
+            {visible.map((model) => (
+              <label key={model.id}>
+                <input
+                  type="checkbox"
+                  checked={value.models.includes(model.id)}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                      ? [...value.models, model.id]
+                      : value.models.filter((id) => id !== model.id);
+                    setText(next.join('\n'));
+                    onChange({ ...value, models: next });
+                  }}
+                />
+                <span title={model.id}>
+                  {model.label}
+                  <small>{model.id}</small>
+                </span>
+              </label>
+            ))}
+            {!visible.length && <p>No matching models. Enter exact IDs below.</p>}
+          </div>
+          <label className="field-label">
+            Exact model IDs
+            <textarea
+              aria-label={`${title} exact model IDs`}
+              rows={3}
+              value={text}
+              placeholder="One ID per line"
+              onChange={(event) => {
+                setText(event.target.value);
+                onChange({ ...value, models: ids(event.target.value) });
+              }}
             />
-          </div>
-          <div className="ai-provider-row ai-provider-meta">
-            <small>
-              {provider.models.length} model{provider.models.length === 1 ? '' : 's'}
-              {provider.modelsFetchedAt ? ` · ${fetchedLabel(provider.modelsFetchedAt)}` : ''}
-            </small>
-            <span className="ai-provider-actions">
-              <button
-                type="button"
-                className="ai-icon-text"
-                disabled={Boolean(busy) || (local && !running)}
-                onClick={() =>
-                  void run(
-                    'refresh',
-                    () => window.textra.refreshAIModels({ provider: provider.id }),
-                    'Model list refreshed.',
-                  )
-                }
-              >
-                <RefreshCw size={12} aria-hidden="true" />
-                {busy === 'refresh' ? 'Refreshing…' : 'Refresh'}
-              </button>
-              {info.needsKey && !editing && (
-                <button type="button" disabled={Boolean(busy)} onClick={() => setEditing(true)}>
-                  Replace key
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() =>
-                  void run('remove', () =>
-                    window.textra.removeAIProvider({ provider: provider.id }),
-                  )
-                }
-              >
-                {local ? 'Disable' : 'Remove'}
-              </button>
-            </span>
-          </div>
+          </label>
         </>
       )}
-      {(error || provider.error) && (
-        <p role="alert" className="ai-error">
-          {error || provider.error}
-        </p>
-      )}
-      {status && !error && (
-        <p role="status" className="ai-provider-status">
-          {status}
-        </p>
-      )}
-      {subproviders.map((subprovider) => (
-        <ProviderCard
-          key={subprovider.id}
-          provider={subprovider}
-          settings={settings}
-          ollama={ollama}
-          onOllamaStatus={onOllamaStatus}
-          registerDraft={registerDraft}
-        />
-      ))}
-    </section>
+    </fieldset>
+  );
+}
+
+function ProviderEditor({
+  provider,
+  onClose,
+}: {
+  provider: AIProviderSettings;
+  onClose: () => void;
+}) {
+  const info = AI_PROVIDERS[provider.id];
+  const [apiKey, setApiKey] = useState('');
+  const [hasSaved, setHasSaved] = useState(provider.configured);
+  const [replacing, setReplacing] = useState(!provider.configured);
+  const [enabled, setEnabled] = useState(provider.enabled !== false);
+  const [endpoint, setEndpoint] = useState(provider.endpoint ?? AI_DEFAULT_ENDPOINTS[provider.id]);
+  const [name, setName] = useState(provider.displayName ?? '');
+  const [defaultModel, setDefaultModel] = useState(provider.defaultModel ?? '');
+  const [filters, setFilters] = useState(
+    provider.filters ?? { chat: allModels(), completion: allModels() },
+  );
+  const [supportsTools, setSupportsTools] = useState(
+    provider.supportsTools ?? provider.id !== 'custom',
+  );
+  const [manual, setManual] = useState((provider.manualModels ?? []).join('\n'));
+  const [models, setModels] = useState(provider.models);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [status, setStatus] = useState('');
+  const [ollama, setOllama] = useState<OllamaLocalStatus | null>(null);
+  const label = name.trim() || info.label;
+  const manualIds = ids(manual);
+  const catalog: AIModelInfo[] = [
+    ...models,
+    ...manualIds
+      .filter((id) => !models.some((model) => model.id === id))
+      .map((id) => ({ id, label: id })),
+  ];
+  const configuration = (): AIProviderConfiguration => ({
+    provider: provider.id,
+    enabled,
+    endpoint: endpoint.trim(),
+    displayName: name.trim() || undefined,
+    apiKey: replacing && apiKey.trim() ? apiKey.trim() : undefined,
+    defaultModel: defaultModel || null,
+    filters,
+    supportsTools,
+    manualModels: manualIds,
+  });
+  async function save(close: boolean, refresh = false) {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setStatus('');
+    try {
+      const result = await trackAISave(window.textra.configureAIProvider(configuration()));
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      publishAISettings(result.value);
+      setHasSaved(true);
+      setApiKey('');
+      setReplacing(false);
+      if (refresh) {
+        const tested = await trackAISave(window.textra.refreshAIModels({ provider: provider.id }));
+        if (!tested.ok) {
+          setError(tested.error);
+          const saved = await window.textra.getAISettings();
+          if (saved.ok) publishAISettings(saved.value);
+          return;
+        }
+        publishAISettings(tested.value);
+        setModels(tested.value.providers.find((item) => item.id === provider.id)?.models ?? []);
+        setStatus('Connection tested. Models refreshed.');
+      } else setStatus('Connection saved.');
+      if (close) onClose();
+    } catch {
+      setError('Could not update this connection. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function localAction(start: boolean) {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await (start ? window.textra.startOllama() : window.textra.getOllamaStatus());
+      if (result.ok) setOllama(result.value);
+      else setError(result.error);
+    } catch {
+      setError('Could not check Ollama.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay ai-provider-editor-overlay" />
+        <Dialog.Content
+          className="ai-provider-editor ai-settings-dialog"
+          aria-describedby="ai-provider-description"
+        >
+          <div className="ai-settings-heading">
+            <Dialog.Title>
+              {hasSaved ? 'Edit' : 'Add'} {info.label}
+            </Dialog.Title>
+            <Dialog.Close
+              className="icon-button"
+              disabled={busy}
+              aria-label="Close provider editor"
+            >
+              <X size={18} />
+            </Dialog.Close>
+          </div>
+          <Dialog.Description id="ai-provider-description">
+            Save connection details locally. Test / Refresh contacts this provider only when you
+            choose it.
+          </Dialog.Description>
+          <form
+            className="ai-provider-editor-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save(true);
+            }}
+          >
+            <fieldset disabled={busy} className="ai-provider-fields">
+              <label className="ai-check">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(event) => setEnabled(event.target.checked)}
+                />
+                Connection enabled
+              </label>
+              {provider.id === 'custom' && (
+                <label className="field-label">
+                  Connection name
+                  <input
+                    value={name}
+                    placeholder="OpenAI-compatible"
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </label>
+              )}
+              {(!info.local || provider.id === 'custom') && (
+                <div className="ai-provider-key">
+                  {hasSaved && !replacing ? (
+                    <div className="ai-provider-row">
+                      <span>Credentials unchanged</span>
+                      <button type="button" onClick={() => setReplacing(true)}>
+                        Replace key
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="field-label">
+                      {info.keyLabel}
+                      <input
+                        type="password"
+                        value={apiKey}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={
+                          hasSaved ? 'Leave blank to keep the saved key' : 'Paste API key'
+                        }
+                        onChange={(event) => setApiKey(event.target.value)}
+                      />
+                    </label>
+                  )}
+                  {hasSaved && replacing && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplacing(false);
+                        setApiKey('');
+                      }}
+                    >
+                      Keep saved key
+                    </button>
+                  )}
+                  {info.links.keys && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => void openLink(provider.id, 'keys', setError)}
+                    >
+                      Get a key
+                    </button>
+                  )}
+                </div>
+              )}
+              {info.local && (
+                <div className="ai-provider-row">
+                  <button type="button" onClick={() => void localAction(false)}>
+                    Check Ollama
+                  </button>
+                  {ollama && (
+                    <span>
+                      {ollama.running
+                        ? 'Running'
+                        : ollama.installed
+                          ? 'Not running'
+                          : 'Not installed'}
+                    </span>
+                  )}
+                  {ollama && !ollama.running && ollama.installed && (
+                    <button type="button" onClick={() => void localAction(true)}>
+                      <Play size={12} />
+                      Start Ollama
+                    </button>
+                  )}
+                  {ollama && !ollama.installed && (
+                    <button
+                      type="button"
+                      onClick={() => void openLink(provider.id, 'download', setError)}
+                    >
+                      Download Ollama
+                    </button>
+                  )}
+                </div>
+              )}
+              <label className="field-label">
+                Connection default model
+                <select
+                  value={defaultModel}
+                  onChange={(event) => setDefaultModel(event.target.value)}
+                >
+                  <option value="">Not set</option>
+                  {defaultModel && !catalog.some((model) => model.id === defaultModel) && (
+                    <option value={defaultModel}>{defaultModel} (unavailable)</option>
+                  )}
+                  {catalog.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setDefaultModel('')}
+                disabled={!defaultModel}
+              >
+                Reset default model
+              </button>
+              <div className="ai-provider-row">
+                <button type="button" onClick={() => void save(false, true)}>
+                  <RefreshCw size={13} />
+                  Test / Refresh models
+                </button>
+                <small>
+                  {catalog.length} cached models ·{' '}
+                  {provider.modelsFetchedAt
+                    ? `refreshed ${new Date(provider.modelsFetchedAt).toLocaleString()}`
+                    : 'not refreshed yet'}
+                </small>
+              </div>
+              <details
+                className="ai-provider-advanced"
+                open={provider.id === 'custom' || undefined}
+              >
+                <summary>Advanced</summary>
+                <VisibilityEditor
+                  title="Chat, Agent and inline completion"
+                  value={filters.chat}
+                  models={catalog.filter((model) => supportsAIRole(model, 'chat'))}
+                  onChange={(chat) => setFilters((current) => ({ ...current, chat }))}
+                />
+                <VisibilityEditor
+                  title="Automatic completion"
+                  value={filters.completion}
+                  models={catalog.filter((model) => supportsAIRole(model, 'completion'))}
+                  onChange={(completion) => setFilters((current) => ({ ...current, completion }))}
+                />
+                <label className="field-label">
+                  Endpoint
+                  <input
+                    type="url"
+                    value={endpoint}
+                    placeholder="https://example.com/v1"
+                    onChange={(event) => setEndpoint(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setEndpoint(AI_DEFAULT_ENDPOINTS[provider.id])}
+                >
+                  Reset endpoint
+                </button>
+                {/^http:/i.test(endpoint.trim()) && (
+                  <p className="ai-settings-note">
+                    HTTP sends requests without transport encryption. Use it only for a server you
+                    trust.
+                  </p>
+                )}
+                {provider.id === 'custom' && (
+                  <label className="ai-check">
+                    <input
+                      type="checkbox"
+                      checked={supportsTools}
+                      onChange={(event) => setSupportsTools(event.target.checked)}
+                    />
+                    Supports tool calls for Agent
+                  </label>
+                )}
+                <label className="field-label">
+                  Manual model IDs
+                  <textarea
+                    rows={3}
+                    value={manual}
+                    placeholder="One exact model ID per line"
+                    onChange={(event) => setManual(event.target.value)}
+                  />
+                </label>
+              </details>
+            </fieldset>
+            {error && (
+              <p role="alert" className="ai-error">
+                {error}
+              </p>
+            )}
+            {status && (
+              <p role="status" className="ai-provider-status">
+                {status}
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button type="button" disabled={busy} onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="ai-primary" disabled={busy}>
+                {busy ? 'Saving…' : `Save ${label}`}
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function AddProvider({
+  settings,
+  onPick,
+  onClose,
+}: {
+  settings: AISettings;
+  onPick: (id: AIProviderId) => void;
+  onClose: () => void;
+}) {
+  const choices = AI_PROVIDER_IDS.filter(
+    (id) =>
+      id !== 'codestral' &&
+      !settings.providers.some((provider) => provider.id === id && provider.configured),
+  );
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay ai-provider-editor-overlay" />
+        <Dialog.Content className="ai-provider-chooser ai-settings-dialog">
+          <div className="ai-settings-heading">
+            <Dialog.Title>Add provider</Dialog.Title>
+            <Dialog.Close className="icon-button" aria-label="Close provider chooser">
+              <X size={18} />
+            </Dialog.Close>
+          </div>
+          <Dialog.Description>
+            Choose a connection. You can add one of each provider.
+          </Dialog.Description>
+          <div className="ai-provider-choices">
+            {choices.map((id) => (
+              <button type="button" key={id} onClick={() => onPick(id)}>
+                {AI_PROVIDERS[id].label}
+              </button>
+            ))}
+            {!choices.length && <p>All providers have been added.</p>}
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -351,46 +563,29 @@ export function AISettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { settings, error, refresh } = useAISettings(open);
-  const completionModel = settings?.roleDefaults.completion;
-  const completionDestination = completionModel
-    ? completionModel.provider === 'ollama-local' &&
-      /(?:[:/-].*cloud|cloud$)/i.test(completionModel.model)
-      ? 'Ollama Cloud via Local Ollama'
-      : AI_PROVIDERS[completionModel.provider].label
-    : null;
-  const [ollama, setOllama] = useState<OllamaLocalStatus | null>(null);
   const [message, setMessage] = useState('');
   const [updating, setUpdating] = useState(false);
-  const saveState = useAISaveState();
-  const drafts = useRef(new Map<AIProviderId, () => Promise<boolean>>());
-  const registerDraft = useCallback(
-    (provider: AIProviderId, save: (() => Promise<boolean>) | null) => {
-      if (save) drafts.current.set(provider, save);
-      else drafts.current.delete(provider);
-    },
-    [],
-  );
-  async function saveAll(): Promise<boolean> {
-    const results = await Promise.all([...drafts.current.values()].map((save) => save()));
-    await aiSavesSettled();
-    return results.every(Boolean);
-  }
-
-  const checkOllama = useCallback(async () => {
-    try {
-      const result = await window.textra.getOllamaStatus();
-      if (result.ok) setOllama(result.value);
-    } catch {
-      /* The card shows the last known status. */
-    }
-  }, []);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<AIProviderId | null>(null);
+  const [completionHealth, setCompletionHealth] = useState<{ status: string; error?: string }>({
+    status: 'idle',
+  });
   useEffect(() => {
-    if (!open) return;
-    void checkOllama();
-    const timer = window.setInterval(() => void checkOllama(), 4000);
-    return () => window.clearInterval(timer);
-  }, [open, checkOllama]);
-
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ status?: string; error?: string }>).detail;
+      if (detail && ['idle', 'loading', 'ready', 'paused', 'error'].includes(detail.status ?? '')) {
+        setCompletionHealth((current) =>
+          ['idle', 'loading'].includes(detail.status!) &&
+          ['paused', 'error'].includes(current.status)
+            ? current
+            : { status: detail.status!, error: detail.error },
+        );
+      }
+    };
+    window.addEventListener('textra-ai-completion-health', listener);
+    return () => window.removeEventListener('textra-ai-completion-health', listener);
+  }, []);
+  const saveState = useAISaveState();
   async function apply(action: () => Promise<Result<AISettings | null>>) {
     if (updating) return;
     setUpdating(true);
@@ -398,18 +593,76 @@ export function AISettingsDialog({
     try {
       const result = await trackAISave(action());
       if (result.ok && result.value) publishAISettings(result.value);
-      else if (result.ok) return;
-      else if (result.code === 'AI_CANCELLED') return;
-      else setMessage(result.error);
+      else if (!result.ok && result.code !== 'AI_CANCELLED') setMessage(result.error);
     } catch {
-      setMessage('Could not update AI settings. Please try again.');
+      setMessage('Could not update AI settings. Try again.');
     } finally {
       setUpdating(false);
     }
   }
-
+  function roleSelector(role: AIRole) {
+    if (!settings) return null;
+    const ref = settings.roleDefaults[role];
+    const unavailable = modelUnavailableReason(settings, ref, role);
+    return (
+      <div className="ai-role-row" key={role}>
+        <span>{LABELS[role]}</span>
+        <div className="ai-role-model">
+          <ModelPicker
+            settings={settings}
+            role={role}
+            label={`${LABELS[role]} model`}
+            value={settings.roleDefaults[role]}
+            disabled={updating}
+            placeholder="Not configured"
+            onChange={(model) => void apply(() => window.textra.setAIRoleDefault({ role, model }))}
+          />
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Clear ${LABELS[role]} model`}
+            disabled={updating || !settings.roleDefaults[role]}
+            onClick={() => void apply(() => window.textra.setAIRoleDefault({ role, model: null }))}
+          >
+            <X size={13} />
+          </button>
+        </div>
+        {unavailable && ref && (
+          <div className="ai-role-availability" role="status">
+            <span>{unavailable}</span>
+            {ref.provider !== 'codestral' && (
+              <button type="button" onClick={() => setEditing(ref.provider)}>
+                Edit provider
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+  const provider = editing
+    ? (settings?.providers.find((item) => item.id === editing) ?? {
+        id: editing,
+        configured: false,
+        defaultModel: null,
+        models: [],
+        modelsFetchedAt: null,
+        error: null,
+      })
+    : null;
+  const connections =
+    settings?.providers.filter((item) => item.id !== 'codestral' && item.configured) ?? [];
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) {
+          setAdding(false);
+          setEditing(null);
+        }
+        onOpenChange(value);
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay ai-settings-overlay" />
         <Dialog.Content className="ai-settings-dialog">
@@ -419,7 +672,7 @@ export function AISettingsDialog({
               <X size={18} />
             </Dialog.Close>
           </div>
-          <Dialog.Description>Connect a provider, then choose a model.</Dialog.Description>
+          <Dialog.Description>Choose models and manage your connections.</Dialog.Description>
           <div className="ai-settings-scroll">
             {error && (
               <div className="ai-settings-failure">
@@ -435,51 +688,18 @@ export function AISettingsDialog({
             {settings && (
               <>
                 <section className="ai-role-defaults" aria-label="Default models">
-                  <h3>Default models</h3>
+                  <h3>Models</h3>
+                  {(['chat', 'agent', 'inlineCompletion'] as const).map(roleSelector)}
                   <p className="ai-settings-note">
-                    Choose independently for each role. Chat and Agent choices in the workspace last
-                    until restart.
+                    Chat, Agent and Ctrl+I selections in the workspace are temporary until restart.
                   </p>
-                  {AI_ROLES.map((role) => (
-                    <div className="ai-settings-default" key={role}>
-                      <span>{ROLE_LABELS[role]}</span>
-                      <div className="ai-role-model">
-                        <ModelPicker
-                          settings={settings}
-                          role={role}
-                          label={`${ROLE_LABELS[role]} model`}
-                          value={settings.roleDefaults[role]}
-                          disabled={updating}
-                          placeholder="Not configured"
-                          onChange={(model) =>
-                            void apply(() => window.textra.setAIRoleDefault({ role, model }))
-                          }
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Clear ${ROLE_LABELS[role]} model`}
-                          disabled={updating || !settings.roleDefaults[role]}
-                          onClick={() =>
-                            void apply(() => window.textra.setAIRoleDefault({ role, model: null }))
-                          }
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
-                  ))}
                 </section>
                 <section className="ai-completion-settings" aria-label="Automatic completion">
-                  {completionDestination && (
-                    <p className="ai-settings-note">
-                      Automatic suggestions use {completionDestination}.
-                    </p>
-                  )}
-                  <label className="ai-auto-send">
+                  <label className="ai-check">
                     <input
                       type="checkbox"
                       checked={settings.completion.enabled}
-                      disabled={updating || !settings.roleDefaults.completion}
+                      disabled={updating}
                       onChange={(event) =>
                         void apply(() =>
                           window.textra.setAICompletionSettings({
@@ -489,53 +709,155 @@ export function AISettingsDialog({
                         )
                       }
                     />
-                    <span>
-                      Enable automatic completion
-                      <small>
-                        Suggest text as you type. Enabling asks permission to share nearby source
-                        with the selected model.
-                      </small>
-                    </span>
+                    <span>Enable automatic completion</span>
                   </label>
-                  <label className="ai-auto-send">
-                    <input
-                      type="checkbox"
-                      checked={settings.completion.allowOutsideEnvironments}
-                      disabled={updating}
-                      onChange={(event) =>
-                        void apply(() =>
-                          window.textra.setAICompletionSettings({
-                            enabled: settings.completion.enabled,
-                            allowOutsideEnvironments: event.target.checked,
-                          }),
-                        )
-                      }
-                    />
-                    <span>
-                      Allow automatic completion outside environments
-                      <small>Off by default. Ctrl+I requests inline completion manually.</small>
-                    </span>
-                  </label>
+                  {settings.completion.enabled && (
+                    <>
+                      {roleSelector('completion')}
+                      <label className="ai-check">
+                        <input
+                          type="checkbox"
+                          checked={settings.completion.allowOutsideEnvironments}
+                          disabled={updating}
+                          onChange={(event) =>
+                            void apply(() =>
+                              window.textra.setAICompletionSettings({
+                                enabled: settings.completion.enabled,
+                                allowOutsideEnvironments: event.target.checked,
+                              }),
+                            )
+                          }
+                        />
+                        Allow automatic completion in ordinary prose
+                      </label>
+                    </>
+                  )}
+                  <p className="ai-settings-note">
+                    Automatic suggestions use environments and math; ordinary prose stays quiet by
+                    default. Ctrl+I opens an inline edit prompt. Tab accepts completion ghost text;
+                    Escape dismisses it.
+                  </p>
+                  {settings.completion.enabled && settings.roleDefaults.completion && (
+                    <p className="ai-settings-note">
+                      Suggestions use{' '}
+                      {settings.roleDefaults.completion.provider === 'ollama-local' &&
+                      /cloud/i.test(settings.roleDefaults.completion.model)
+                        ? 'Ollama Cloud via Local Ollama'
+                        : AI_PROVIDERS[settings.roleDefaults.completion.provider].label}
+                      .
+                    </p>
+                  )}
+                  {['paused', 'error'].includes(completionHealth.status) && (
+                    <p className="ai-error" role="status">
+                      {completionHealth.error || 'Automatic suggestions are paused.'}
+                    </p>
+                  )}
+                  {['paused', 'error'].includes(completionHealth.status) && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => {
+                        setCompletionHealth({ status: 'idle' });
+                        window.dispatchEvent(new Event('textra-ai-completion-retry'));
+                      }}
+                    >
+                      Retry paused suggestions
+                    </button>
+                  )}
                 </section>
-                <h3>Providers</h3>
-                <div className="ai-provider-grid">
-                  {settings.providers
-                    .filter((provider) => !AI_PROVIDERS[provider.id].parent)
-                    .map((provider) => (
-                      <ProviderCard
-                        key={provider.id}
-                        provider={provider}
-                        settings={settings}
-                        ollama={ollama}
-                        onOllamaStatus={setOllama}
-                        registerDraft={registerDraft}
-                      />
+                <section aria-label="Provider connections">
+                  <div className="ai-connections-heading">
+                    <h3>Connections</h3>
+                    <button type="button" onClick={() => setAdding(true)}>
+                      <Plus size={13} />
+                      Add provider
+                    </button>
+                  </div>
+                  {!connections.length && <p className="ai-settings-note">No connections yet.</p>}
+                  <div className="ai-provider-connections">
+                    {connections.map((connection) => (
+                      <section
+                        key={connection.id}
+                        className="ai-provider-connection"
+                        aria-label={providerLabel(connection)}
+                      >
+                        <div className="ai-connection-main">
+                          <label className="ai-check">
+                            <input
+                              type="checkbox"
+                              role="switch"
+                              aria-label={`${providerLabel(connection)} enabled`}
+                              checked={connection.enabled !== false}
+                              disabled={updating}
+                              onChange={(event) =>
+                                void apply(() =>
+                                  window.textra.configureAIProvider({
+                                    provider: connection.id,
+                                    enabled: event.target.checked,
+                                    endpoint:
+                                      connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id],
+                                    displayName: connection.displayName,
+                                    defaultModel: connection.defaultModel,
+                                    filters: connection.filters ?? {
+                                      chat: allModels(),
+                                      completion: allModels(),
+                                    },
+                                    supportsTools: connection.supportsTools !== false,
+                                    manualModels: connection.manualModels ?? [],
+                                  }),
+                                )
+                              }
+                            />
+                            <span>{providerLabel(connection)}</span>
+                          </label>
+                          <div className="ai-connection-meta">
+                            <small>
+                              {connection.enabled === false
+                                ? 'Silenced'
+                                : `${modelGroups(settings, connection.id, 'chat')[0]?.models.length ?? 0} chat · ${modelGroups(settings, connection.id, 'completion')[0]?.models.length ?? 0} automatic`}
+                            </small>
+                            <small
+                              title={connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id]}
+                            >
+                              {connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id]}
+                            </small>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Edit ${providerLabel(connection)}`}
+                          onClick={() => setEditing(connection.id)}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Delete ${providerLabel(connection)}`}
+                          disabled={updating}
+                          onClick={() =>
+                            void apply(() =>
+                              window.textra.removeAIProvider({ provider: connection.id }),
+                            )
+                          }
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                        {connection.error && (
+                          <p className="ai-error" role="status">
+                            {connection.error}
+                          </p>
+                        )}
+                      </section>
                     ))}
-                </div>
-                <label className="ai-auto-send">
+                  </div>
+                </section>
+                <label className="ai-check ai-auto-send">
                   <input
                     type="checkbox"
                     checked={settings.autoSendProblems}
+                    disabled={updating}
                     onChange={(event) =>
                       void apply(() =>
                         window.textra.setAIAutoSend({ autoSendProblems: event.target.checked }),
@@ -546,13 +868,13 @@ export function AISettingsDialog({
                     Automatically send Problems prompts
                     <small>
                       Ask in Chat sends the selected error and nearby source immediately. Leave off
-                      to review before sending.
+                      to review first.
                     </small>
                   </span>
                 </label>
                 <p className="ai-settings-note">
-                  Keys are encrypted on this computer. Sent messages and source go to your chosen
-                  provider. Local-only models stay on this computer.
+                  Keys are encrypted locally. Requests go to the selected connection; local-only
+                  models stay on this computer.
                 </p>
                 {message && (
                   <p role="alert" className="ai-error">
@@ -565,29 +887,52 @@ export function AISettingsDialog({
           <SaveFooter
             state={saveState}
             error={
-              saveState === 'error' ? 'The last change was not saved. See the card above.' : null
+              saveState === 'error' ? 'A setting was not saved. Review the error above.' : null
             }
-            onSave={saveAll}
+            onSave={async () => {
+              await aiSavesSettled();
+              return currentAISaveState() !== 'error';
+            }}
             onClose={() => onOpenChange(false)}
           />
+          {adding && settings && (
+            <AddProvider
+              settings={settings}
+              onClose={() => setAdding(false)}
+              onPick={(id) => {
+                setAdding(false);
+                setEditing(id);
+              }}
+            />
+          )}
+          {provider && (
+            <ProviderEditor
+              key={provider.id}
+              provider={provider}
+              onClose={() => setEditing(null)}
+            />
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
   );
 }
 
-/** Settings-window entry point: a short summary and a button that opens the AI dialog. */
 export function AISettingsLauncher() {
   const [open, setOpen] = useState(false);
   const { settings } = useAISettings(true);
-  const connected = settings?.providers.filter((provider) => provider.configured) ?? [];
+  const connected =
+    settings?.providers.filter(
+      (provider) =>
+        provider.id !== 'codestral' && provider.configured && provider.enabled !== false,
+    ) ?? [];
   return (
     <section className="ai-settings-launcher">
       <h3>AI Chat</h3>
       <p className="setup-hint">
         {connected.length
-          ? `Connected: ${connected.map((provider) => AI_PROVIDERS[provider.id].label).join(', ')}.`
-          : 'No AI provider is connected yet. AI is optional; editing and compiling never need it.'}
+          ? `Connected: ${connected.map(providerLabel).join(', ')}.`
+          : 'AI is optional. Add a connection to get started.'}
       </p>
       <button type="button" onClick={() => setOpen(true)}>
         Configure AI providers…

@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { latexFoldingRanges } from './folding';
 import { minimalEditorScrollbars } from './scrollbars';
 import FormattingToolbar from './FormattingToolbar';
-import { installAICompletion, type CompletionView } from './ai-completion';
+import { installAICompletion } from './ai-completion';
+import { installInlineEdit } from './inline-edit';
 import { isLatexSuggestionContext } from '../../../../shared/latex-completion';
-import { ModelPicker } from '../chat/ModelPicker';
 import { useAISettings } from '../chat/useAISettings';
-import { useAIRoleSelection } from '../../state/ai-role-selections';
+import { useAIRoleSelection, useAIRoleSelections } from '../../state/ai-role-selections';
 import './ai-completion.css';
 // editor.api.js does not load the icon font that Monaco's widgets (find, suggest) use, and the
 // package exports map cannot address a .css file, so import it by path.
@@ -548,20 +548,12 @@ export function SourceEditor({
   const views = useRef(new Map<string, monaco.editor.ICodeEditorViewState>());
   const current = useRef<string | null>(null);
   const aiCompletion = useRef<ReturnType<typeof installAICompletion> | null>(null);
-  const regenerateOnModelChange = useRef(false);
+  const inlineEdit = useRef<ReturnType<typeof installInlineEdit> | null>(null);
   const { settings: aiSettings } = useAISettings();
   const activeDocument = documents.find((document) => document.path === activePath);
   const inlineModel = useAIRoleSelection(activeDocument?.projectId, 'inlineCompletion', aiSettings);
   const aiState = useRef({ settings: aiSettings, model: inlineModel.model });
   aiState.current = { settings: aiSettings, model: inlineModel.model };
-  const [completionView, setCompletionView] = useState<CompletionView>({
-    visible: false,
-    manual: false,
-    status: '',
-    ready: false,
-    top: 0,
-    left: 0,
-  });
   const documentsRef = useRef(documents);
   const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
   const bibliographyEntriesRef = useRef(bibliographyEntries);
@@ -635,7 +627,24 @@ export function SourceEditor({
           ? { document, settings: aiState.current.settings, manualModel: aiState.current.model }
           : null;
       },
-      setCompletionView,
+      () => {},
+    );
+    inlineEdit.current = installInlineEdit(
+      instance,
+      () => {
+        const document = documentsRef.current.find((item) => item.path === current.current);
+        return document
+          ? { document, settings: aiState.current.settings, model: aiState.current.model }
+          : null;
+      },
+      (ref) => {
+        const projectId = documentsRef.current.find(
+          (item) => item.path === current.current,
+        )?.projectId;
+        useAIRoleSelections.getState().select(projectId, 'inlineCompletion', ref);
+        aiState.current.model = ref;
+      },
+      () => aiCompletion.current?.dismiss(),
     );
     const applyAgentEdit = (event: Event) => {
       const proposal = (event as CustomEvent<AIEditProposal>).detail;
@@ -1154,6 +1163,8 @@ export function SourceEditor({
     });
     const retainedModels = models.current;
     return () => {
+      inlineEdit.current?.dispose();
+      inlineEdit.current = null;
       aiCompletion.current?.dispose();
       aiCompletion.current = null;
       window.removeEventListener('textra:replace-source', replaceSource);
@@ -1184,13 +1195,11 @@ export function SourceEditor({
   }, []);
   useEffect(() => {
     aiCompletion.current?.configurationChanged();
-    if (regenerateOnModelChange.current) {
-      regenerateOnModelChange.current = false;
-      void aiCompletion.current?.request();
-    }
+    inlineEdit.current?.configurationChanged();
   }, [aiSettings, inlineModel.model?.provider, inlineModel.model?.model]);
   useEffect(() => {
     aiCompletion.current?.invalidate();
+    inlineEdit.current?.invalidate();
   }, [activePath, activeDocument?.projectId, activeDocument?.conflict, readOnly, aiSuppressed]);
   useEffect(() => {
     const instance = editor.current;
@@ -1315,59 +1324,6 @@ export function SourceEditor({
         <EditorFormattingToolbar disabled={readOnly || !isTexPath(activePath)} />
       )}
       <div ref={container} className="source-editor" data-testid="source-editor" />
-      {completionView.visible && (
-        <div
-          className="ai-completion-toolbar"
-          style={{
-            top: completionView.top + (formatToolbarVisible ? 39 : 0),
-            left: completionView.left,
-          }}
-          aria-label={completionView.manual ? 'Inline AI completion' : 'Automatic AI completion'}
-        >
-          {completionView.manual && (
-            <ModelPicker
-              settings={aiSettings}
-              value={inlineModel.model}
-              role="inlineCompletion"
-              variant="compact"
-              label="Ctrl+I completion model"
-              onChange={(ref) => {
-                if (
-                  inlineModel.model?.provider === ref.provider &&
-                  inlineModel.model.model === ref.model
-                ) {
-                  regenerateOnModelChange.current = false;
-                  void aiCompletion.current?.request();
-                  return;
-                }
-                regenerateOnModelChange.current = true;
-                inlineModel.selectModel(ref);
-              }}
-            />
-          )}
-          <span role="status">{completionView.status || 'Tab to accept'}</span>
-          {completionView.manual && (
-            <button type="button" onClick={() => void aiCompletion.current?.request()}>
-              Regenerate
-            </button>
-          )}
-          {!completionView.manual && completionView.status.includes('paused') && (
-            <button type="button" onClick={() => aiCompletion.current?.retry()}>
-              Retry
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={!completionView.ready}
-            onClick={() => aiCompletion.current?.accept()}
-          >
-            Accept
-          </button>
-          <button type="button" onClick={() => aiCompletion.current?.dismiss()}>
-            Dismiss
-          </button>
-        </div>
-      )}
       <div className="editor-status-bar" role="status" aria-label="Editor status">
         <div className="editor-status-left">
           <button

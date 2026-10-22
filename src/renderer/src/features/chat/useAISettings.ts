@@ -5,6 +5,7 @@ import {
   AI_PROVIDERS,
   sameModel,
   supportsAIRole,
+  isModelVisible,
   type AIRole,
   type AIModelInfo,
   type AIModelRef,
@@ -64,22 +65,56 @@ export function modelGroups(
 ): ModelGroup[] {
   if (!settings) return [];
   return settings.providers
-    .filter((provider) => provider.configured && provider.models.length)
+    .filter(
+      (provider) =>
+        provider.configured &&
+        provider.enabled !== false &&
+        provider.id !== 'codestral' &&
+        provider.models.length,
+    )
     .filter((provider) => !only || provider.id === only)
     .map((provider) => ({
       provider: provider.id,
-      label: AI_PROVIDERS[provider.id].label,
+      label: provider.displayName || AI_PROVIDERS[provider.id].label,
       defaultModel: provider.defaultModel,
-      models: provider.models.filter((model) => !role || supportsAIRole(model, role)),
+      models: provider.models.filter(
+        (model) =>
+          (!role || supportsAIRole(model, role)) &&
+          isModelVisible(
+            provider.filters?.[role === 'completion' ? 'completion' : 'chat'],
+            model.id,
+          ) &&
+          (role !== 'agent' || provider.supportsTools !== false),
+      ),
     }))
     .filter((group) => group.models.length);
 }
 
-export function findModel(settings: AISettings | null, ref: AIModelRef | null) {
-  if (!settings || !ref) return null;
+export function modelUnavailableReason(
+  settings: AISettings | null,
+  ref: AIModelRef | null,
+  role?: AIRole,
+): string | null {
+  if (!ref || !settings) return null;
   const provider = settings.providers.find((item) => item.id === ref.provider);
-  if (!provider?.configured) return null;
-  return provider.models.find((model) => model.id === ref.model) ?? null;
+  if (!provider?.configured) return 'This connection has been removed.';
+  if (provider.id === 'codestral') return 'Use the Mistral connection for this model.';
+  if (provider.enabled === false) return 'This connection is silenced.';
+  const model = provider.models.find((item) => item.id === ref.model);
+  if (!model) return 'This model is missing from the connection’s catalog.';
+  if (role === 'agent' && provider.supportsTools === false)
+    return 'Tool calls are disabled for this connection.';
+  if (role && !supportsAIRole(model, role)) return 'This model does not support this role.';
+  if (!isModelVisible(provider.filters?.[role === 'completion' ? 'completion' : 'chat'], model.id))
+    return 'This model is hidden for this role.';
+  return null;
+}
+
+export function findModel(settings: AISettings | null, ref: AIModelRef | null, role?: AIRole) {
+  if (!settings || !ref) return null;
+  if (modelUnavailableReason(settings, ref, role)) return null;
+  const provider = settings.providers.find((item) => item.id === ref.provider);
+  return provider?.models.find((model) => model.id === ref.model) ?? null;
 }
 
 export function isDefaultModel(
@@ -92,9 +127,15 @@ export function isDefaultModel(
 
 const AI_SAVE_STATE = 'textra-ai-save-state';
 let inflight = 0;
+let latestSaveState: SaveState = 'idle';
 let settledWaiters: Array<() => void> = [];
 function emitSave(state: SaveState): void {
+  latestSaveState = state;
   window.dispatchEvent(new CustomEvent<SaveState>(AI_SAVE_STATE, { detail: state }));
+}
+
+export function currentAISaveState(): SaveState {
+  return latestSaveState;
 }
 
 /** Wraps a settings write so the dialog footer can show Saving… and Saved. */
@@ -130,7 +171,7 @@ export function aiSavesSettled(): Promise<void> {
 }
 
 export function useAISaveState(): SaveState {
-  const [state, setState] = useState<SaveState>('idle');
+  const [state, setState] = useState<SaveState>(latestSaveState);
   useEffect(() => {
     const listener = (event: Event) => setState((event as CustomEvent<SaveState>).detail);
     window.addEventListener(AI_SAVE_STATE, listener);

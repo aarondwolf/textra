@@ -47,6 +47,7 @@ import { LanguageService } from './services/language';
 import { TexlabManager } from './services/texlab-manager';
 import { TexlabError } from './services/texlab';
 import { AIError, AIService, validateCompletionRequest } from './services/ai-service';
+import { AIInlineEditService, validateInlineEditRequest } from './services/ai-inline-edit';
 import { BoundedAgentService } from './services/agent';
 import { AgentWorkspaceService } from './services/agent-workspace';
 import { AI_PROVIDERS, isAIProviderId } from '../shared/ai';
@@ -79,22 +80,33 @@ const ai = new AIService(
     decrypt: (value) => safeStorage.decryptString(value),
   },
   {
-    confirmAutomatic: async (model) => {
+    onCompletionDiagnostic: (diagnostic) => {
+      if (diagnostic.normalization === 'failed') log('warn', 'ai-completion-failed', diagnostic);
+    },
+    confirmAutomatic: async (model, endpoint) => {
       const info = AI_PROVIDERS[model.provider];
       const answer = await dialog.showMessageBox(requireWindow(), {
         type: 'question',
         title: 'Enable automatic AI suggestions?',
         message: 'Allow automatic suggestions from ' + info.label + ' / ' + model.model + '?',
         detail:
-          (info.local
-            ? /cloud/i.test(model.model)
-              ? 'Destination: Ollama Cloud through the local Ollama server.'
-              : 'Destination: local Ollama on this computer.'
-            : 'Destination: ' +
-              info.label +
+          (endpoint
+            ? 'Destination: ' +
+              endpoint +
               (model.provider === 'openrouter'
                 ? ' and the selected downstream model provider.'
-                : '.')) +
+                : model.provider === 'ollama-local' && /cloud/i.test(model.model)
+                  ? ' (Ollama Cloud through this server).'
+                  : '.')
+            : info.local
+              ? /cloud/i.test(model.model)
+                ? 'Destination: Ollama Cloud through the local Ollama server.'
+                : 'Destination: local Ollama on this computer.'
+              : 'Destination: ' +
+                info.label +
+                (model.provider === 'openrouter'
+                  ? ' and the selected downstream model provider.'
+                  : '.')) +
           ' After typing pauses, TeXtra sends up to 8,000 characters before the cursor, 2,000 after it, and 2,000 characters of metadata from the active file. Suggestions are never inserted automatically.',
         buttons: ['Cancel', 'Allow automatic suggestions'],
         defaultId: 0,
@@ -106,6 +118,7 @@ const ai = new AIService(
   },
 );
 const projects = new ProjectService(app.getPath('userData'));
+const inlineEdits = new AIInlineEditService(ai);
 const agent = new BoundedAgentService(ai);
 const agentWorkspace = new AgentWorkspaceService(projects, agent);
 const aiChats = new AIChatStore(join(app.getPath('userData'), 'ai-chats'), (id) =>
@@ -210,7 +223,8 @@ function handle<T>(
       // Raw errors can contain local paths or private preference data.
       const result = errorResult(error);
       const expectedCompletionStop =
-        channel === 'textra:ai:completion:request' &&
+        (channel === 'textra:ai:completion:request' ||
+          channel === 'textra:ai:inline-edit:request') &&
         (result.code === 'AI_CANCELLED' || result.code === 'AI_BUSY');
       if (!expectedCompletionStop)
         log('warn', 'ipc-request-failed', { channel, code: result.code });
@@ -324,6 +338,17 @@ void app.whenReady().then(() => {
     platform: process.platform,
   }));
   handle('textra:ai:settings', 0, () => ai.settings());
+  handleRequest<'configureAIProvider'>('textra:ai:provider:configure', (request) =>
+    ai.configureProvider(request),
+  );
+  handleRequest<'requestAIInlineEdit'>('textra:ai:inline-edit:request', async (request) => {
+    validateInlineEditRequest(request);
+    await projects.resolvePath({ projectId: request.projectId, path: request.path });
+    return inlineEdits.request(request);
+  });
+  handleRequest<'cancelAIInlineEdit'>('textra:ai:inline-edit:cancel', (request) =>
+    inlineEdits.cancel(request),
+  );
   handleRequest<'saveAIProvider'>('textra:ai:provider:save', (request) => ai.saveProvider(request));
   handleRequest<'removeAIProvider'>('textra:ai:provider:remove', async (request) => {
     const provider = request && isAIProviderId(request.provider) ? request.provider : null;
@@ -332,12 +357,11 @@ void app.whenReady().then(() => {
     const answer = await dialog.showMessageBox(requireWindow(), {
       type: 'question',
       title: `Remove ${info.label}?`,
-      message: info.needsKey
-        ? `Remove the saved ${info.label} API key from TeXtra?`
-        : `Stop using ${info.label} in TeXtra?`,
-      detail: info.needsKey
-        ? 'Its models leave the model list. This removes the local copy; it does not revoke the key with the provider.'
-        : 'Its models leave the model list. Ollama itself and your downloaded models are not affected.',
+      message: `Remove the ${info.label} connection from TeXtra?`,
+      detail:
+        provider === 'ollama-local'
+          ? 'Its models leave the model list. Ollama itself and your downloaded models are not affected.'
+          : 'Its models and role bindings are removed. Any saved API key is deleted locally; it is not revoked with the provider.',
       buttons: ['Cancel', 'Remove'],
       defaultId: 0,
       cancelId: 0,

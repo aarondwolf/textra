@@ -59,6 +59,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
       'acceptAIAgentProposal',
       'cancelAICompletion',
+      'cancelAIInlineEdit',
       'cancelAIMessage',
       'cancelBuild',
       'checkTexlab',
@@ -67,6 +68,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'cleanProjectBuildArtifacts',
       'closeTexlabDocument',
       'compile',
+      'configureAIProvider',
       'copyEntryPath',
       'copyText',
       'createConflictCopy',
@@ -107,6 +109,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'removeAIProvider',
       'renameEntry',
       'requestAICompletion',
+      'requestAIInlineEdit',
       'revealEntry',
       'reviewAIAgentProposal',
       'runAIAgent',

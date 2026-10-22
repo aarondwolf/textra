@@ -1,4 +1,4 @@
-import { GoogleGenAI, type Content, type Part } from '@google/genai';
+import type { GoogleGenAI, Content, Part } from '@google/genai';
 import type { AIMessage } from '../../shared/api';
 import {
   OLLAMA_LOCAL_URL,
@@ -7,6 +7,7 @@ import {
   type AIProviderId,
 } from '../../shared/ai';
 import { cleanModelList, hasTextOutput, isTextModelId } from './ai-models';
+import { validateAIEndpoint } from './ai-endpoints';
 
 /**
  * Wire-format adapters. Each provider speaks its own protocol: Gemini uses
@@ -19,6 +20,9 @@ export interface ProviderAccess {
   provider: AIProviderId;
   /** Decrypted key, or null for local Ollama. Never logged. */
   key: string | null;
+  /** Main-validated base URL; configuration never triggers a network request. */
+  endpoint?: string;
+  supportsTools?: boolean;
 }
 export interface ChatRequest {
   system: string;
@@ -31,6 +35,7 @@ export interface ChatRequest {
   exactTokenBudget?: boolean;
   /** Only insertion completions impose a line boundary on streamed chat output. */
   maxOutputLines?: number;
+  onFinishReason?: (reason: string) => void;
 }
 export interface ToolSpec {
   name: string;
@@ -80,7 +85,11 @@ const COMPATIBLE_URLS = {
   deepseek: 'https://api.deepseek.com',
   openrouter: 'https://openrouter.ai/api/v1',
 } as const;
-function compatibleBase(provider: AIProviderId): string {
+function compatibleBase(access: ProviderAccess): string {
+  if (access.endpoint) return validateAIEndpoint(access.endpoint);
+  const provider = access.provider;
+  if (provider === 'custom')
+    throw new ProviderHTTPError(400, 'Configure the custom provider base URL.');
   if (
     provider === 'openai' ||
     provider === 'mistral' ||
@@ -113,13 +122,18 @@ function requireKey(access: ProviderAccess): string {
   if (!access.key) throw new ProviderHTTPError(401, 'An API key is required.');
   return access.key;
 }
-function ollamaBase(provider: AIProviderId): string {
-  return provider === 'ollama-local' ? OLLAMA_LOCAL_URL : OLLAMA_CLOUD_URL;
+function ollamaBase(access: ProviderAccess): string {
+  return access.endpoint
+    ? validateAIEndpoint(access.endpoint)
+    : access.provider === 'ollama-local'
+      ? OLLAMA_LOCAL_URL
+      : OLLAMA_CLOUD_URL;
 }
 function headers(access: ProviderAccess): Record<string, string> {
   const result: Record<string, string> = { 'content-type': 'application/json' };
   if (access.provider in COMPATIBLE_URLS || access.provider === 'ollama-cloud')
     result.authorization = `Bearer ${requireKey(access)}`;
+  if (access.provider === 'custom' && access.key) result.authorization = `Bearer ${access.key}`;
   if (access.provider === 'openrouter') result['X-OpenRouter-Title'] = 'TeXtra';
   if (access.provider === 'anthropic') {
     result['x-api-key'] = requireKey(access);
@@ -276,7 +290,11 @@ export async function listModels(
       for (let page = 0; page < 5; page++) {
         const query = new URLSearchParams({ pageSize: '1000' });
         if (pageToken) query.set('pageToken', pageToken);
-        const value = await json(`${GOOGLE_URL}v1beta/models?${query}`, access, signal);
+        const value = await json(
+          `${access.endpoint ? validateAIEndpoint(access.endpoint) : GOOGLE_URL.replace(/\/$/, '')}/v1beta/models?${query}`,
+          access,
+          signal,
+        );
         for (const item of Array.isArray(value.models) ? value.models : []) {
           if (!record(item) || typeof item.name !== 'string') continue;
           const methods = Array.isArray(item.supportedGenerationMethods)
@@ -302,8 +320,9 @@ export async function listModels(
     case 'openai':
     case 'mistral':
     case 'codestral':
+    case 'custom':
     case 'deepseek': {
-      const value = await json(`${compatibleBase(access.provider)}/models`, access, signal);
+      const value = await json(`${compatibleBase(access)}/models`, access, signal);
       const data = Array.isArray(value.data) ? value.data : [];
       return sortByLabel(
         cleanModelList(
@@ -344,7 +363,7 @@ export async function listModels(
     case 'openrouter': {
       // The public catalogue does not validate keys or respect account preferences.
       const value = await json(
-        `${compatibleBase(access.provider)}/models/user?output_modalities=text`,
+        `${compatibleBase(access)}/models/user?output_modalities=text`,
         access,
         signal,
       );
@@ -368,7 +387,11 @@ export async function listModels(
       );
     }
     case 'anthropic': {
-      const value = await json(`${ANTHROPIC_URL}/models?limit=1000`, access, signal);
+      const value = await json(
+        `${access.endpoint ? validateAIEndpoint(access.endpoint) : ANTHROPIC_URL}/models?limit=1000`,
+        access,
+        signal,
+      );
       const data = Array.isArray(value.data) ? value.data : [];
       return cleanModelList(
         access.provider,
@@ -387,7 +410,7 @@ export async function listModels(
     }
     case 'ollama-cloud':
     case 'ollama-local': {
-      const value = await json(`${ollamaBase(access.provider)}/api/tags`, access, signal);
+      const value = await json(`${ollamaBase(access)}/api/tags`, access, signal);
       const data = Array.isArray(value.models) ? value.models : [];
       const candidates = cleanModelList(
         access.provider,
@@ -402,12 +425,9 @@ export async function listModels(
         const batch = await Promise.all(
           candidates.slice(index, index + 4).map(async (model) => {
             try {
-              const details = await json(
-                `${ollamaBase(access.provider)}/api/show`,
-                access,
-                signal,
-                { model: model.id },
-              );
+              const details = await json(`${ollamaBase(access)}/api/show`, access, signal, {
+                model: model.id,
+              });
               if (
                 Array.isArray(details.capabilities) &&
                 !details.capabilities.includes('completion')
@@ -456,12 +476,13 @@ export async function ollamaVersion(signal: AbortSignal): Promise<string | null>
 
 // ----- Conversational chat (streamed) -----
 
-function googleClient(access: ProviderAccess): GoogleGenAI {
+async function googleClient(access: ProviderAccess): Promise<GoogleGenAI> {
+  const { GoogleGenAI } = await import('@google/genai');
   return new GoogleGenAI({
     apiKey: requireKey(access),
     vertexai: false,
     httpOptions: {
-      baseUrl: GOOGLE_URL,
+      baseUrl: access.endpoint ? validateAIEndpoint(access.endpoint) + '/' : GOOGLE_URL,
       timeout: 120_000,
       retryOptions: { attempts: 1 },
       fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }),
@@ -478,7 +499,9 @@ export async function streamChat(
   const { signal } = chat;
   switch (access.provider) {
     case 'google': {
-      const stream = await googleClient(access).models.generateContentStream({
+      const stream = await (
+        await googleClient(access)
+      ).models.generateContentStream({
         model,
         contents: chat.messages.map(({ role, text }) => ({ role, parts: [{ text }] })),
         config: {
@@ -490,6 +513,8 @@ export async function streamChat(
       });
       for await (const chunk of stream) {
         signal.throwIfAborted();
+        const reason = chunk.candidates?.[0]?.finishReason;
+        if (reason) chat.onFinishReason?.(reason);
         if (output.add(chunk.text)) break;
       }
       return output.text;
@@ -498,47 +523,56 @@ export async function streamChat(
     case 'mistral':
     case 'codestral':
     case 'openrouter':
+    case 'custom':
     case 'deepseek': {
-      const response = await request(
-        `${compatibleBase(access.provider)}/chat/completions`,
-        access,
-        signal,
-        {
-          model,
-          stream: true,
-          ...completionLimit(access, chat.maxTokens, chat.exactTokenBudget),
-          ...routingOptions(access),
-          messages: [
-            { role: 'system', content: chat.system },
-            ...chat.messages.map(({ role, text }) => ({
-              role: role === 'model' ? 'assistant' : 'user',
-              content: text,
-            })),
-          ],
-        },
-      );
+      const response = await request(`${compatibleBase(access)}/chat/completions`, access, signal, {
+        model,
+        stream: true,
+        ...completionLimit(access, chat.maxTokens, chat.exactTokenBudget),
+        ...routingOptions(access),
+        messages: [
+          { role: 'system', content: chat.system },
+          ...chat.messages.map(({ role, text }) => ({
+            role: role === 'model' ? 'assistant' : 'user',
+            content: text,
+          })),
+        ],
+      });
       for await (const event of sse(response, signal)) {
         if (!record(event)) continue;
         if (record(event.error))
           throw new ProviderHTTPError(500, String(event.error.message ?? 'Stream error.'));
         const choice = Array.isArray(event.choices) ? event.choices[0] : undefined;
+        if (record(choice) && typeof choice.finish_reason === 'string')
+          chat.onFinishReason?.(choice.finish_reason);
         if (record(choice) && record(choice.delta) && output.add(choice.delta.content)) break;
       }
       return output.text;
     }
     case 'anthropic': {
-      const response = await request(`${ANTHROPIC_URL}/messages`, access, signal, {
-        model,
-        stream: true,
-        max_tokens: chat.maxTokens,
-        system: chat.system,
-        messages: chat.messages.map(({ role, text }) => ({
-          role: role === 'model' ? 'assistant' : 'user',
-          content: text,
-        })),
-      });
+      const response = await request(
+        `${access.endpoint ? validateAIEndpoint(access.endpoint) : ANTHROPIC_URL}/messages`,
+        access,
+        signal,
+        {
+          model,
+          stream: true,
+          max_tokens: chat.maxTokens,
+          system: chat.system,
+          messages: chat.messages.map(({ role, text }) => ({
+            role: role === 'model' ? 'assistant' : 'user',
+            content: text,
+          })),
+        },
+      );
       for await (const event of sse(response, signal)) {
         if (!record(event)) continue;
+        if (
+          event.type === 'message_delta' &&
+          record(event.delta) &&
+          typeof event.delta.stop_reason === 'string'
+        )
+          chat.onFinishReason?.(event.delta.stop_reason);
         if (event.type === 'error')
           throw new ProviderHTTPError(
             record(event.error) && event.error.type === 'overloaded_error' ? 529 : 500,
@@ -556,7 +590,7 @@ export async function streamChat(
     }
     case 'ollama-cloud':
     case 'ollama-local': {
-      const response = await request(`${ollamaBase(access.provider)}/api/chat`, access, signal, {
+      const response = await request(`${ollamaBase(access)}/api/chat`, access, signal, {
         model,
         stream: true,
         ...(chat.exactTokenBudget ? { keep_alive: '5m' } : {}),
@@ -578,6 +612,7 @@ export async function streamChat(
           continue;
         }
         if (!record(event)) continue;
+        if (typeof event.done_reason === 'string') chat.onFinishReason?.(event.done_reason);
         if (typeof event.error === 'string') throw new ProviderHTTPError(500, event.error);
         if (record(event.message) && output.add(event.message.content)) break;
         if (event.done === true) break;
@@ -598,6 +633,7 @@ export interface CompletionGenerateRequest {
   metadata: string;
   maxTokens: number;
   maxLines?: number;
+  onResultMeta?: (metadata: { finishReason: string }) => void;
   signal: AbortSignal;
   transport: AICompletionTransport;
 }
@@ -624,7 +660,7 @@ export async function completionGenerate(
   if (completion.transport === 'mistral-fim') {
     if (access.provider !== 'mistral' && access.provider !== 'codestral')
       throw new ProviderHTTPError(400, 'This provider does not support Mistral FIM.');
-    const value = await json(`${compatibleBase(access.provider)}/fim/completions`, access, signal, {
+    const value = await json(`${compatibleBase(access)}/fim/completions`, access, signal, {
       model,
       prompt: prefix,
       suffix,
@@ -632,6 +668,8 @@ export async function completionGenerate(
       stream: false,
     });
     const choice = Array.isArray(value.choices) ? value.choices[0] : undefined;
+    if (record(choice) && typeof choice.finish_reason === 'string')
+      completion.onResultMeta?.({ finishReason: choice.finish_reason });
     if (record(choice) && record(choice.message) && typeof choice.message.content === 'string')
       return limitCompletionLines(choice.message.content, maxLines).text;
     throw new ProviderHTTPError(502, 'The provider returned an invalid FIM response.');
@@ -639,7 +677,7 @@ export async function completionGenerate(
   if (completion.transport === 'ollama-generate') {
     if (access.provider !== 'ollama-local')
       throw new ProviderHTTPError(400, 'Native Ollama completion requires a local verified model.');
-    const response = await request(`${OLLAMA_LOCAL_URL}/api/generate`, access, signal, {
+    const response = await request(`${ollamaBase(access)}/api/generate`, access, signal, {
       model,
       prompt: prefix,
       suffix,
@@ -661,6 +699,8 @@ export async function completionGenerate(
         continue;
       }
       if (!record(event)) continue;
+      if (typeof event.done_reason === 'string')
+        completion.onResultMeta?.({ finishReason: event.done_reason });
       if (typeof event.error === 'string') throw new ProviderHTTPError(500, event.error);
       if (typeof event.response === 'string') text += event.response;
       if (suffixStop) {
@@ -686,6 +726,7 @@ export async function completionGenerate(
     maxTokens,
     exactTokenBudget: true,
     maxOutputLines: maxLines,
+    onFinishReason: (finishReason) => completion.onResultMeta?.({ finishReason }),
     signal,
   });
 }
@@ -750,7 +791,9 @@ async function googleTurn(
   model: string,
   agent: AgentRequest,
 ): Promise<AgentTurn> {
-  const response = await googleClient(access).models.generateContent({
+  const response = await (
+    await googleClient(access)
+  ).models.generateContent({
     model,
     contents: toGoogleContents(agent.items),
     config: {
@@ -815,21 +858,16 @@ async function compatibleTurn(
           content: JSON.stringify(result.result),
         });
   }
-  const value = await json(
-    `${compatibleBase(access.provider)}/chat/completions`,
-    access,
-    agent.signal,
-    {
-      model,
-      messages,
-      ...completionLimit(access, agent.maxTokens),
-      ...routingOptions(access),
-      tools: agent.tools.map(({ name, description, parameters }) => ({
-        type: 'function',
-        function: { name, description, parameters },
-      })),
-    },
-  );
+  const value = await json(`${compatibleBase(access)}/chat/completions`, access, agent.signal, {
+    model,
+    messages,
+    ...completionLimit(access, agent.maxTokens),
+    ...routingOptions(access),
+    tools: agent.tools.map(({ name, description, parameters }) => ({
+      type: 'function',
+      function: { name, description, parameters },
+    })),
+  });
   const choice = Array.isArray(value.choices) ? value.choices[0] : undefined;
   const message = record(choice) && record(choice.message) ? choice.message : {};
   const calls: ToolCall[] = (Array.isArray(message.tool_calls) ? message.tool_calls : [])
@@ -877,17 +915,22 @@ async function anthropicTurn(
       })),
     };
   });
-  const value = await json(`${ANTHROPIC_URL}/messages`, access, agent.signal, {
-    model,
-    max_tokens: agent.maxTokens,
-    system: agent.system,
-    messages,
-    tools: agent.tools.map(({ name, description, parameters }) => ({
-      name,
-      description,
-      input_schema: parameters,
-    })),
-  });
+  const value = await json(
+    `${access.endpoint ? validateAIEndpoint(access.endpoint) : ANTHROPIC_URL}/messages`,
+    access,
+    agent.signal,
+    {
+      model,
+      max_tokens: agent.maxTokens,
+      system: agent.system,
+      messages,
+      tools: agent.tools.map(({ name, description, parameters }) => ({
+        name,
+        description,
+        input_schema: parameters,
+      })),
+    },
+  );
   const blocks = (Array.isArray(value.content) ? value.content : []).filter(record);
   let text = '';
   const calls: ToolCall[] = [];
@@ -931,7 +974,7 @@ async function ollamaTurn(
           content: JSON.stringify(result.result),
         });
   }
-  const value = await json(`${ollamaBase(access.provider)}/api/chat`, access, agent.signal, {
+  const value = await json(`${ollamaBase(access)}/api/chat`, access, agent.signal, {
     model,
     stream: false,
     messages,
@@ -956,6 +999,8 @@ export async function agentTurn(
   model: string,
   agent: AgentRequest,
 ): Promise<AgentTurn> {
+  if (access.supportsTools === false)
+    throw new ProviderHTTPError(400, 'Tool calling is disabled for this provider.');
   switch (access.provider) {
     case 'google':
       return googleTurn(access, model, agent);
@@ -963,6 +1008,7 @@ export async function agentTurn(
     case 'mistral':
     case 'codestral':
     case 'openrouter':
+    case 'custom':
     case 'deepseek':
       return compatibleTurn(access, model, agent);
     case 'anthropic':

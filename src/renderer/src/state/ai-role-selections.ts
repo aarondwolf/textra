@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useEffect } from 'react';
 import type { AISettings } from '../../../shared/api';
-import { supportsAIRole, type AIModelRef, type AIRole } from '../../../shared/ai';
+import { isModelVisible, supportsAIRole, type AIModelRef, type AIRole } from '../../../shared/ai';
 
 type WorkspaceSelections = Partial<Record<AIRole, AIModelRef | null>>;
 export const useAIRoleSelections = create<{
@@ -21,12 +21,7 @@ export const useAIRoleSelections = create<{
             const provider = settings.providers.find(
               (item) => item.id === ref?.provider && item.configured,
             );
-            if (
-              ref &&
-              !provider?.models.some(
-                (model) => model.id === ref.model && supportsAIRole(model, role),
-              )
-            ) {
+            if (ref && !provider) {
               next[role] = null;
               changed = true;
             }
@@ -55,11 +50,18 @@ function resolve(
   const info = provider?.configured
     ? provider.models.find((item) => item.id === model?.model)
     : null;
-  const available = Boolean(info && supportsAIRole(info, role));
-  return { model: available ? model : null, available };
+  const rule = provider?.filters?.[role === 'completion' ? 'completion' : 'chat'];
+  const available = Boolean(
+    provider?.enabled !== false &&
+    info &&
+    supportsAIRole(info, role) &&
+    isModelVisible(rule, info.id) &&
+    (role !== 'agent' || provider?.supportsTools !== false),
+  );
+  return { model, available };
 }
 
-/** Session-only workspace choices. Removed models clear rather than silently revive. */
+/** Session-only workspace choices. Unavailable bindings remain visible without fallback. */
 export function getAIRoleSelection(
   workspaceId: string | null | undefined,
   role: AIRole,

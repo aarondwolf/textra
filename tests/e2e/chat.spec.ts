@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import type { AIMessage, AISettings, BuildRequest, BuildState, Result } from '../../src/shared/api';
-import type { AIStoredChat } from '../../src/shared/ai';
+import type { AIProviderConfiguration, AIStoredChat } from '../../src/shared/ai';
 
 interface ChatTestState {
   settings: AISettings;
@@ -124,6 +124,8 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       for (const name of [
         'settings',
         'provider:save',
+        'provider:configure',
+        'models:refresh',
         'provider:remove',
         'auto-send',
         'ollama:status',
@@ -157,30 +159,29 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
         state.copiedText = text;
         return { ok: true, value: undefined };
       });
-      ipcMain.handle('textra:ai:provider:save', (_event, request: { provider: string }) => {
-        if (request.provider === 'codestral') {
-          state.settings = {
-            ...state.settings,
-            configured: true,
-            roleDefaults: {
-              chat: null,
-              agent: null,
-              completion: { provider: 'codestral', model: 'codestral-latest' },
-              inlineCompletion: { provider: 'codestral', model: 'codestral-latest' },
-            },
-            providers: state.settings.providers.map((provider) =>
-              provider.id === 'codestral'
-                ? {
-                    ...provider,
-                    configured: true,
-                    defaultModel: 'codestral-latest',
-                    models: [{ id: 'codestral-latest', label: 'Codestral' }],
-                  }
-                : provider,
-            ),
-          };
-          return { ok: true, value: state.settings };
-        }
+      ipcMain.handle('textra:ai:provider:configure', (_event, request: AIProviderConfiguration) => {
+        state.settings = {
+          ...state.settings,
+          providers: state.settings.providers.map((provider) =>
+            provider.id === request.provider
+              ? {
+                  ...provider,
+                  configured: true,
+                  enabled: request.enabled,
+                  endpoint: request.endpoint,
+                  displayName: request.displayName,
+                  defaultModel: request.defaultModel,
+                  filters: request.filters,
+                  supportsTools: request.supportsTools,
+                  manualModels: request.manualModels,
+                  error: null,
+                }
+              : provider,
+          ),
+        };
+        return { ok: true, value: state.settings };
+      });
+      ipcMain.handle('textra:ai:models:refresh', (_event, request: { provider: string }) => {
         ++state.keyTests;
         if (request.provider !== 'google' || state.keyTests === 1)
           return { ok: false, error: 'The test key was rejected.' };
@@ -239,82 +240,58 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await chat.getByRole('button', { name: 'Configure AI', exact: true }).click();
     const aiDialog = page.getByRole('dialog', { name: 'AI settings', exact: true });
     await expect(aiDialog).toBeVisible();
-    for (const name of [
-      'Google Gemini',
-      'OpenAI',
-      'Anthropic',
-      'Mistral',
-      'Codestral',
-      'DeepSeek',
-      'OpenRouter',
-      'Ollama Cloud',
-      'Local Ollama',
-    ])
-      await expect(aiDialog.getByRole('region', { name, exact: true })).toBeVisible();
-    for (const name of ['Mistral', 'DeepSeek', 'OpenRouter']) {
-      const card = aiDialog.getByRole('region', { name, exact: true });
-      await expect(card.getByLabel(`${name} API key`, { exact: true })).toHaveAttribute(
-        'type',
-        'password',
-      );
-      const form = card.locator(':scope > form');
-      await expect(form.getByRole('link', { name: 'Get a key', exact: true })).toBeVisible();
-      await expect(
-        form.getByRole('button', { name: 'Save & load models', exact: true }),
-      ).toBeDisabled();
-    }
-    const mistral = aiDialog.getByRole('region', { name: 'Mistral', exact: true });
-    const codestral = mistral.getByRole('region', { name: 'Codestral', exact: true });
-    await expect(codestral).toHaveClass(/ai-provider-subcard/);
-    await expect(aiDialog.locator('.ai-provider-grid > .ai-provider-card')).toHaveCount(8);
-    await expect(codestral.getByLabel('Codestral API key', { exact: true })).toHaveAttribute(
-      'type',
-      'password',
-    );
+    await expect(aiDialog.locator('.ai-provider-connection')).toHaveCount(0);
     await expect(
-      codestral.getByRole('button', { name: 'Save & load models', exact: true }),
-    ).toBeDisabled();
-    await codestral.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath('codestral-subcard.png') });
-    await codestral.getByLabel('Codestral API key', { exact: true }).fill('codestral-fixture-key');
-    await codestral.getByRole('button', { name: 'Save & load models', exact: true }).click();
-    await expect(codestral.locator(':scope > header')).toContainText('Connected');
-    await expect(mistral.locator(':scope > header')).toContainText('Not set up');
-    await expect(
-      codestral.getByRole('button', { name: 'Codestral default model: Codestral', exact: true }),
-    ).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath('codestral-connected.png') });
-    await codestral.getByRole('button', { name: 'Remove', exact: true }).click();
-    await expect(codestral.getByLabel('Codestral API key', { exact: true })).toHaveValue('');
-    const google = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
-    await expect(aiDialog.getByRole('region', { name: 'Local Ollama', exact: true })).toContainText(
-      'Not installed',
-    );
-    await google.getByRole('link', { name: 'Get a key', exact: true }).click();
+      aiDialog.getByRole('button', { name: /^Automatic completion model:/ }),
+    ).toHaveCount(0);
+    await aiDialog.getByRole('button', { name: 'Add provider', exact: true }).click();
+    const chooser = page.getByRole('dialog', { name: 'Add provider', exact: true });
+    for (const name of ['Google Gemini', 'Mistral', 'DeepSeek', 'OpenRouter', 'OpenAI-compatible'])
+      await expect(chooser.getByRole('button', { name, exact: true })).toBeVisible();
+    await expect(chooser.getByRole('button', { name: 'Codestral', exact: true })).toHaveCount(0);
+    await chooser.getByRole('button', { name: 'Google Gemini', exact: true }).click();
+    const providerEditor = page.getByRole('dialog', { name: /^(Add|Edit) Google Gemini$/ });
+    const keyInput = providerEditor.getByLabel('Google AI Studio API key', { exact: true });
+    await expect(keyInput).toHaveAttribute('type', 'password');
+    await providerEditor.getByRole('button', { name: 'Get a key', exact: true }).click();
     expect(
       await application.evaluate(
         () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.linksOpened,
       ),
     ).toEqual(['google:keys']);
-    const keyInput = google.getByLabel('Google AI Studio API key', { exact: true });
-    await expect(keyInput).toHaveAttribute('type', 'password');
+    await keyInput.fill('AQ.fake-native-test-key');
+    await providerEditor.getByRole('button', { name: 'Save Google Gemini', exact: true }).click();
+    const google = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
+    await expect(google).toContainText('0 chat');
+    expect(
+      await application.evaluate(
+        () => (globalThis as typeof globalThis & { chatTest: ChatTestState }).chatTest.keyTests,
+      ),
+    ).toBe(0);
+    await google.getByRole('button', { name: 'Edit Google Gemini', exact: true }).click();
+    await providerEditor
+      .getByRole('button', { name: 'Test / Refresh models', exact: true })
+      .click();
+    await expect(providerEditor.getByRole('alert')).toHaveText('The test key was rejected.');
+    await providerEditor
+      .getByRole('button', { name: 'Test / Refresh models', exact: true })
+      .click();
+    await expect(providerEditor.getByRole('status')).toHaveText(
+      'Connection tested. Models refreshed.',
+    );
+    await providerEditor.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(google).toContainText('3 chat');
+    await google.getByRole('switch', { name: 'Google Gemini enabled', exact: true }).uncheck();
+    await expect(google).toContainText('Silenced');
+    await google.getByRole('switch', { name: 'Google Gemini enabled', exact: true }).check();
     const autoSend = aiDialog.getByRole('checkbox', {
       name: /Automatically send Problems prompts/,
     });
     await expect(autoSend).not.toBeChecked();
-    await page.screenshot({ path: test.info().outputPath('chat-onboarding.png') });
-    await keyInput.fill('AQ.fake-native-test-key');
-    const saveKey = google.getByRole('button', { name: 'Save & load models', exact: true });
-    await saveKey.click();
-    await expect(google.getByRole('alert')).toHaveText('The test key was rejected.');
-    await expect(keyInput).toHaveValue('AQ.fake-native-test-key');
-    await saveKey.click();
-    await expect(google).toContainText('Connected');
-    await expect(google).toContainText('3 models');
-    await expect(keyInput).toHaveCount(0);
     await expect(
       aiDialog.getByRole('button', { name: /^Chat model: Gemini 3.5 Flash Lite/ }),
     ).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('chat-onboarding.png') });
     await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     const composer = chat.getByRole('textbox', { name: 'Message AI', exact: true });
     await expect(composer).toBeVisible();
@@ -368,16 +345,24 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(settings).toContainText('Connected: Google Gemini.');
     await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
     const googleCard = aiDialog.getByRole('region', { name: 'Google Gemini', exact: true });
-    const remove = googleCard.getByRole('button', { name: 'Remove', exact: true });
+    const remove = googleCard.getByRole('button', { name: 'Delete Google Gemini', exact: true });
     await remove.click();
-    await expect(googleCard).toContainText('Connected');
+    await expect(googleCard).toBeVisible();
     await remove.click();
-    await expect(googleCard).toContainText('Not set up');
-    const setupKey = googleCard.getByLabel('Google AI Studio API key', { exact: true });
-    await expect(setupKey).toHaveValue('');
-    await setupKey.fill('AQ.reconfigured-native-test-key');
-    await googleCard.getByRole('button', { name: 'Save & load models', exact: true }).click();
-    await expect(googleCard).toContainText('Connected');
+    await expect(googleCard).toHaveCount(0);
+    await aiDialog.getByRole('button', { name: 'Add provider', exact: true }).click();
+    await chooser.getByRole('button', { name: 'Google Gemini', exact: true }).click();
+    await providerEditor
+      .getByLabel('Google AI Studio API key', { exact: true })
+      .fill('AQ.reconfigured-native-test-key');
+    await providerEditor
+      .getByRole('button', { name: 'Test / Refresh models', exact: true })
+      .click();
+    await expect(providerEditor.getByRole('status')).toHaveText(
+      'Connection tested. Models refreshed.',
+    );
+    await providerEditor.getByRole('button', { name: 'Save Google Gemini', exact: true }).click();
+    await expect(googleCard).toContainText('3 chat');
     const settingAutoSend = aiDialog.getByRole('checkbox', {
       name: /Automatically send Problems prompts/,
     });

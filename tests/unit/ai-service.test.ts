@@ -43,6 +43,7 @@ const MODELS: Record<AIProviderId, AIModelInfo[]> = {
   openrouter: [{ id: 'openai/gpt-5-mini', label: 'OpenAI: GPT-5 Mini' }],
   'ollama-cloud': [{ id: 'gpt-oss:120b', label: 'gpt-oss:120b' }],
   'ollama-local': [{ id: 'llama3.2:latest', label: 'llama3.2' }],
+  custom: [{ id: 'local-model', label: 'Local model' }],
 };
 const question = { messages: [{ role: 'user', text: 'Why is \\foo undefined?' }] };
 
@@ -93,15 +94,15 @@ describe('multi-provider AI settings and requests', () => {
       'openai',
       'anthropic',
       'mistral',
-      'codestral',
       'deepseek',
       'openrouter',
       'ollama-cloud',
       'ollama-local',
+      'custom',
     ]);
   });
 
-  it.each(AI_PROVIDER_IDS)(
+  it.each(AI_PROVIDER_IDS.filter((provider) => provider !== 'codestral' && provider !== 'custom'))(
     'sends the exact same chat instructions through %s',
     async (provider) => {
       const settings = await service.saveProvider(
@@ -114,25 +115,36 @@ describe('multi-provider AI settings and requests', () => {
       expect(chat.mock.calls.at(-1)?.[1]).toBe(model);
     },
   );
-  it('keeps Codestral credentials and removal independent from the Mistral connection', async () => {
+  it('removes the obsolete Codestral profile during v3 migration without changing Mistral', async () => {
     await service.saveProvider({ provider: 'mistral', apiKey: 'mistral-secret' });
-    await service.saveProvider({ provider: 'codestral', apiKey: 'codestral-secret' });
-    await service.send({
-      ...question,
-      model: { provider: 'codestral', model: 'codestral-latest' },
+    const file = join(directory, 'ai.json');
+    const raw = JSON.parse(await readFile(file, 'utf8'));
+    raw.version = 3;
+    raw.providers.codestral = {
+      ...raw.providers.mistral,
+      encryptedKey: cipher.encrypt('obsolete').toString('base64'),
+    };
+    raw.roleDefaults.chat = { provider: 'codestral', model: 'codestral-latest' };
+    await writeFile(file, JSON.stringify(raw));
+    const settings = await service.settings();
+    expect(settings.roleDefaults.chat).toBeNull();
+    expect(settings.roleDefaults.agent).toEqual({
+      provider: 'mistral',
+      model: 'mistral-small-latest',
     });
-    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'codestral', key: 'codestral-secret' });
+    expect(settings.providers.some((provider) => provider.id === 'codestral')).toBe(false);
+    expect(JSON.parse(await readFile(file, 'utf8')).providers.codestral).toBeUndefined();
     await service.send({
       ...question,
       model: { provider: 'mistral', model: 'mistral-small-latest' },
     });
-    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'mistral', key: 'mistral-secret' });
-    const removed = await service.removeProvider({ provider: 'codestral' });
-    expect(removed.providers.find(({ id }) => id === 'mistral')!.configured).toBe(true);
-    expect(removed.providers.find(({ id }) => id === 'codestral')!.configured).toBe(false);
+    expect(chat.mock.calls.at(-1)?.[0]).toMatchObject({
+      provider: 'mistral',
+      key: 'mistral-secret',
+    });
   });
 
-  it('filters a cached catalogue and clears missing role defaults without networking or deleting keys', async () => {
+  it('filters a cached catalogue and preserves blocked defaults without networking or deleting keys', async () => {
     await service.saveProvider({ provider: 'openai', apiKey: 'secret' });
     const filename = join(directory, 'ai.json');
     const raw = JSON.parse(await readFile(filename, 'utf8')) as {
@@ -146,7 +158,7 @@ describe('multi-provider AI settings and requests', () => {
     list.mockClear();
     const settings = await service.settings();
     expect(settings.providers.find(({ id }) => id === 'openai')!.models).toEqual(MODELS.openai);
-    expect(settings.roleDefaults.chat).toBeNull();
+    expect(settings.roleDefaults.chat).toEqual({ provider: 'openai', model: 'gpt-image-1' });
     expect(list).not.toHaveBeenCalled();
     await expect(
       service.setRoleDefault({ role: 'chat', model: { provider: 'openai', model: 'gpt-image-1' } }),
@@ -242,7 +254,7 @@ describe('multi-provider AI settings and requests', () => {
     expect(text).toBe('Load the package.');
     expect(partials).toEqual(['Load the package.']);
     const [access, model, request] = chat.mock.calls[0];
-    expect(access).toEqual({ provider: 'openai', key: 'openai-secret' });
+    expect(access).toMatchObject({ provider: 'openai', key: 'openai-secret' });
     expect(model).toBe('gpt-5-mini');
     expect(request.system).toContain('LaTeX');
     expect(request.messages).toEqual(question.messages);
@@ -304,8 +316,8 @@ describe('multi-provider AI settings and requests', () => {
     list.mockResolvedValueOnce([{ id: 'gpt-6', label: 'gpt-6' }]);
     const refreshed = await service.refreshModels({ provider: 'openai' });
     const updated = refreshed.providers.find(({ id }) => id === 'openai')!;
-    expect(updated).toMatchObject({ error: null, defaultModel: 'gpt-6' });
-    expect(refreshed.roleDefaults.chat).toBeNull();
+    expect(updated).toMatchObject({ error: null, defaultModel: 'gpt-5-mini' });
+    expect(refreshed.roleDefaults.chat).toEqual({ provider: 'openai', model: 'gpt-5-mini' });
   });
 
   it('uses local Ollama without a key or OS encryption', async () => {
@@ -323,7 +335,7 @@ describe('multi-provider AI settings and requests', () => {
       model: 'llama3.2:latest',
     });
     await plain.send({ ...question, model: settings.roleDefaults.chat });
-    expect(chat.mock.calls[0][0]).toEqual({ provider: 'ollama-local', key: null });
+    expect(chat.mock.calls[0][0]).toMatchObject({ provider: 'ollama-local', key: null });
   });
 
   it('explains an empty local Ollama model list', async () => {
@@ -372,18 +384,18 @@ describe('multi-provider AI settings and requests', () => {
     expect(settings.providers.find(({ id }) => id === 'google')!.configured).toBe(true);
     expect(settings.configured).toBe(false);
     settings = await service.refreshModels({ provider: 'google' });
-    expect(list.mock.calls.at(-1)?.[0]).toEqual({ provider: 'google', key: 'old-key' });
+    expect(list.mock.calls.at(-1)?.[0]).toMatchObject({ provider: 'google', key: 'old-key' });
     expect(settings.configured).toBe(true);
   });
 
   it('preserves an invalid or newer settings file', async () => {
     const file = join(directory, 'ai.json');
-    await writeFile(file, JSON.stringify({ version: 4, autoSendProblems: false, providers: {} }));
+    await writeFile(file, JSON.stringify({ version: 5, autoSendProblems: false, providers: {} }));
     await expect(service.settings()).rejects.toMatchObject({ code: 'AI_STORAGE' });
     await expect(service.saveProvider({ provider: 'openai', apiKey: 'o' })).rejects.toMatchObject({
       code: 'AI_STORAGE',
     });
-    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(4);
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(5);
   });
 
   it('atomically migrates v2 defaults, keys and catalogues without networking', async () => {
@@ -414,10 +426,10 @@ describe('multi-provider AI settings and requests', () => {
       version: number;
       providers: unknown;
     };
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(4);
     expect(migrated.providers).toEqual(current.providers);
     await service.send({ ...question, model: settings.roleDefaults.chat });
-    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'openai', key: 'openai-secret' });
+    expect(chat.mock.calls.at(-1)?.[0]).toMatchObject({ provider: 'openai', key: 'openai-secret' });
   });
 
   it('preserves concurrent user updates while initial settings reads migrate v2', async () => {
@@ -444,8 +456,11 @@ describe('multi-provider AI settings and requests', () => {
     expect(settings.roleDefaults.chat).toEqual({ provider: 'openai', model: 'gpt-5-mini' });
     expect(settings.roleDefaults.agent).toEqual({ provider: 'openai', model: 'gpt-5' });
     await restarted.send({ ...question, model: settings.roleDefaults.agent });
-    expect(chat.mock.calls.at(-1)?.[0]).toEqual({ provider: 'openai', key: 'retained-secret' });
-    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(3);
+    expect(chat.mock.calls.at(-1)?.[0]).toMatchObject({
+      provider: 'openai',
+      key: 'retained-secret',
+    });
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(4);
   });
 
   it('prefills only an installed local Qwen coder and prefers 0.5B for testing', async () => {
@@ -490,9 +505,9 @@ describe('multi-provider AI settings and requests', () => {
       allowOutsideEnvironments: false,
       consentedModel: first,
     });
-    expect(confirm).toHaveBeenCalledWith(first);
+    expect(confirm).toHaveBeenCalledWith(first, 'https://generativelanguage.googleapis.com');
     const changed = await service.setRoleDefault({ role: 'completion', model: second });
-    expect(confirm).toHaveBeenLastCalledWith(second);
+    expect(confirm).toHaveBeenLastCalledWith(second, 'https://generativelanguage.googleapis.com');
     expect(changed.completion.consentedModel).toEqual(second);
     expect(changed.completion.enabled).toBe(true);
     expect(changed.roleDefaults.chat).toEqual(first);
@@ -503,7 +518,7 @@ describe('multi-provider AI settings and requests', () => {
     expect((await service.settings()).roleDefaults.completion).toEqual(second);
     await service.removeProvider({ provider: 'google' });
     expect((await service.settings()).completion).toMatchObject({
-      enabled: false,
+      enabled: true,
       consentedModel: null,
     });
   });
@@ -534,17 +549,17 @@ describe('multi-provider AI settings and requests', () => {
         capabilities: { chat: false, completion: true, transport: 'mistral-fim' },
       },
     ]);
-    const saved = await service.saveProvider({ provider: 'codestral', apiKey: 'c' });
+    const saved = await service.saveProvider({ provider: 'mistral', apiKey: 'c' });
     expect(saved.roleDefaults.chat).toBeNull();
     expect(saved.roleDefaults.agent).toBeNull();
     await service.setRoleDefault({
-      role: 'inlineCompletion',
-      model: { provider: 'codestral', model: 'codestral-latest' },
+      role: 'completion',
+      model: { provider: 'mistral', model: 'codestral-latest' },
     });
     await expect(
       service.setRoleDefault({
         role: 'chat',
-        model: { provider: 'codestral', model: 'codestral-latest' },
+        model: { provider: 'mistral', model: 'codestral-latest' },
       }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });

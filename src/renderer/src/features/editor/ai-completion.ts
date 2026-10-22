@@ -10,6 +10,7 @@ import {
 } from '../../../../shared/ai';
 import { buildCompletionContext } from '../../../../shared/latex-completion';
 import type { OpenDocument } from '../../state/workspace';
+import { modelUnavailableReason } from '../chat/useAISettings';
 
 export interface CompletionView {
   visible: boolean;
@@ -46,11 +47,29 @@ export function installAICompletion(
   let lastAutomatic = -Infinity;
   let suspended = false;
   let status = '';
+  let errorCode: string | undefined;
   let disposed = false;
   const cache = new Map<string, { text: string; expires: number }>();
   const dismissed = new Set<string>();
   const node = editor.getDomNode()!;
   const view = () => {
+    const health = suspended
+      ? 'paused'
+      : pending
+        ? 'loading'
+        : suggestion
+          ? 'ready'
+          : status
+            ? 'error'
+            : 'idle';
+    window.dispatchEvent?.(
+      new CustomEvent('textra-ai-completion-health', {
+        detail: {
+          status: health,
+          ...(status && !pending ? { error: status, code: errorCode } : {}),
+        },
+      }),
+    );
     const position = editor.getPosition();
     const anchor = position ? editor.getScrolledVisiblePosition(position) : null;
     onView({
@@ -91,7 +110,6 @@ export function installAICompletion(
       safe() &&
       state?.document.projectId === request.projectId &&
       state.document.path === request.path &&
-      state.document.revision === request.revision &&
       model?.getVersionId() === request.modelVersion &&
       Boolean(position && model.getOffsetAt(position) === request.offset) &&
       editor.getSelection()?.isEmpty()
@@ -111,6 +129,7 @@ export function installAICompletion(
     suggestion = null;
     manual = false;
     status = '';
+    errorCode = undefined;
     editor.trigger('textra', 'editor.action.inlineSuggest.hide', {});
     view();
   }
@@ -150,6 +169,15 @@ export function installAICompletion(
         (!context.cursor.eligible && !state.settings.completion.allowOutsideEnvironments))
     )
       return;
+    if (!isManual) {
+      const unavailable = modelUnavailableReason(state.settings, ref, 'completion');
+      if (unavailable) {
+        status = unavailable;
+        errorCode = 'AI_MODEL_UNAVAILABLE';
+        view();
+        return;
+      }
+    }
     const request: AICompletionRequest = {
       requestId: crypto.randomUUID(),
       role,
@@ -216,6 +244,7 @@ export function installAICompletion(
       clearTimeout(deadline);
       pending = null;
       if (!result.ok) {
+        errorCode = result.code;
         if (!isManual && /auth|quota|rate.limit|API.key/i.test(`${result.code} ${result.error}`))
           suspended = true;
         status = isManual
@@ -230,9 +259,12 @@ export function installAICompletion(
         result.value.requestId !== request.requestId ||
         result.value.modelVersion !== request.modelVersion ||
         result.value.offset !== request.offset ||
-        !result.value.text
-      )
+        !result.value.text.trim()
+      ) {
+        status = '';
+        view();
         return;
+      }
       cache.set(key, { text: result.value.text, expires: Date.now() + 30_000 });
       if (cache.size > 32) cache.delete(cache.keys().next().value!);
       show(result.value.text);
@@ -302,11 +334,7 @@ export function installAICompletion(
   });
   const keydown = (event: KeyboardEvent) => {
     if (event.target && !node.contains(event.target as Node) && !editor.hasTextFocus()) return;
-    if (event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'i') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      void request('inlineCompletion');
-    } else if (event.key === 'Escape' && (manual || suggestion || pending)) {
+    if (event.key === 'Escape' && (manual || suggestion || pending)) {
       event.preventDefault();
       event.stopImmediatePropagation();
       invalidate(true);
@@ -328,6 +356,11 @@ export function installAICompletion(
   // Capture at the document boundary, scoped strictly to this editor's targets.
   const keyboardTarget = node.ownerDocument ?? node;
   keyboardTarget.addEventListener('keydown', keydown as EventListener, true);
+  const retryHealth = () => {
+    suspended = false;
+    invalidate();
+  };
+  window.addEventListener?.('textra-ai-completion-retry', retryHealth);
   const listeners = [
     editor.onDidChangeModelContent(() => {
       invalidate();
@@ -375,6 +408,7 @@ export function installAICompletion(
       provider.dispose();
       listeners.forEach((listener) => listener.dispose());
       keyboardTarget.removeEventListener('keydown', keydown as EventListener, true);
+      window.removeEventListener?.('textra-ai-completion-retry', retryHealth);
       cache.clear();
       dismissed.clear();
     },

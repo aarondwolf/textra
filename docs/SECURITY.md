@@ -19,11 +19,13 @@ disabled, a timeout and cancellation. This is not an OS-level TeX sandbox: open
 and compile trusted projects only. External installation is not automatic.
 
 Optional AI chat transmits only user-submitted conversations and Problems snippets to the
-fixed endpoint of the selected model's provider from the main process:
-generativelanguage.googleapis.com, api.openai.com, api.anthropic.com, api.mistral.ai,
-codestral.mistral.ai, api.deepseek.com, openrouter.ai, ollama.com, or the
-loopback Ollama server at 127.0.0.1:11434. Redirects are refused. Only role-capable text models returned by
-that provider's own model listing are accepted; there is no automatic fallback provider,
+saved endpoint of the selected model's provider from the main process. Built-in
+endpoints are prefilled; users can explicitly configure a replacement or one custom
+OpenAI-compatible connection. Main rejects URL credentials, query strings, fragments
+and redirects. HTTPS is required except loopback/private IP HTTP endpoints, which are
+shown as unencrypted. Endpoint changes invalidate catalogues and automatic-sharing
+consent. A model must be in the cached/manual catalogue, visible for its role and
+supported by an enabled connection; no automatic fallback provider,
 source discovery, or execution. OpenRouter is an explicitly selected
 gateway: it forwards requests to the selected model's hosting provider, honoring
 the account's provider/privacy settings. Its authenticated catalogue tests keys;
@@ -41,7 +43,7 @@ each saved chat can be individually deleted from the history menu with native co
 Keys, pending proposals, streaming partials and drafts are not serialized as history metadata.
 Requests have a 90-second timeout (180 seconds for local Ollama), one attempt, no automatic 429 retry, at most 40 turns,
 64,000 input characters and 4,096 output tokens. Cancellation stops local waiting; it cannot
-guarantee a provider stops work on a request it has received. Provider errors never reach logs;
+guarantee a provider stops work on a request it has received. Raw provider errors never reach logs; bounded completion diagnostics contain only provider/model, transport, timing, HTTP status, finish reason and response size/outcome.
 the renderer gets a mapped message with at most 240 characters of provider detail, with the
 key redacted. Provider key and usage pages open through a fixed-URL main handler.
 Streaming updates use a fixed IPC event with validated request IDs and at most 32,000 text
@@ -119,21 +121,23 @@ latexmk uses -norc. PDF XFA is disabled and its worker is bundled locally.
 Portable Node cannot atomically bind every path check to subsequent OS operations;
 revalidation narrows but does not eliminate hostile concurrent TOCTOU mutation.
 
-Inline completion exposes only bounded request/cancel methods, with no commands or tools.
-Main validates the canonical project/file scope, role/model capability and context limits.
-Automatic suggestions start disabled and require native confirmation tied to the exact
-selected model; changing it while enabled requires confirmation again. Local Ollama cloud
-model IDs are identified as cloud destinations. Automatic context is limited to 8,000
-prefix, 2,000 suffix and 2,000 metadata characters; explicit Ctrl+I allows 16,000/4,000/4,000.
-Both use only the active buffer, never other files or Chat history. Suggestions and source
-cache remain memory-only (32 entries, 30 seconds), and dismissed suggestions are not reused.
-Remote requests time out after 10 seconds automatically or 15 seconds for Ctrl+I;
-local-only Ollama gets 30 seconds for either mode and reduced 1,024/256 or 4,096/1,024-character
-prefix/suffix context. Output remains bounded to 384/512 tokens and 10/20 lines
-respectively. Authentication/quota failures suspend automatic
-requests until retry or configuration change. No retries, provider/model fallback, model
-downloads, automatic server start or warming on launch occur. Acceptance rechecks the
-live editor snapshot and is an explicit undoable insertion.
+Automatic completion and prompted inline editing expose only narrow request/cancel
+methods, with no commands or tools. Main validates canonical project/file scope,
+model capability, role visibility and context limits. Automatic suggestions require
+native confirmation for the selected model and destination. Context bounds are
+8,000 prefix/2,000 suffix/2,000 metadata characters; local-only Ollama uses 1,024/256
+prefix/suffix. Automatic output is at most ten lines/384 tokens, with a ten-second
+remote or thirty-second local deadline. Empty/echo-only responses quietly yield no
+suggestion; authentication/quota failures suspend requests until retry/configuration.
+
+Prompted Ctrl+I sends only an explicitly submitted instruction (4,000 characters),
+selection (16,000), and nearby active-buffer context (16,000/4,000/4,000). Output is
+bounded to 4,096 tokens/32,000 characters and sixty seconds. It has no Chat history
+or project traversal. Selection replacements are previewed before an explicit,
+undoable acceptance guarded by buffer version, source range, project and conflict state.
+Source and suggestions remain memory-only; no retries, fallback routes, downloads,
+automatic server startup or warming on launch occur. Silenced providers retain
+encrypted credentials but cannot decrypt keys, initialize SDKs, ping or run requests.
 
 TexLab document closure uses a narrow canonical project/file reference and only
 releases in-memory language-server state. Repeated unchanged source is not sent

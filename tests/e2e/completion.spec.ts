@@ -2,25 +2,30 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 import type { AISettings, Result } from '../../src/shared/api';
-import type { AICompletionRequest, AICompletionResponse } from '../../src/shared/ai';
+import type {
+  AICompletionRequest,
+  AICompletionResponse,
+  AIInlineEditRequest,
+  AIInlineEditResponse,
+} from '../../src/shared/ai';
 
 interface CompletionTestState {
   settings: AISettings;
   requests: AICompletionRequest[];
+  edits: AIInlineEditRequest[];
   cancelled: string[];
+  compiles: number;
   hold: boolean;
   release: (() => void) | null;
 }
 
-test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts undoably', async () => {
-  test.setTimeout(120000);
+test('native prompted inline edits, quiet automatic ghost text, and compile shortcut', async () => {
+  test.setTimeout(150000);
   const root = join(process.cwd(), 'test-results', 'completion');
   await mkdir(root, { recursive: true });
   const directory = await mkdtemp(join(root, 'case-'));
   const projectRoot = join(directory, 'project');
-  const userData = join(directory, 'user-data');
   await mkdir(projectRoot);
-  await mkdir(userData);
   await writeFile(
     join(projectRoot, 'main.tex'),
     [
@@ -36,9 +41,8 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
       '\\end{document}',
     ].join('\n'),
   );
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = { TEXTRA_USER_DATA_DIR: join(directory, 'user-data') };
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  env.TEXTRA_USER_DATA_DIR = userData;
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.NO_SANDBOX;
   delete env.ELECTRON_CLI_ARGS;
@@ -46,8 +50,8 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
   try {
     application = await electron.launch({ args: ['.'], env });
     const page = await application.firstWindow();
-    // Native UI, Monaco and project IO are real. AI and the folder chooser are
-    // explicit mocks; no provider connection or credentials are used.
+    // Real native editor/project IO. Only AI, build execution and folder selection
+    // are mocked; no credentials or external providers are used.
     await application.evaluate(({ ipcMain, dialog }, selectedRoot) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedRoot] });
       const model = { provider: 'ollama-local' as const, model: 'fixture-code' };
@@ -55,27 +59,30 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
         settings: {
           configured: true,
           autoSendProblems: false,
-          roleDefaults: { chat: null, agent: null, completion: model, inlineCompletion: model },
+          roleDefaults: { chat: model, agent: model, completion: model, inlineCompletion: model },
           completion: { enabled: false, allowOutsideEnvironments: false, consentedModel: null },
           providers: [
             {
               id: 'ollama-local',
               configured: true,
-              defaultModel: 'fixture-code',
+              enabled: true,
+              defaultModel: model.model,
               modelsFetchedAt: 1,
               error: null,
               models: [
                 {
-                  id: 'fixture-code',
+                  id: model.model,
                   label: 'Fixture Code',
-                  capabilities: { chat: false, completion: true, transport: 'ollama-generate' },
+                  capabilities: { chat: true, completion: true, transport: 'ollama-generate' },
                 },
               ],
             },
           ],
         },
         requests: [],
+        edits: [],
         cancelled: [],
+        compiles: 0,
         hold: false,
         release: null,
       };
@@ -86,6 +93,9 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
         'textra:ai:completion:settings',
         'textra:ai:completion:request',
         'textra:ai:completion:cancel',
+        'textra:ai:inline-edit:request',
+        'textra:ai:inline-edit:cancel',
+        'textra:build:compile',
       ])
         ipcMain.removeHandler(channel);
       ipcMain.handle('textra:ai:settings', () => ({ ok: true, value: state.settings }));
@@ -101,22 +111,38 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
       );
       ipcMain.handle(
         'textra:ai:completion:request',
+        (_event, request: AICompletionRequest): Result<AICompletionResponse> => {
+          state.requests.push(request);
+          return {
+            ok: true,
+            value: {
+              requestId: request.requestId,
+              modelVersion: request.modelVersion,
+              offset: request.offset,
+              text: ' AUTO_CONTINUATION\nSECOND_LINE\nTHIRD_LINE',
+            },
+          };
+        },
+      );
+      ipcMain.handle(
+        'textra:ai:inline-edit:request',
         (
           _event,
-          request: AICompletionRequest,
-        ): Result<AICompletionResponse> | Promise<Result<AICompletionResponse>> => {
-          state.requests.push(request);
+          request: AIInlineEditRequest,
+        ): Result<AIInlineEditResponse> | Promise<Result<AIInlineEditResponse>> => {
+          state.edits.push(request);
           const reply = {
             ok: true as const,
             value: {
               requestId: request.requestId,
               modelVersion: request.modelVersion,
               offset: request.offset,
+              endOffset: request.endOffset,
               text: state.hold
                 ? 'STALE_RESPONSE'
-                : request.role === 'inlineCompletion'
-                  ? ' MANUAL_CONTINUATION'
-                  : ' AUTO_CONTINUATION\nSECOND_LINE\nTHIRD_LINE',
+                : request.selection
+                  ? 'REWRITTEN_SELECTION'
+                  : ' MANUAL_INSERTION',
             },
           };
           if (!state.hold) return reply;
@@ -125,79 +151,110 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
           });
         },
       );
-      ipcMain.handle('textra:ai:completion:cancel', (_event, request: { requestId: string }) => {
-        state.cancelled.push(request.requestId);
-        return { ok: true, value: undefined };
+      for (const channel of ['textra:ai:completion:cancel', 'textra:ai:inline-edit:cancel'])
+        ipcMain.handle(channel, (_event, request: { requestId: string }) => {
+          state.cancelled.push(request.requestId);
+          return { ok: true, value: undefined };
+        });
+      ipcMain.handle('textra:build:compile', () => {
+        state.compiles++;
+        return {
+          ok: true,
+          value: {
+            running: false,
+            outcome: 'success',
+            log: 'Mock build invoked',
+            diagnostics: [],
+            pdfPath: null,
+            projectId: null,
+            rootFile: null,
+          },
+        };
       });
     }, projectRoot);
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     const editor = page.getByRole('textbox', { name: 'LaTeX source editor', exact: true });
     const source = page.locator('.source-editor .view-lines');
-    const manual = page.locator('[aria-label="Inline AI completion"]');
-    const automatic = page.locator('[aria-label="Automatic AI completion"]');
-    const count = () =>
-      application!.evaluate(
-        () =>
-          (globalThis as typeof globalThis & { completionTest: CompletionTestState }).completionTest
-            .requests.length,
-      );
+    const panel = page.locator('[aria-label="Inline AI edit"]');
+    const prompt = page.getByRole('textbox', { name: 'Inline edit instruction', exact: true });
+    const state = () =>
+      application!.evaluate(() => {
+        const s = (globalThis as typeof globalThis & { completionTest: CompletionTestState })
+          .completionTest;
+        return {
+          requests: s.requests,
+          edits: s.edits,
+          cancelled: s.cancelled,
+          compiles: s.compiles,
+        };
+      });
     const go = async (line: number) => {
       await editor.focus();
       await page.keyboard.press('Control+Home');
-      for (let index = 1; index < line; index++) await page.keyboard.press('ArrowDown');
+      for (let i = 1; i < line; i++) await page.keyboard.press('ArrowDown');
       await page.keyboard.press('End');
     };
     await go(5);
     await page.keyboard.insertText(' + ');
-    await page.waitForTimeout(1200); // Exceeds the automatic debounce while opt-in is off.
-    expect(await count()).toBe(0);
+    await page.waitForTimeout(1200);
+    expect((await state()).requests).toHaveLength(0);
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
     await settings.getByRole('button', { name: 'AI Chat', exact: true }).click();
     await settings.getByRole('button', { name: 'Configure AI providers…', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'AI settings', exact: true });
-    const enabled = dialog.getByRole('checkbox', { name: /^Enable automatic completion/ });
+    const aiSettings = page.getByRole('dialog', { name: 'AI settings', exact: true });
+    const enabled = aiSettings.getByRole('checkbox', { name: /^Enable automatic completion/ });
     await expect(enabled).not.toBeChecked();
     await expect(
-      dialog.getByRole('checkbox', { name: /^Allow automatic completion outside/ }),
-    ).not.toBeChecked();
+      aiSettings.getByRole('button', { name: /^Automatic completion model:/ }),
+    ).toHaveCount(0);
     await enabled.check();
-    await expect(enabled).toBeChecked();
-    await dialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
+    await expect(aiSettings).toContainText('math');
+    await aiSettings.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await go(3);
     await page.keyboard.insertText(' prose Th');
-    await page.waitForTimeout(1200); // Plain prose remains quiet with automatic completion enabled.
-    expect(await count()).toBe(0);
+    await page.waitForTimeout(1200);
+    expect((await state()).requests).toHaveLength(0);
     await expect(page.locator('.suggest-widget.visible')).toHaveCount(0);
-    await editor.focus();
+
     await page.keyboard.press('Control+i');
-    await expect(manual.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
-    await expect(
-      manual.getByRole('button', { name: /^Ctrl\+I completion model: Fixture Code/ }),
-    ).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath('manual-ghost-text.png') });
+    await expect(prompt).toBeFocused();
+    expect((await state()).edits).toHaveLength(0); // Opening never sends.
+    await prompt.fill('Insert a sentence');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.insertText('Keep it concise.');
+    await expect(prompt).toHaveValue('Insert a sentence\nKeep it concise.');
+    await page.keyboard.press('Enter');
+    await expect(panel.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
+    expect((await state()).edits[0]).toMatchObject({
+      instruction: 'Insert a sentence\nKeep it concise.',
+      selection: '',
+    });
+    await page.screenshot({ path: test.info().outputPath('prompted-inline-insertion.png') });
+    await editor.focus();
     await page.keyboard.press('Tab');
-    await expect(manual).toHaveCount(0);
-    await expect(source).toContainText('MANUAL_CONTINUATION');
+    await expect(panel).toHaveCount(0);
+    await expect(source).toContainText('MANUAL_INSERTION');
     await page.keyboard.press('Control+z');
-    await expect(source).not.toContainText('MANUAL_CONTINUATION');
+    await expect(source).not.toContainText('MANUAL_INSERTION');
 
     await go(3);
     await page.keyboard.press('Control+Shift+ArrowLeft');
     await page.keyboard.press('Control+i');
-    await expect(manual.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
-    const selectedRequest = await application.evaluate(() =>
-      (
-        globalThis as typeof globalThis & { completionTest: CompletionTestState }
-      ).completionTest.requests.at(-1),
-    );
-    expect(selectedRequest?.prefix).toMatch(/ prose Th$/);
-    await page.keyboard.press('Tab');
-    await expect(source).toContainText(/prose\s+Th\s+MANUAL_CONTINUATION/);
+    await expect(prompt).toBeFocused();
+    await prompt.fill('Rewrite the selection');
+    await page.keyboard.press('Enter');
+    const preview = panel.locator('[aria-label="Inline edit preview"]');
+    await expect(preview.locator('del')).toHaveText('Th');
+    await expect(preview.locator('ins')).toHaveText('REWRITTEN_SELECTION');
+    await page.screenshot({ path: test.info().outputPath('prompted-selection-diff.png') });
+    await panel.getByRole('button', { name: 'Accept', exact: true }).click();
+    await expect(source).toContainText('REWRITTEN_SELECTION');
     await page.keyboard.press('Control+z');
-    await expect(source).not.toContainText('MANUAL_CONTINUATION');
+    await expect(source).not.toContainText('REWRITTEN_SELECTION');
+    await expect(source).toContainText(/prose\s+Th/);
 
     await application.evaluate(() => {
       (
@@ -205,52 +262,51 @@ test('native AI completion is opt-in, continues prose on Ctrl+I, and accepts und
       ).completionTest.hold = true;
     });
     await go(3);
-    await page.keyboard.insertText('!'); // Distinct context avoids the earlier completion cache.
-    const previous = await count();
     await page.keyboard.press('Control+i');
-    await expect.poll(count).toBe(previous + 1);
+    await prompt.fill('Delayed insertion');
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await state()).edits.length).toBe(3);
+    await editor.focus();
     await page.keyboard.insertText('?');
     await application.evaluate(() => {
-      const state = (globalThis as typeof globalThis & { completionTest: CompletionTestState })
+      const s = (globalThis as typeof globalThis & { completionTest: CompletionTestState })
         .completionTest;
-      state.release?.();
-      state.hold = false;
+      s.release?.();
+      s.hold = false;
     });
+    await expect(panel).toHaveCount(0);
     await expect(source).not.toContainText('STALE_RESPONSE');
-    await expect(manual).toHaveCount(0);
-    expect(
-      await application.evaluate(
-        () =>
-          (globalThis as typeof globalThis & { completionTest: CompletionTestState }).completionTest
-            .cancelled.length,
-      ),
-    ).toBeGreaterThan(0);
+    expect((await state()).cancelled.length).toBeGreaterThan(0);
 
     await go(5);
-    const beforeEquation = await count();
+    const before = (await state()).requests.length;
     await page.keyboard.insertText('+ ');
-    await expect(automatic.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
-    expect(await count()).toBe(beforeEquation + 1);
+    await expect.poll(async () => (await state()).requests.length).toBe(before + 1);
+    await expect(page.locator('.ghost-text')).not.toHaveCount(0);
+    await expect(page.locator('.ai-completion-toolbar')).toHaveCount(0);
     await page.keyboard.press('Tab');
-    await expect(source).toContainText('AUTO_CONTINUATION');
     await expect(source).toContainText('THIRD_LINE');
     await page.keyboard.press('Control+z');
-    await expect(source).not.toContainText('AUTO_CONTINUATION');
     await expect(source).not.toContainText('THIRD_LINE');
-    await page.waitForTimeout(2200); // Respect the automatic request rate bound.
+    await page.waitForTimeout(2200);
     await go(8);
     await page.keyboard.insertText(' ');
-    await expect(automatic.getByRole('button', { name: 'Accept', exact: true })).toBeEnabled();
-    const literal = await application.evaluate(() =>
-      (
-        globalThis as typeof globalThis & { completionTest: CompletionTestState }
-      ).completionTest.requests.at(-1),
-    );
-    expect(literal?.role).toBe('completion');
-    expect(JSON.parse(literal!.metadata)).toMatchObject({ literal: true, language: 'Python' });
-    await page.screenshot({ path: test.info().outputPath('literal-ghost-text.png') });
+    await expect.poll(async () => (await state()).requests.length).toBe(before + 2);
+    expect(JSON.parse((await state()).requests.at(-1)!.metadata)).toMatchObject({
+      literal: true,
+      language: 'Python',
+    });
+    await expect(page.locator('.ghost-text')).not.toHaveCount(0);
     await page.keyboard.press('Escape');
-    await expect(automatic).toHaveCount(0);
+    await expect(page.locator('.ghost-text')).toHaveCount(0);
+
+    await go(3);
+    const sourceBefore = await source.textContent();
+    await page.keyboard.press('Control+Enter');
+    await expect.poll(async () => (await state()).compiles).toBe(1);
+    await expect(source).toHaveText(sourceBefore!);
+    await page.waitForTimeout(300);
+    expect((await state()).compiles).toBe(1);
   } finally {
     if (application) {
       await application

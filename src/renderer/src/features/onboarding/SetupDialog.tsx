@@ -925,6 +925,41 @@ export default function SetupDialog({
                     Choose whether sections in the Snippets & Symbols sidebar tab start expanded or
                     collapsed.
                   </p>
+                  <h3>Automatic file history</h3>
+                  <label className="texlab-toggle editor-session-toggle">
+                    <span>Enable automatic file history</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={preferences.historyEnabled}
+                      onChange={(event) =>
+                        updatePreferences({ historyEnabled: event.target.checked })
+                      }
+                    />
+                  </label>
+                  {preferences.historyEnabled && (
+                    <label className="chktex-field">
+                      Snapshot interval (minutes)
+                      <input
+                        type="number"
+                        min={1}
+                        max={120}
+                        step={1}
+                        value={preferences.historyIntervalMinutes}
+                        onChange={(event) => {
+                          const val = Number.parseInt(event.target.value, 10);
+                          if (Number.isFinite(val) && val >= 1 && val <= 120) {
+                            updatePreferences({ historyIntervalMinutes: val });
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                  <p className="setup-hint">
+                    Store compressed backups of changed files in .textra/history. Automatic tiered
+                    retention preserves all snapshots for 30 days, daily snapshots up to 90 days,
+                    and weekly/monthly snapshots thereafter. Pinned snapshots are never pruned.
+                  </p>
                 </>
               )}
               {section === 'preferences' && (

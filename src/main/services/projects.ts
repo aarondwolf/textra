@@ -304,7 +304,12 @@ export class ProjectService {
           name: entry.name,
           kind: entry.isDirectory() ? 'directory' : 'file',
         });
-        if (!initialTree && entry.isDirectory() && !unexpandedNames.has(entry.name.toLowerCase()))
+        if (
+          !initialTree &&
+          entry.isDirectory() &&
+          !unexpandedNames.has(entry.name.toLowerCase()) &&
+          child !== '.textra/history'
+        )
           await walk(child, depth + 1);
       }
     };

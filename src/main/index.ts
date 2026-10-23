@@ -41,6 +41,7 @@ import {
   findCodeExecutable,
   openInExternalEditor,
 } from './services/external-editor';
+import { HistoryService } from './services/history';
 import { BuildService, detectTools } from './services/latex';
 import { planRecipe } from './services/recipe-plan';
 import { setToolPaths, validateToolPath } from './services/tool-paths';
@@ -128,6 +129,7 @@ const aiChats = new AIChatStore(join(app.getPath('userData'), 'ai-chats'), (id) 
   projects.getRoot(id),
 );
 const externalEditor = new ExternalEditorService(projects);
+const history = new HistoryService(projects);
 const builds = new BuildService((id) => projects.getRoot(id), 120_000, app.getPath('userData'));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
 const language = new LanguageService(projects, () => preferences.get());
@@ -352,6 +354,7 @@ function createWindow(): void {
       projects.flush(),
       config.flush(),
       aiChats.flush(),
+      history.flush(),
     ])
       .then(() => {
         dirty = false;
@@ -548,11 +551,22 @@ void app.whenReady().then(() => {
   handleRequest<'refreshProject'>('textra:project:refresh', (id) => projects.refreshProject(id));
   handleRequest<'prepareProject'>('textra:project:prepare', async (id) => {
     await config.ensureProjectConfig(id);
+    void history
+      .prune(id)
+      .catch((err) => log('warn', 'history-prune-failed', { id, error: String(err) }));
   });
   handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
   handleRequest<'saveFile'>('textra:file:save', async (request) => {
     const snapshot = await projects.saveFile(request);
     await externalEditor.noteLocalSave(snapshot);
+    const prefs = await preferences.get();
+    if (prefs.historyEnabled) {
+      void history
+        .create({ ...request, trigger: 'save' })
+        .catch((err) =>
+          log('warn', 'history-save-snapshot-failed', { request, error: String(err) }),
+        );
+    }
     return snapshot;
   });
   handleRequest<'createEntry'>('textra:file:create', (request) => projects.createEntry(request));
@@ -606,6 +620,20 @@ void app.whenReady().then(() => {
   });
   handleRequest<'openInCode'>('textra:file:code', async (request) =>
     openInExternalEditor(await projects.resolvePath(request, true)),
+  );
+  handleRequest<'listFileHistory'>('textra:history:list', (request) => history.list(request));
+  handleRequest<'readFileHistorySnapshot'>('textra:history:read', (request) =>
+    history.read(request),
+  );
+  handleRequest<'createFileHistorySnapshot'>('textra:history:create', (request) =>
+    history.create(request),
+  );
+  handleRequest<'restoreFileHistorySnapshot'>('textra:history:restore', (request) =>
+    history.restore(request),
+  );
+  handleRequest<'pinFileHistorySnapshot'>('textra:history:pin', (request) => history.pin(request));
+  handleRequest<'exportFileHistorySnapshot'>('textra:history:export', (request) =>
+    history.exportSnapshot(request, requireWindow()),
   );
   handle('textra:recent:get', 0, () => projects.getRecentProjects());
   handleRequest<'openRecentProject'>('textra:recent:open', async (id) => {
@@ -879,6 +907,18 @@ void app.whenReady().then(() => {
     if (healthBuild)
       throw new ProjectError('BUILD_RUNNING', 'Wait for the TeX setup test to finish.');
     if (dirty) throw new ProjectError('DIRTY_FILES', 'Save your edits before compiling.');
+    const prefs = await preferences.get();
+    if (prefs.historyEnabled && request?.rootFile) {
+      void history
+        .createFromDisk({
+          projectId: request.projectId,
+          path: request.rootFile,
+          trigger: 'compile',
+        })
+        .catch((err) =>
+          log('warn', 'history-compile-snapshot-failed', { request, error: String(err) }),
+        );
+    }
     const settings = request?.recipe
       ? validateRecipeSettings(await config.getProjectConfig(request.projectId))
       : undefined;

@@ -65,6 +65,7 @@ import {
   SIDEBAR_WIDTH_RANGE,
   type BuildEngine,
   type ExternalFileChangeEvent,
+  type HistorySnapshotSummary,
   type Result,
   type RestoredPdf,
   type TexlabStatus,
@@ -179,6 +180,22 @@ const CompileRecipeEditor = lazyFeature<
       default: module.CompileRecipeEditor,
     })),
   'Recipe editor',
+);
+const HistoryDiffView = lazyFeature<
+  ComponentProps<typeof import('./features/history').HistoryDiffView>
+>(
+  () =>
+    import('./features/history').then((module) => ({
+      default: module.HistoryDiffView,
+    })),
+  'History comparison',
+);
+const HistoryPanel = lazyFeature<ComponentProps<typeof import('./features/history').HistoryPanel>>(
+  () =>
+    import('./features/history').then((module) => ({
+      default: module.HistoryPanel,
+    })),
+  'File history',
 );
 
 interface Prompt {
@@ -549,8 +566,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     null,
   );
   type SidebarView =
-    'explorer' | 'writing' | 'equations' | 'snippets' | 'compile' | 'recents' | 'chat';
+    'explorer' | 'writing' | 'equations' | 'snippets' | 'compile' | 'recents' | 'chat' | 'history';
   const [sidebarView, setSidebarView] = useState<SidebarView>('explorer');
+  const [historyDiff, setHistoryDiff] = useState<{
+    snapshot: HistorySnapshotSummary;
+    historicalContent: string;
+  } | null>(null);
   const [chatOpened, setChatOpened] = useState(false);
   const [chatDraft, setChatDraft] = useState<{
     id: number;
@@ -1003,6 +1024,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           'The active file changed while approving. Ask again using the current file.',
         );
       if (result.applied) {
+        if (preferences.historyEnabled && proposal.projectId) {
+          void window.textra
+            .createFileHistorySnapshot({
+              projectId: proposal.projectId,
+              path: proposal.path,
+              content: proposal.content,
+              trigger: 'ai',
+              force: true,
+              label: 'Pre-AI review changes',
+            })
+            .then(() => window.dispatchEvent(new CustomEvent('textra:history:updated')))
+            .catch(() => undefined);
+        }
         const event = new CustomEvent('textra:apply-agent-edit', {
           detail: result.applied,
           cancelable: true,
@@ -1793,6 +1827,175 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   });
 
   useEffect(() => {
+    setHistoryDiff(null);
+  }, [activePath]);
+
+  const compareHistorySnapshot = async (snapshot: HistorySnapshotSummary) => {
+    if (!project) return;
+    const res = await window.textra.readFileHistorySnapshot({
+      projectId: project.id,
+      path: snapshot.path,
+      snapshotId: snapshot.id,
+    });
+    if (res.ok) {
+      setHistoryDiff({
+        snapshot,
+        historicalContent: res.value.content,
+      });
+    } else {
+      showError(res.error);
+    }
+  };
+
+  const restoreHistorySnapshot = async (snapshot: HistorySnapshotSummary) => {
+    if (!project) return;
+    const dateStr = new Date(snapshot.createdAt).toLocaleString();
+    const confirmed = window.confirm(
+      `Restore "${snapshot.path}" to snapshot from ${dateStr}?\n\nCurrent changes will be backed up automatically before restoring.`,
+    );
+    if (!confirmed) return;
+    const workspace = useWorkspace.getState();
+    const doc = workspace.documents.find((d) => d.path === snapshot.path);
+    const expectedRevision = doc?.revision ?? '';
+    const res = await window.textra.restoreFileHistorySnapshot({
+      projectId: project.id,
+      path: snapshot.path,
+      snapshotId: snapshot.id,
+      expectedRevision,
+    });
+    if (res.ok) {
+      useWorkspace.setState((state) => ({
+        documents: state.documents.map((d) =>
+          d.path === snapshot.path
+            ? {
+                ...d,
+                content: res.value.content,
+                savedContent: res.value.content,
+                revision: res.value.revision,
+                conflict: false,
+              }
+            : d,
+        ),
+      }));
+      setHistoryDiff(null);
+      window.dispatchEvent(new CustomEvent('textra:history:updated'));
+      window.dispatchEvent(
+        new CustomEvent('textra:notify', {
+          detail: {
+            message: `Restored ${snapshot.path} from history`,
+            tone: 'success',
+          },
+        }),
+      );
+    } else {
+      showError(res.error);
+    }
+  };
+
+  const exportHistorySnapshot = async (snapshot: HistorySnapshotSummary) => {
+    if (!project) return;
+    const res = await window.textra.exportFileHistorySnapshot({
+      projectId: project.id,
+      path: snapshot.path,
+      snapshotId: snapshot.id,
+    });
+    if (res.ok && res.value) {
+      window.dispatchEvent(
+        new CustomEvent('textra:notify', {
+          detail: {
+            message: 'Snapshot exported successfully',
+            tone: 'success',
+          },
+        }),
+      );
+    } else if (!res.ok) {
+      showError(res.error);
+    }
+  };
+
+  const pinHistorySnapshot = async (
+    snapshot: HistorySnapshotSummary,
+    pinned: boolean,
+    label?: string | null,
+  ) => {
+    if (!project) return;
+    const res = await window.textra.pinFileHistorySnapshot({
+      projectId: project.id,
+      path: snapshot.path,
+      snapshotId: snapshot.id,
+      pinned,
+      label,
+    });
+    if (res.ok) {
+      if (historyDiff?.snapshot.id === snapshot.id) {
+        setHistoryDiff({
+          ...historyDiff,
+          snapshot: res.value,
+        });
+      }
+      window.dispatchEvent(new CustomEvent('textra:history:updated'));
+    } else {
+      showError(res.error);
+    }
+  };
+
+  const createManualHistorySnapshot = async (label?: string) => {
+    if (!project || !activePath) return;
+    const workspace = useWorkspace.getState();
+    const doc = workspace.documents.find((d) => d.path === activePath);
+    if (!doc) return;
+    const res = await window.textra.createFileHistorySnapshot({
+      projectId: project.id,
+      path: activePath,
+      content: doc.content,
+      trigger: 'manual',
+      force: true,
+      label,
+    });
+    if (res.ok) {
+      window.dispatchEvent(new CustomEvent('textra:history:updated'));
+      window.dispatchEvent(
+        new CustomEvent('textra:notify', {
+          detail: {
+            message: `Created snapshot for ${activePath}`,
+            tone: 'success',
+          },
+        }),
+      );
+    } else {
+      showError(res.error);
+    }
+  };
+
+  useEffect(() => {
+    if (!preferences.historyEnabled || !project) return;
+    const intervalMs = Math.max(1, preferences.historyIntervalMinutes) * 60 * 1000;
+    const timer = setInterval(() => {
+      const state = useWorkspace.getState();
+      if (!state.project || state.busy) return;
+      const dirtyDocs = state.documents.filter(
+        (doc) => dirty(doc) && doc.projectId === state.project?.id,
+      );
+      for (const doc of dirtyDocs) {
+        void window.textra
+          .createFileHistorySnapshot({
+            projectId: doc.projectId,
+            path: doc.path,
+            content: doc.content,
+            trigger: 'interval',
+          })
+          .then((res) => {
+            if (res.ok && res.value) {
+              window.dispatchEvent(new CustomEvent('textra:history:updated'));
+            }
+          })
+          .catch(() => undefined);
+      }
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [preferences.historyEnabled, preferences.historyIntervalMinutes, project]);
+
+  useEffect(() => {
     const handleCompile = () => void compile();
     const handleSaveActive = () => {
       if (!activePath) return;
@@ -1862,6 +2065,13 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       useUI.getState().setExpandedPane(null);
       updatePreferences({ previewVisible: true });
     };
+    const handleViewHistory = () => {
+      selectSidebarView('history');
+    };
+    const handleCreateSnapshot = () => {
+      selectSidebarView('history');
+      void createManualHistorySnapshot();
+    };
 
     window.addEventListener('textra:compile', handleCompile);
     window.addEventListener('textra:save-active', handleSaveActive);
@@ -1876,6 +2086,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     window.addEventListener('textra:toggle-wrap', handleToggleWrap);
     window.addEventListener('textra:open-pdf-preview', handleOpenPdfPreview);
     window.addEventListener('textra:open-markdown-preview', handleOpenMarkdownPreview);
+    window.addEventListener('textra:view-history', handleViewHistory);
+    window.addEventListener('textra:create-snapshot', handleCreateSnapshot);
 
     return () => {
       window.removeEventListener('textra:compile', handleCompile);
@@ -1891,6 +2103,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       window.removeEventListener('textra:toggle-wrap', handleToggleWrap);
       window.removeEventListener('textra:open-pdf-preview', handleOpenPdfPreview);
       window.removeEventListener('textra:open-markdown-preview', handleOpenMarkdownPreview);
+      window.removeEventListener('textra:view-history', handleViewHistory);
+      window.removeEventListener('textra:create-snapshot', handleCreateSnapshot);
     };
   });
   const selectedSteps = availableRecipes.find((recipe) => recipe.name === engine)!.tools;
@@ -2008,6 +2222,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   ? 'duotone'
                   : 'light'
               }
+            />
+          </IconButton>
+          <IconButton
+            small={false}
+            className="icon-button activity-view"
+            label="File History"
+            title="File History: automatic snapshots and version comparison"
+            aria-pressed={preferences.sidebarVisible && sidebarView === 'history'}
+            onClick={() => selectSidebarView('history')}
+          >
+            <History
+              size={19}
+              weight={preferences.sidebarVisible && sidebarView === 'history' ? 'duotone' : 'light'}
             />
           </IconButton>
           <IconButton
@@ -2303,6 +2530,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   </div>
                 )}
               </div>
+            ) : sidebarView === 'history' ? (
+              <HistoryPanel
+                projectId={project?.id ?? null}
+                activePath={activePath}
+                activeContent={active?.content}
+                selectedSnapshotId={historyDiff?.snapshot.id ?? null}
+                onCompareSnapshot={(snapshot) => void compareHistorySnapshot(snapshot)}
+                onRestoreSnapshot={(snapshot) => restoreHistorySnapshot(snapshot)}
+                onExportSnapshot={(snapshot) => exportHistorySnapshot(snapshot)}
+                onPinSnapshot={(snapshot, pinned, label) =>
+                  pinHistorySnapshot(snapshot, pinned, label)
+                }
+                onCreateSnapshot={(label) => createManualHistorySnapshot(label)}
+              />
             ) : (
               <>
                 <PaneHeader title="Files" className="sidebar-title">
@@ -2859,6 +3100,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       snapshotPath={conflictSnapshotPath}
                       theme={preferences.theme}
                       onClose={() => setComparison(null)}
+                    />
+                  ) : historyDiff && historyDiff.snapshot.path === active.path ? (
+                    <HistoryDiffView
+                      document={{ path: active.path, content: active.content }}
+                      historicalSnapshot={historyDiff.snapshot}
+                      historicalContent={historyDiff.historicalContent}
+                      theme={preferences.theme}
+                      onClose={() => setHistoryDiff(null)}
+                      onRestore={() => restoreHistorySnapshot(historyDiff.snapshot)}
+                      onExport={() => exportHistorySnapshot(historyDiff.snapshot)}
+                      onPin={(pinned, label) =>
+                        pinHistorySnapshot(historyDiff.snapshot, pinned, label)
+                      }
                     />
                   ) : (
                     <div className="agent-review-editor-stack">
@@ -3499,6 +3753,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           >
             Open in VS Code
           </button>
+          {project.files.some((file) => file.path === fileMenu.path && file.kind === 'file') && (
+            <button
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                const path = fileMenu.path;
+                setFileMenu(null);
+                openExplorerFile(path);
+                selectSidebarView('history');
+              }}
+            >
+              View File History
+            </button>
+          )}
           {([false, true] as const).map((relative) => (
             <button
               key={String(relative)}
@@ -3574,6 +3842,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             }}
           >
             Close Saved Tabs
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              const path = tabContextMenu.path;
+              setTabContextMenu(null);
+              selectDocument(path);
+              selectSidebarView('history');
+            }}
+          >
+            View File History
           </button>
           <button
             role="menuitem"

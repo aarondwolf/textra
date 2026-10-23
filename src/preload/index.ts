@@ -139,6 +139,12 @@ const api: TextraAPI = {
   openStackExchangeSearch: (query) => ipcRenderer.invoke('textra:language:stackexchange', query),
   openTexFaqHelp: (url) => ipcRenderer.invoke('textra:help:texfaq', url),
   copyText: (text) => ipcRenderer.invoke('textra:clipboard:copy', text),
+  listFileHistory: (request) => ipcRenderer.invoke('textra:history:list', request),
+  readFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:read', request),
+  createFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:create', request),
+  restoreFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:restore', request),
+  pinFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:pin', request),
+  exportFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:export', request),
 };
 
 contextBridge.exposeInMainWorld('textra', Object.freeze(api));

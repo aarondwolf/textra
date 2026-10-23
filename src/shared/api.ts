@@ -110,6 +110,10 @@ export interface Preferences {
   snippetsSymbolsOpenDefault?: boolean;
   /** Keep Templates & Snippets open by default in Snippets tab. */
   snippetsTemplatesOpenDefault?: boolean;
+  /** Keep flat-file compressed history in .textra/history. */
+  historyEnabled: boolean;
+  /** Minutes between automatic snapshots of modified files. */
+  historyIntervalMinutes: number;
 }
 export interface ThemeCustomizations {
   accent: string;
@@ -174,6 +178,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   keyboardShortcuts: {},
   snippetsSymbolsOpenDefault: false,
   snippetsTemplatesOpenDefault: false,
+  historyEnabled: true,
+  historyIntervalMinutes: 10,
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 export interface FileEntry {
@@ -237,6 +243,36 @@ export type ExternalFileChangeEvent = ExternalWatchState;
 export interface CreateConflictCopyRequest extends FileRef {
   /** The preserved in-memory editor buffer. It is never written over the source file. */
   content: string;
+}
+export type HistorySnapshotTrigger = 'save' | 'interval' | 'compile' | 'ai' | 'format' | 'manual';
+export interface HistorySnapshotSummary {
+  id: string;
+  path: string;
+  createdAt: string;
+  sizeBytes: number;
+  revision: string;
+  trigger: HistorySnapshotTrigger;
+  pinned: boolean;
+  label: string | null;
+}
+export interface HistorySnapshotContent extends HistorySnapshotSummary {
+  content: string;
+}
+export interface CreateHistorySnapshotRequest extends FileRef {
+  content: string;
+  trigger: HistorySnapshotTrigger;
+  force?: boolean;
+  label?: string;
+}
+export interface HistorySnapshotRef extends FileRef {
+  snapshotId: string;
+}
+export interface PinHistorySnapshotRequest extends HistorySnapshotRef {
+  pinned: boolean;
+  label?: string | null;
+}
+export interface RestoreHistorySnapshotRequest extends HistorySnapshotRef {
+  expectedRevision: string;
 }
 export interface RecentProject {
   id: string;
@@ -524,6 +560,16 @@ export interface TextraAPI {
   openStackExchangeSearch(query: string): Promise<Result<void>>;
   openTexFaqHelp(url: string): Promise<Result<void>>;
   copyText(text: string): Promise<Result<void>>;
+  listFileHistory(request: FileRef): Promise<Result<HistorySnapshotSummary[]>>;
+  readFileHistorySnapshot(request: HistorySnapshotRef): Promise<Result<HistorySnapshotContent>>;
+  createFileHistorySnapshot(
+    request: CreateHistorySnapshotRequest,
+  ): Promise<Result<HistorySnapshotSummary | null>>;
+  restoreFileHistorySnapshot(request: RestoreHistorySnapshotRequest): Promise<Result<FileSnapshot>>;
+  pinFileHistorySnapshot(
+    request: PinHistorySnapshotRequest,
+  ): Promise<Result<HistorySnapshotSummary>>;
+  exportFileHistorySnapshot(request: HistorySnapshotRef): Promise<Result<boolean>>;
 }
 declare global {
   interface Window {

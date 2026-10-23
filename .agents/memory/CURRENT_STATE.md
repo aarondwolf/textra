@@ -1,5 +1,19 @@
 # Current state
 
+2026-10-23 Automatic File History feature (flat-file compressed backups in .textra/history):
+
+- Architecture: Main process `HistoryService` manages gzip-compressed flat-file snapshots inside `<projectRoot>/.textra/history/<relative-path>/` with metadata recorded in `.textra/history/index.json`. Windows-safe ISO filenames replace `:` with `-`.
+- Tree scan exclusion: `ProjectService.walk` ignores `.textra/history` subtrees to prevent performance degradation or tree entry limit exhaustion.
+- Triggers: Automatic snapshot creation on file save, build compile (root file), pre-AI review edit application, and configurable periodic interval timer (default 10 min) for dirty editor buffers. Deduplication skips redundant writes when SHA-256 revision is unchanged unless forced.
+- Tiered retention lifecycle: Automatic pruning algorithm keeps all snapshots for 0–30 days, 1 snapshot per day for 31–90 days, 1 snapshot per week for 91–365 days, and 1 snapshot per month for >365 days. Pinned versions or snapshots with custom labels are exempt from pruning.
+- Data safety: Pre-restore automatic backup snapshot of the current disk file is created before any historical version overwrites disk content.
+- UI & Monaco integration:
+  - `HistoryPanel`: Chronological snapshot tree grouped into Pinned, Today, Yesterday, Earlier this week, and Older, with trigger badges, custom labels, and direct action triggers (Compare, Pin, Restore, Export).
+  - `HistoryDiffView`: Side-by-side read-only Monaco Diff Editor (`original` = historical snapshot, `modified` = current working copy) with theme synchronization and action bar.
+  - Access points: Activity bar rail button (`Clock` icon), File Explorer context menu ("View File History"), Editor Tab context menu ("View File History"), and Command Palette entries ("View file history", "Create history snapshot").
+  - Preferences: "Files & Diagnostics" section in `SetupDialog` exposes history enable toggle and interval duration (1–120 minutes).
+- Verification: 56/56 test files and 592/592 vitest unit/integration tests pass. `npm run typecheck`, `npm run lint` (zero warnings), and `npm run format:check` pass. Production build succeeds with lazy-loaded history bundle chunk.
+
 2026-10-23 Startup and UI refactor (implemented and Windows native workflows verified):
 
 - Preserved the owner's title bar, logos, recent styling, shortcuts and cleanup behavior.

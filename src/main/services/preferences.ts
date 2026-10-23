@@ -47,6 +47,8 @@ const optionalKeys = new Set([
   'keyboardShortcuts',
   'snippetsSymbolsOpenDefault',
   'snippetsTemplatesOpenDefault',
+  'historyEnabled',
+  'historyIntervalMinutes',
 ]);
 
 const themeNames = new Set(['dark', 'light', 'midnight', 'forest', 'ocean', 'rose', 'sand']);
@@ -286,7 +288,13 @@ export function validatePreferences(value: unknown): Preferences {
     (Object.hasOwn(candidate, 'snippetsSymbolsOpenDefault') &&
       typeof candidate.snippetsSymbolsOpenDefault !== 'boolean') ||
     (Object.hasOwn(candidate, 'snippetsTemplatesOpenDefault') &&
-      typeof candidate.snippetsTemplatesOpenDefault !== 'boolean')
+      typeof candidate.snippetsTemplatesOpenDefault !== 'boolean') ||
+    (Object.hasOwn(candidate, 'historyEnabled') && typeof candidate.historyEnabled !== 'boolean') ||
+    (Object.hasOwn(candidate, 'historyIntervalMinutes') &&
+      (typeof candidate.historyIntervalMinutes !== 'number' ||
+        !Number.isInteger(candidate.historyIntervalMinutes) ||
+        candidate.historyIntervalMinutes < 1 ||
+        candidate.historyIntervalMinutes > 120))
   ) {
     throw new Error('Unsupported or invalid preferences.');
   }
@@ -336,6 +344,9 @@ export function validatePreferences(value: unknown): Preferences {
     keyboardShortcuts: validateKeyboardShortcuts(candidate.keyboardShortcuts),
     snippetsSymbolsOpenDefault: (candidate.snippetsSymbolsOpenDefault ?? false) as boolean,
     snippetsTemplatesOpenDefault: (candidate.snippetsTemplatesOpenDefault ?? false) as boolean,
+    historyEnabled: (candidate.historyEnabled ?? DEFAULT_PREFERENCES.historyEnabled) as boolean,
+    historyIntervalMinutes: (candidate.historyIntervalMinutes ??
+      DEFAULT_PREFERENCES.historyIntervalMinutes) as number,
   };
 }
 

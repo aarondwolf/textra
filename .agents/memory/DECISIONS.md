@@ -1,5 +1,14 @@
 # Decisions
 
+- 2026-10-23 Automatic File History architecture and retention:
+  - Local-first & portable: Snapshots are compressed with standard zlib gzip and stored in `<projectRoot>/.textra/history/` mirroring relative file paths, so project history moves with the project without external databases.
+  - Path traversal & sanitization: Snapshot paths are validated using `validateRelativePath` and Windows-safe timestamp filenames (`toISOString().replace(/:/g, '-')`).
+  - Project file tree isolation: `ProjectService.walk` ignores `.textra/history` subtrees so snapshots do not count towards the 5,000 project entry limits or pollute file explorers.
+  - Content deduplication: Consecutive snapshots with identical SHA-256 hash are skipped unless `force: true` is explicitly provided.
+  - Safe restoration: Overwriting a file with historical content automatically creates a pre-restore backup snapshot on disk first and validates expected revision.
+  - Tiered retention lifecycle: Pruning on project preparation enforces 0–30d (all), 31–90d (1/day), 91–365d (1/week), >365d (1/month), preserving pinned and custom-labeled snapshots permanently.
+  - Lazy feature boundary: `HistoryPanel` and `HistoryDiffView` are loaded via `lazyFeature` ensuring zero impact on initial application startup time.
+
 - 2026-10-23 lazy-feature verification: core editor host/layout styles stay in styles.css,
   independent of Agent review CSS. Monaco's ghost-text contribution must register before
   editor construction; only TeXtra's AI adapters/handlers and settings load after paint.

@@ -315,6 +315,73 @@ export function analyzeLatexDocument(source: string): WritingAnalysis {
   };
 }
 
+/** Lightweight outline and statistics extraction for Markdown documents. */
+export function analyzeMarkdownDocument(source: string): WritingAnalysis {
+  const outline: WritingOutlineItem[] = [];
+  const todos: TodoItem[] = [];
+  const lines = source.split(/\r?\n/);
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i];
+    // Match ATX headers: '# Header', '## Subheader', etc.
+    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(lineText);
+    if (headingMatch) {
+      const hashes = headingMatch[1].length;
+      const title = headingMatch[2].trim().replace(/\s+#+$/, '');
+      const command: OutlineCommand =
+        hashes === 1
+          ? 'section'
+          : hashes === 2
+            ? 'subsection'
+            : hashes === 3
+              ? 'subsubsection'
+              : hashes === 4
+                ? 'paragraph'
+                : 'subparagraph';
+      outline.push({
+        command,
+        level: hashes,
+        title: title || '(untitled)',
+        starred: false,
+        line: i + 1,
+      });
+    }
+
+    // Match TODO and FIXME annotations
+    const todoMatch = /\b(TODO|FIXME)\b\s*:?[ \t]*([^\r\n]*)/.exec(lineText);
+    if (todoMatch) {
+      todos.push({
+        kind: todoMatch[1] as TodoItem['kind'],
+        text: todoMatch[2].trim(),
+        line: i + 1,
+        column: todoMatch.index + 1,
+      });
+    }
+  }
+
+  const tableRows = (source.match(/^\|.+?\|$/gm) ?? []).length;
+  const imageCount = (source.match(/!\[.*?\]\(.*?\)/g) ?? []).length;
+
+  return {
+    outline,
+    labels: [],
+    references: [],
+    citations: [],
+    graphics: [],
+    todos,
+    referenceIssues: [],
+    counts: {
+      words: countWords(source),
+      sections: outline.length,
+      tables: tableRows ? 1 : 0,
+      figures: imageCount,
+      equations: countInlineMath(source),
+      citations: 0,
+      todos: todos.length,
+    },
+  };
+}
+
 /** Finds duplicate labels and references whose target is absent from this document. */
 export function findReferenceIssues(
   labels: readonly SourceOccurrence[],

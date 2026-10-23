@@ -7,6 +7,7 @@ import {
 } from '../../../../shared/tex-structure';
 import {
   analyzeLatexDocument,
+  analyzeMarkdownDocument,
   findReferenceIssues,
   type SourceOccurrence,
   type WritingAnalysis,
@@ -33,9 +34,10 @@ export class ProjectAnalysisCache {
     for (const [path, content] of Object.entries(sources)) {
       if (this.entries.get(path)?.content === content) continue;
       const tex = /\.tex$/i.test(path);
+      const md = /\.md$/i.test(path);
       this.entries.set(path, {
         content,
-        analysis: tex ? this.analyze(content) : null,
+        analysis: tex ? this.analyze(content) : md ? analyzeMarkdownDocument(content) : null,
         bibliography: /\.bib$/i.test(path) ? this.bibliography(content) : [],
         structure: tex ? parseTexStructure(content) : null,
       });

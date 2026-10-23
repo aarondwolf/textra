@@ -1,5 +1,96 @@
 # Current state
 
+2026-10-23 Titlebar Controls, Rail Reordering, Dynamic Version & DropdownMenu Migration:
+
+- Titlebar Layout & Window Actions:
+  - Relocated Sidebar toggle (`PanelLeftClose`/`PanelLeftOpen`) and Preview toggle (`PanelRightClose`/`PanelRightOpen`) to the custom title bar ([App.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/App.tsx)).
+  - Buttons are positioned in `.window-titlebar-actions` (`margin-left: auto`) immediately to the left of the native Windows minimize/maximize/close controls (with `-webkit-app-region: no-drag`, 24x24px sizing, pill/surface radius, hover shading, and full accessibility via `aria-label="Toggle sidebar"` and `aria-label="Toggle preview"`).
+  - Dynamic Version Badge: Replaced hardcoded "v0.0.4-alpha" with dynamic application version fetching via `window.textra.getAppInfo()` in `App.tsx`.
+- Activity Rail & Preview Reordering:
+  - Left Activity Rail: Removed `.activity-rail-header` so **Files** (`Files` icon) is now the very first icon at the top of the left rail.
+  - Preview Pane: When collapsed, **Compile** (`CompileControl`) is now the first icon at the top. Removed redundant expand/collapse toggle buttons from `preview-collapsed` and `preview-header`.
+- 100% DropdownMenu Migration across Entire Codebase:
+  - Replaced every remaining native HTML `<select>` element across all renderer components with the unified `DropdownMenu` component:
+    - [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx): Editor font size dropdown.
+    - [SetupDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/SetupDialog.tsx): Theme, base theme, tab close buttons, quiet period, ChkTeX timing, and default recipe.
+    - [RecipeDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/RecipeDialog.tsx): Tool presets, new tool selector, project default recipe, root document selector, step tool, add step dropdown.
+    - [CompileRecipeEditor.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/compile/CompileRecipeEditor.tsx): Recipe selector, step tool selector, project default recipe.
+    - [ToolEditorDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/compile/ToolEditorDialog.tsx): Program command preset selector.
+    - [AIProviderEditor.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/AIProviderEditor.tsx): Model visibility mode, connection default model.
+    - [PdfViewer.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/pdf/PdfViewer.tsx): PDF zoom presets & fit width (`fullWidth={false}`).
+  - Zero `<select>` elements remain in the entire `src/renderer/src` tree.
+- Verification: 47/47 unit test files and 524/524 tests pass. `npm run typecheck` (`tsc --noEmit`), `npm run lint` (`eslint .`), and `npm run format:check` (`prettier`) all pass cleanly with zero warnings or errors.
+
+2026-10-23 Reusable DropdownMenu / SelectMenu Component Standard:
+
+- Reusable Component Standard: Established `DropdownMenu` (also exported as `SelectMenu`) in `src/renderer/src/components/DropdownMenu.tsx` as the IDE-wide standard component for all dropdowns, select menus, and action popups:
+  - Visual Design & Heritage: Directly mirrors the design of the formatting toolbar heading menu (`.editor-format-heading-trigger`, `.editor-format-heading-menu`). Styled with pill-shaped borders (`var(--radius-pill)`), floating elevation (`box-shadow: 0 8px 24px #0004`, `border-radius: var(--radius-surface)`), smooth caret flip animation, and hover/focus shading.
+  - Features: Supports generic typed values (`<T extends string>`), single items or grouped items (`DropdownMenuGroup`), item icons, descriptions (e.g. `(missing)` or shortcuts), active item checkmark indicator (`Check` icon), outside-click auto-dismissal (`mousedown`), `Escape` key handling with trigger refocussing, and disabled states.
+  - SetupDialog Integration:
+    - Root Document Selector: Replaced native `<select>` in `SettingRow label="Root document (.tex)"` with `<DropdownMenu>`, displaying Auto-detect, sorted project `.tex` files, and missing file states with active checkmarks.
+    - Action Select Menu: Refactored `ActionSelectMenu` in `SetupDialog.tsx` to reuse `DropdownMenu`.
+- Memory Rule: All future dropdowns, popups, and select controls across the application MUST use `<DropdownMenu>` / `<SelectMenu>` from `src/renderer/src/components/DropdownMenu` rather than native HTML `<select>` elements or ad-hoc custom implementations.
+
+2026-10-23 Root Document (.tex) Selector in Settings:
+
+- Root Document Setting in Settings: Added a "Root document (.tex)" setting row under the Compilation section in Settings ([SetupDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/SetupDialog.tsx)) and in Advanced Project Settings ([RecipeDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/RecipeDialog.tsx)):
+  - Selector Component: Uses the standard `<SettingRow>` and `<select>` component styled consistently with all other Settings fields.
+  - Sorting Implementation: Filtered to `.tex` files in the open project and sorted using `sortProjectTexFiles`:
+    - Root-level `.tex` files first (`!file.path.includes('/')`), sorted alphabetically by file path.
+    - Subfolder `.tex` files second (`file.path.includes('/')`), sorted alphabetically by relative path.
+  - Non-destructive Selection & Persistence: Supports selecting an explicit `.tex` document or "Auto-detect" (with current detected root displayed in parentheses). Changing the selection persists to `.textra/settings.json` via `setProjectConfig` while preserving all existing project settings, and updates the workspace's active `rootFile` and `projectConfig` state.
+  - Compilation Integration: Updated `compile()` in [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx) so that if `projectConfig.rootFile` is configured, builds target the configured root document while continuing to default to the active document when unset.
+- Verification: 10/10 workspace-state unit tests pass including sorting and filter tests. Full TypeScript check (`npm run typecheck`), ESLint (`npm run lint`), and Prettier (`npm run format:check`) pass with zero errors.
+
+2026-10-23 Welcome Screen Redesign & Branding Updates:
+
+- Modernized Welcome Experience: Redesigned `.welcome-content` in [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx) and [styles.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/styles.css):
+  - Layout & Positioning: Centered vertically in the viewport (`margin-top: auto; margin-bottom: auto`) and positioned horizontally in the left third (`margin-left: clamp(36px, 8vw, 130px); margin-right: auto`). Expanded card and container width to `max-width: 740px` (with `max-width: 300px` for quick action items), providing ample room for long file paths in the Recent Workspaces card without aggressive truncation.
+  - Heading & Tagline: Updated heading to `TeXtra` and introduced tagline: "Fast, local LaTeX with intelligent writing assistance."
+  - Action Items: Replaced old pill button and checklist with vertical action rows:
+    - "New File..." with larger `FilePlus2` icon (triggers inline file creation when a project is open, or project selection when closed).
+    - "Open File" with `FileText` icon (reveals and switches to the explorer tab when a project is open, or triggers folder selection).
+    - "Open Folder" with `FolderOpen` icon (triggers `openFolder()`).
+    - "Generate Workspace" with `AIChat` icon: Programmatically initializes or completes a workspace safely (inspects existing settings in `.textra/settings.json` and only populates unset defaults without overwriting existing configuration, writes a minimal compile-ready Hello World `main.tex` only if missing, and opens the root file in the editor; prompts for a folder if no folder is open).
+  - Recent Workspaces Card: Structured card below quick actions presenting the 5 most recent workspaces. Displays each root project name as an interactive link with the full path beside it in faded text. Includes a "More..." action at the bottom triggering the folder chooser.
+- Verification: 56/56 test files, 595/595 unit & integration tests pass. `npm run typecheck`, `npm run lint` (zero warnings), and `npm run format:check` pass.
+
+2026-10-23 Dedicated Markdown Preview Tab & Independent PDF View:
+
+- Markdown Preview Separation: Decoupled Markdown previews from overriding the PDF preview window. The PDF preview canvas, scroll position, and loaded PDF state are fully preserved in `#preview-panel` when opening or inspecting Markdown documents.
+- Official Markdown Mark: Added `MarkdownLogo` matching Dustin Curtis's official Markdown Mark (viewBox `0 0 208 128`, rounded container, `M`, and down arrow `↓`) in [icons.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/icons.tsx).
+- Preview Tabs Integration:
+  - Added a dedicated "Markdown" preview tab directly beside "Output" (`['preview', 'problems', 'output', 'markdown']`) displaying the Markdown logo.
+  - The Markdown tab dynamically appears whenever a `.md` document is active or open in any editor tab (`hasMarkdown`), and cleanly disappears when all Markdown documents are closed (falling back safely to `'preview'`).
+  - Added collapsed preview icon button support for Markdown in `.preview-collapsed`.
+  - When opening a Markdown file (`selectFile`, editor tab click, or active path change), the right preview pane automatically switches to `panel: 'markdown'`.
+  - Users can freely toggle between "Preview" (most recently compiled/loaded PDF) and "Markdown" without losing their PDF or restarting their view.
+- Verification: 56/56 test files, 595/595 unit & integration tests pass. `npm run typecheck`, `npm run lint` (zero warnings), and `npm run format:check` pass.
+
+2026-10-23 UI Updates & Editor/History Polish:
+
+- Titlebar Version Badge: Added a subtle pill version badge `v0.0.4-alpha` beside the TeXtra title in the custom window titlebar (`.window-titlebar-version`).
+- History & Projects Polish:
+  - Narrow Pane Snapshot Actions: Refined the `...` snapshot card action popup menu (`.history-action-menu` and `.history-menu-item`) with matching padding, elevation (`box-shadow: 0 8px 24px #0004`), and radius (`var(--radius-pill)`) following the formatting bar dropdown conventions.
+  - Diff View Heading Style: Updated `HistoryDiffView` header (`.history-diff-header h2`) to use the application's clean sans-serif typography (`var(--font-sans)`, 13px, font-weight: 600) instead of hardcoded serif Georgia.
+  - Pinned Snapshot Labels: Removed quotes from custom labels across `HistoryPanel` and `HistoryDiffView`. Styled labels with muted italic typography (`font-style: italic`).
+  - Section Collapse & Header Hover: Fixed narrow-width collapse behavior in `HistoryPanel`. Enforced `max-height: 32px !important; overflow: hidden !important;` on `.history-section.collapsed`, added `flex: 0 1 auto; min-width: 0;` text truncation to `.history-header-filename`, and prevented double borders when collapsed. Configured dual hover states on `.history-section-header`: hovering the section as a whole shades the entire row (including the `+` button area) seamlessly, while hovering directly over the `+` button isolates shading to just the circular icon button.
+- Monaco Find Widget Freeze Fix: Replaced recursive DOM mutation observer on the Monaco editor find widget with non-blocking capturing pointer event listeners on the editor container and global `.monaco-hover` pointer-events suppression, completely eliminating the UI thread lock when opening find/replace (`Ctrl+F`).
+- Verification: 56/56 test files, 595/595 unit & integration tests pass. `npm run typecheck`, `npm run lint` (zero warnings), and `npm run format:check` pass.
+
+2026-10-23 UI Updates & File History harmonized release:
+
+- Typography: Standardized heading 1 to match the sans-serif font theme (`var(--font-sans)`) across global styles and Markdown preview, eliminating discordant serif styling.
+- Titlebar Search: Refined `Ctrl K` / `Cmd K` indicator to plain faded text (`color: var(--faint)`) without badge borders or background fills.
+- File History & Projects Refinement:
+  - Header & Filename: Removed the separate 29px subheader bar. Placed the active file name in subtle ghost text beside "File History" inside the section toggle. Added continuous bottom border across the header spanning both the section toggle and Create Snapshot button.
+  - Delete Icon Button: Standardized the Delete trash button into an unbordered icon button matching all other icon controls in the interface.
+  - Narrow Pane Responsiveness: Automatically monitors pane width with a `ResizeObserver`. When narrow (<280px), collapses the horizontal action buttons behind a sleek "..." popup menu (Compare, Pin/Unpin, Restore, Export, Delete) and stacks Date, Time, and Size vertically without truncation.
+  - Sticky Headers: Sticky date group headers now float completely flush to the top edge (`top: 0`) edge-to-edge without padding offsets or content leaking.
+  - Diff View Exit: Replaced the bordered "Exit" button in `HistoryDiffView` with a clean borderless "X" icon button.
+- Editor Find Tooltip Fix: Intercepted `mouseover` and `pointerover` capturing events on the find widget close button to prevent Monaco's `HoverService.setupDelayedHover` from scheduling or rendering obstructive hover widgets over the close button.
+- Verification: 56/56 test files, 595/595 unit & integration tests pass. `npm run typecheck`, `npm run lint` (zero warnings), and `npm run format:check` pass.
+
 2026-10-23 Automatic File History feature (flat-file compressed backups in .textra/history):
 
 - Architecture: Main process `HistoryService` manages gzip-compressed flat-file snapshots inside `<projectRoot>/.textra/history/<relative-path>/` with metadata recorded in `.textra/history/index.json`. Windows-safe ISO filenames replace `:` with `-`.

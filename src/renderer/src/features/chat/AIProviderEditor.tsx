@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { DropdownMenu } from '../../components/DropdownMenu';
 import type { AIProviderSettings, OllamaLocalStatus } from '../../../../shared/api';
 import {
   AI_DEFAULT_ENDPOINTS,
@@ -54,19 +55,20 @@ function VisibilityEditor({
   return (
     <fieldset className="ai-visibility-editor">
       <legend>{title}</legend>
-      <select
-        aria-label={`${title} visibility`}
+      <DropdownMenu
+        ariaLabel={`${title} visibility`}
         value={value.mode}
-        onChange={(event) => {
-          const mode = event.target.value as AIModelVisibility['mode'];
+        onChange={(val) => {
+          const mode = val as AIModelVisibility['mode'];
           if (mode === 'all') setText('');
           onChange({ mode, models: mode === 'all' ? [] : value.models });
         }}
-      >
-        <option value="all">All models</option>
-        <option value="include">Include selected models</option>
-        <option value="exclude">Exclude selected models</option>
-      </select>
+        items={[
+          { value: 'all', label: 'All models' },
+          { value: 'include', label: 'Include selected models' },
+          { value: 'exclude', label: 'Exclude selected models' },
+        ]}
+      />
       <small>
         {value.mode === 'all'
           ? `${models.length} eligible models`
@@ -382,20 +384,22 @@ export default function ProviderEditor({
               <div className="ai-provider-default-model">
                 <label className="field-label">
                   Connection default model
-                  <select
+                  <DropdownMenu
+                    ariaLabel="Connection default model"
                     value={defaultModel}
-                    onChange={(event) => setDefaultModel(event.target.value)}
-                  >
-                    <option value="">Not set</option>
-                    {defaultModel && !catalog.some((model) => model.id === defaultModel) && (
-                      <option value={defaultModel}>{defaultModel} (unavailable)</option>
-                    )}
-                    {catalog.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setDefaultModel(val)}
+                    placeholder="Not set"
+                    items={[
+                      { value: '', label: 'Not set' },
+                      ...(defaultModel && !catalog.some((model) => model.id === defaultModel)
+                        ? [{ value: defaultModel, label: `${defaultModel} (unavailable)` }]
+                        : []),
+                      ...catalog.map((model) => ({
+                        value: model.id,
+                        label: model.label,
+                      })),
+                    ]}
+                  />
                 </label>
                 <button
                   type="button"

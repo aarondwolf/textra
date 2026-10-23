@@ -22,7 +22,6 @@ import { agentEditHunks } from '../../shared/ai-edits';
 import { AGENT_SOURCE_LIMIT, type AIAgentContext, type AIEditProposal } from '../../shared/ai';
 import {
   AIChat,
-  ArrowRight,
   ArrowSquareOut,
   ArrowsInSimple,
   ArrowsOutSimple,
@@ -34,12 +33,7 @@ import {
   Columns2,
   Broom,
   ChevronDown,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightOpen,
-  PanelRightClose,
   Settings,
-  Search,
   Ellipsis,
   Files,
   FilePlus2,
@@ -49,8 +43,8 @@ import {
   Hammer,
   FolderOpen,
   FolderPlus,
-  Pin,
   FilePdf,
+  MarkdownLogo,
   Scroll,
   Warning,
   Pencil,
@@ -59,6 +53,7 @@ import {
   X,
 } from './icons';
 import { FileIcon } from './features/files/FileIcon';
+import { DropdownMenu } from './components/DropdownMenu';
 import {
   BUILD_RECIPES,
   DEFAULT_PREFERENCES,
@@ -66,6 +61,7 @@ import {
   type BuildEngine,
   type ExternalFileChangeEvent,
   type HistorySnapshotSummary,
+  type ProjectConfig,
   type Result,
   type RestoredPdf,
   type TexlabStatus,
@@ -840,6 +836,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       if (previous && !dirty(previous)) closeDocument(previous.path);
     }
     setPreviewPath(preferences.previewTabs ? path : null);
+    if (/\.md(?:own)?$/i.test(path)) {
+      setPanel('markdown');
+    }
     void openDocument(path);
   }
   useEffect(() => {
@@ -865,6 +864,30 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const polling = useRef(false);
   const operations = useRef(0);
   const active = documents.find((document) => document.path === activePath);
+  const hasMarkdown = Boolean(
+    (activePath && /\.md(?:own)?$/i.test(activePath)) ||
+    documents.some((document) => /\.md(?:own)?$/i.test(document.path)),
+  );
+  const activeMarkdownDoc =
+    active && /\.md(?:own)?$/i.test(active.path)
+      ? active
+      : documents.find((document) => /\.md(?:own)?$/i.test(document.path));
+
+  useEffect(() => {
+    if (!hasMarkdown && panel === 'markdown') {
+      setPanel('preview');
+    }
+  }, [hasMarkdown, panel, setPanel]);
+
+  const previousActivePathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activePath && activePath !== previousActivePathRef.current) {
+      if (/\.md(?:own)?$/i.test(activePath)) {
+        setPanel('markdown');
+      }
+    }
+    previousActivePathRef.current = activePath;
+  }, [activePath, setPanel]);
   const [agentContext, setAgentContext] = useState<AIAgentContext | null>(null);
   const [agentWorking, setAgentWorking] = useState(false);
   const [agentAccessNeeded, setAgentAccessNeeded] = useState(false);
@@ -1142,13 +1165,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     // Conservative thresholds: switch to icons, then to a menu, a little before things collide.
     const measure = () => {
       const width = tabsHost.clientWidth;
-      setTabMode(width >= 250 ? 'full' : width >= 112 ? 'icons' : 'menu');
+      const fullThreshold = hasMarkdown ? 310 : 250;
+      setTabMode(width >= fullThreshold ? 'full' : width >= 120 ? 'icons' : 'menu');
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(tabsHost);
     return () => observer.disconnect();
-  }, [tabsHost]);
+  }, [tabsHost, hasMarkdown]);
   useEffect(() => {
     if (tabMode !== 'menu') setTabMenuOpen(false);
   }, [tabMode]);
@@ -1348,6 +1372,76 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         void setProject(next).catch(showError);
         setSelected(null);
       }
+    });
+  }
+  function generateWorkspace() {
+    if (build.running) {
+      showError('Cancel the running build before generating a workspace.');
+      return;
+    }
+    cancelWorkspaceRestoration();
+    protect(async () => {
+      let targetProject = project;
+      if (!targetProject) {
+        const result = await window.textra.chooseProject();
+        const next = unwrap(result);
+        if (!next) return;
+        targetProject = next;
+        await setProject(next);
+      }
+
+      // Ensure .textra folder exists
+      await window.textra.prepareProject(targetProject.id);
+
+      // Inspect existing settings; only set default values for properties that have not yet been set
+      const existingConfigResult = await window.textra.getProjectConfig(targetProject.id);
+      const existing = existingConfigResult.ok
+        ? existingConfigResult.value
+        : ({} as Partial<ProjectConfig>);
+
+      const mergedConfig: ProjectConfig = {
+        ...existing,
+        schemaVersion: existing.schemaVersion ?? 1,
+        rootFile: existing.rootFile ?? 'main.tex',
+        engine: existing.engine ?? 'pdflatex',
+      };
+
+      await window.textra.setProjectConfig({
+        projectId: targetProject.id,
+        config: mergedConfig,
+      });
+
+      const currentProject = useWorkspace.getState().project ?? targetProject;
+      const fileToOpen = mergedConfig.rootFile || 'main.tex';
+
+      const mainTexContent = [
+        '\\documentclass{article}',
+        '',
+        '\\begin{document}',
+        '',
+        'Hello, World!',
+        '',
+        '\\end{document}',
+        '',
+      ].join('\n');
+
+      const fileExists = currentProject.files.some((file) => file.path === fileToOpen);
+      if (!fileExists) {
+        const createResult = await window.textra.createEntry({
+          projectId: currentProject.id,
+          path: fileToOpen,
+          kind: 'file',
+          content: mainTexContent,
+        });
+        if (createResult.ok) {
+          useWorkspace.setState({ project: createResult.value });
+        }
+      }
+
+      setSelected(fileToOpen);
+      updatePreferences({ sidebarVisible: true });
+      setSidebarView('explorer');
+      await openDocument(fileToOpen);
     });
   }
   async function refresh() {
@@ -1740,7 +1834,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }
   async function compile() {
     if (!project || !active || !canCompile || build.running || busy || prompt || pending) return;
-    const rootFile = active.path;
+    const configuredRoot = useWorkspace.getState().projectConfig?.rootFile;
+    const rootFile = configuredRoot || active.path;
     // A new build should return Preview to the document it just produced.
     setPdfPreviewPath(null);
     setRecipeOpen(false);
@@ -1939,6 +2034,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     }
   };
 
+  const deleteHistorySnapshot = async (snapshot: HistorySnapshotSummary) => {
+    if (!project) return;
+    const res = await window.textra.deleteFileHistorySnapshot({
+      projectId: project.id,
+      path: snapshot.path,
+      snapshotId: snapshot.id,
+    });
+    if (res.ok) {
+      if (historyDiff?.snapshot.id === snapshot.id) {
+        setHistoryDiff(null);
+      }
+      window.dispatchEvent(new CustomEvent('textra:history:updated'));
+      notify('Deleted historical snapshot.', 'info');
+    } else {
+      showError(res.error);
+    }
+  };
+
   const createManualHistorySnapshot = async (label?: string) => {
     if (!project || !activePath) return;
     const workspace = useWorkspace.getState();
@@ -2060,8 +2173,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       }
     };
     const handleOpenMarkdownPreview = () => {
-      setPdfPreviewPath(null);
-      setPanel('preview');
+      setPanel('markdown');
       useUI.getState().setExpandedPane(null);
       updatePreferences({ previewVisible: true });
     };
@@ -2130,26 +2242,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       )}
       <div className="workspace-body">
         <nav className="activity-rail" aria-label="Workspace controls">
-          <div className="activity-rail-header">
-            <IconButton
-              small={false}
-              className="icon-button"
-              label="Toggle sidebar"
-              title={
-                preferences.sidebarVisible
-                  ? 'Collapse sidebar (Ctrl/Cmd+B)'
-                  : 'Expand sidebar (Ctrl/Cmd+B)'
-              }
-              aria-pressed={preferences.sidebarVisible}
-              onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
-            >
-              {preferences.sidebarVisible ? (
-                <PanelLeftClose size={19} />
-              ) : (
-                <PanelLeftOpen size={19} />
-              )}
-            </IconButton>
-          </div>
           <IconButton
             small={false}
             className="icon-button activity-view"
@@ -2227,19 +2319,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           <IconButton
             small={false}
             className="icon-button activity-view"
-            label="File History"
-            title="File History: automatic snapshots and version comparison"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'history'}
-            onClick={() => selectSidebarView('history')}
-          >
-            <History
-              size={19}
-              weight={preferences.sidebarVisible && sidebarView === 'history' ? 'duotone' : 'light'}
-            />
-          </IconButton>
-          <IconButton
-            small={false}
-            className="icon-button activity-view"
             label="AI Chat"
             title="AI Chat"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'chat'}
@@ -2253,24 +2332,22 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           </IconButton>
           <IconButton
             small={false}
-            className="icon-button rail-bottom"
-            label="Command palette"
-            title="Search commands (Ctrl/Cmd+K)"
-            onClick={() => useUI.getState().setPaletteOpen(true)}
-          >
-            <Search size={18} />
-          </IconButton>
-          <IconButton
-            small={false}
-            className="icon-button activity-view"
-            label="Recent Projects"
-            title="Recent Projects"
-            aria-pressed={preferences.sidebarVisible && sidebarView === 'recents'}
-            onClick={() => selectSidebarView('recents')}
+            className="icon-button rail-bottom activity-view"
+            label="History & Projects"
+            title="History & Projects: file snapshots and recent projects"
+            aria-pressed={
+              preferences.sidebarVisible && (sidebarView === 'history' || sidebarView === 'recents')
+            }
+            onClick={() => selectSidebarView('history')}
           >
             <History
               size={20}
-              weight={preferences.sidebarVisible && sidebarView === 'recents' ? 'duotone' : 'light'}
+              weight={
+                preferences.sidebarVisible &&
+                (sidebarView === 'history' || sidebarView === 'recents')
+                  ? 'duotone'
+                  : 'light'
+              }
             />
           </IconButton>
           <IconButton
@@ -2371,68 +2448,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 <PaneHeader title="Snippets & Symbols" className="sidebar-title"></PaneHeader>
                 <SnippetPalette canInsert={!!active} onAskChat={askSnippetInChat} />
               </>
-            ) : sidebarView === 'recents' ? (
-              <>
-                <PaneHeader title="Recent Projects" className="sidebar-title">
-                  <IconButton
-                    small={true}
-                    className="icon-button small"
-                    label="Open folder"
-                    title="Open folder"
-                    onClick={() => openFolder()}
-                    disabled={busy || build.running}
-                  >
-                    <FolderOpen size={15} />
-                  </IconButton>
-                </PaneHeader>
-                {recents.length > 0 ? (
-                  <div className="recent-project-list recent-project-list-full">
-                    {[...recents]
-                      .sort((a, b) => Number(b.pinned) - Number(a.pinned))
-                      .map((recent) => (
-                        <div className="recent-row" key={recent.id}>
-                          <button
-                            className="recent-open"
-                            title={recent.rootPath}
-                            aria-label={`Open recent ${recent.name}`}
-                            disabled={busy || build.running}
-                            onClick={() => openFolder(recent.id)}
-                          >
-                            <FolderOpen size={13} />
-                            <span>{recent.name}</span>
-                          </button>
-                          <IconButton
-                            small={true}
-                            className="icon-button small"
-                            label={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
-                            title={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
-                            aria-pressed={recent.pinned}
-                            onClick={() =>
-                              void run(async () => {
-                                useWorkspace.setState({
-                                  recents: unwrap(
-                                    await window.textra.setProjectPinned({
-                                      id: recent.id,
-                                      pinned: !recent.pinned,
-                                    }),
-                                  ),
-                                });
-                              })
-                            }
-                          >
-                            <Pin size={12} />
-                          </IconButton>
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <div className="sidebar-empty">
-                    <History size={27} weight="thin" />
-                    <p>No recent projects.</p>
-                    <span>Folders you open will show up here.</span>
-                  </div>
-                )}
-              </>
             ) : sidebarView === 'compile' ? (
               <div className="writing-panel compile-sidebar">
                 <PaneHeader
@@ -2530,19 +2545,31 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   </div>
                 )}
               </div>
-            ) : sidebarView === 'history' ? (
+            ) : sidebarView === 'history' || sidebarView === 'recents' ? (
               <HistoryPanel
                 projectId={project?.id ?? null}
                 activePath={activePath}
                 activeContent={active?.content}
+                isDirty={Boolean(active && dirty(active))}
                 selectedSnapshotId={historyDiff?.snapshot.id ?? null}
                 onCompareSnapshot={(snapshot) => void compareHistorySnapshot(snapshot)}
                 onRestoreSnapshot={(snapshot) => restoreHistorySnapshot(snapshot)}
                 onExportSnapshot={(snapshot) => exportHistorySnapshot(snapshot)}
+                onDeleteSnapshot={(snapshot) => deleteHistorySnapshot(snapshot)}
                 onPinSnapshot={(snapshot, pinned, label) =>
                   pinHistorySnapshot(snapshot, pinned, label)
                 }
                 onCreateSnapshot={(label) => createManualHistorySnapshot(label)}
+                recents={recents}
+                onOpenFolder={(id) => openFolder(id)}
+                onPinProject={async (id, pinned) => {
+                  void run(async () => {
+                    useWorkspace.setState({
+                      recents: unwrap(await window.textra.setProjectPinned({ id, pinned })),
+                    });
+                  });
+                }}
+                projectBusy={busy || build.running}
               />
             ) : (
               <>
@@ -2837,7 +2864,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                               current === document.path ? null : current,
                             );
                             if (/\.md(?:own)?$/i.test(document.path)) {
-                              setPdfPreviewPath(null);
+                              setPanel('markdown');
                             }
                             selectDocument(document.path);
                           }}
@@ -2892,6 +2919,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             role="menuitem"
                             onClick={() => {
                               setTabOverflowOpen(false);
+                              if (/\.md(?:own)?$/i.test(doc.path)) {
+                                setPanel('markdown');
+                              }
                               selectDocument(doc.path);
                             }}
                           >
@@ -2986,19 +3016,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           </button>
                           <label>
                             Font size
-                            <select
-                              aria-label="Editor font size"
-                              value={fontSize}
-                              onChange={(event) => setFontSize(Number(event.target.value))}
-                            >
-                              {[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
+                            <DropdownMenu
+                              ariaLabel="Editor font size"
+                              fullWidth={true}
+                              value={String(fontSize)}
+                              items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
                                 .sort((a, b) => a - b)
-                                .map((size) => (
-                                  <option key={size} value={size}>
-                                    {size}px
-                                  </option>
-                                ))}
-                            </select>
+                                .map((size) => ({
+                                  value: String(size),
+                                  label: `${size}px`,
+                                }))}
+                              onChange={(val) => setFontSize(Number(val))}
+                            />
                           </label>
                           <button
                             className="text-button"
@@ -3161,59 +3190,85 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   <div className="welcome-logo" aria-hidden="true">
                     <TextraLogo size={56} />
                   </div>
-                  <h1>{project ? 'Open a file' : 'Start writing'}</h1>
+                  <h1>TeXtra</h1>
                   <p className="welcome-description">
-                    {project
-                      ? 'Choose a file from the explorer, or create one.'
-                      : 'Open a folder to begin.'}
+                    Fast, local LaTeX with intelligent writing assistance.
                   </p>
-                  <button
-                    className={project ? 'primary-button' : 'primary-button welcome-choose-project'}
-                    onClick={() => (project ? newEntry('file') : openFolder())}
-                    disabled={busy}
-                  >
-                    {project ? <FilePlus2 size={16} /> : <FolderOpen size={16} />}
-                    {project ? 'Create a source file' : 'Choose a project folder'}
-                    <ArrowRight size={15} />
-                  </button>
-                  {!project && (
-                    <section className="welcome-checklist" aria-label="Getting started">
-                      <h2>Getting started</h2>
-                      <p>1. Choose a project folder.</p>
-                      <p>
-                        2. TeX tools{' '}
-                        {toolsReady &&
-                        tools.some((tool) => /latex|tex$/i.test(tool.name) && tool.path)
-                          ? 'detected.'
-                          : 'can be configured in Settings.'}
-                      </p>
-                      <p>
-                        3. TexLab{' '}
-                        {texlabStatus?.installation === 'managed' ||
-                        texlabStatus?.installation === 'external'
-                          ? 'is ready.'
-                          : 'can be checked in Settings.'}
-                      </p>
-                    </section>
-                  )}
-                  {!project && recents.length > 0 && (
-                    <section className="welcome-recents" aria-labelledby="welcome-recents-heading">
-                      <h2 id="welcome-recents-heading">Recent projects</h2>
-                      <ul>
+                  <div className="welcome-actions" role="group" aria-label="Workspace actions">
+                    <button
+                      type="button"
+                      className="welcome-action-item"
+                      onClick={() => (project ? newEntry('file') : openFolder())}
+                      disabled={busy}
+                    >
+                      <FilePlus2 size={20} aria-hidden="true" />
+                      <span>New File...</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="welcome-action-item"
+                      onClick={() => {
+                        if (project) {
+                          updatePreferences({ sidebarVisible: true });
+                          setSidebarView('explorer');
+                        } else {
+                          openFolder();
+                        }
+                      }}
+                      disabled={busy}
+                    >
+                      <FileText size={20} aria-hidden="true" />
+                      <span>Open File</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="welcome-action-item"
+                      onClick={() => openFolder()}
+                      disabled={busy}
+                    >
+                      <FolderOpen size={20} aria-hidden="true" />
+                      <span>Open Folder</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="welcome-action-item"
+                      onClick={generateWorkspace}
+                      disabled={busy}
+                    >
+                      <AIChat size={20} aria-hidden="true" />
+                      <span>Generate Workspace</span>
+                    </button>
+                  </div>
+                  {recents.length > 0 && (
+                    <section
+                      className="welcome-recent-card"
+                      aria-labelledby="welcome-recent-heading"
+                    >
+                      <h2 id="welcome-recent-heading">Recent</h2>
+                      <ul className="welcome-recent-list">
                         {recents.slice(0, 5).map((recent) => (
-                          <li key={recent.id}>
+                          <li key={recent.id} className="welcome-recent-row">
                             <button
                               type="button"
+                              className="welcome-recent-link"
                               title={recent.rootPath}
                               disabled={busy || build.running}
                               onClick={() => openFolder(recent.id)}
                             >
-                              <FolderOpen size={14} aria-hidden="true" />
-                              <span>{recent.name}</span>
+                              <span className="welcome-recent-name">{recent.name}</span>
+                              <span className="welcome-recent-path">{recent.rootPath}</span>
                             </button>
                           </li>
                         ))}
                       </ul>
+                      <button
+                        type="button"
+                        className="welcome-recent-more"
+                        disabled={busy || build.running}
+                        onClick={() => openFolder()}
+                      >
+                        More...
+                      </button>
                     </section>
                   )}
                   {missingTool && (
@@ -3340,7 +3395,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       </IconButton>
                       {tabMenuOpen && (
                         <div className="preview-tabs-menu" role="menu" aria-label="Preview views">
-                          {(['preview', 'problems', 'output'] as const).map((name) => (
+                          {(
+                            [
+                              'preview',
+                              'problems',
+                              'output',
+                              ...(hasMarkdown ? (['markdown'] as const) : []),
+                            ] as const
+                          ).map((name) => (
                             <button
                               key={name}
                               role="menuitemradio"
@@ -3354,14 +3416,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                 <FilePdf size={15} />
                               ) : name === 'problems' ? (
                                 <Warning size={15} />
-                              ) : (
+                              ) : name === 'output' ? (
                                 <Scroll size={15} />
+                              ) : (
+                                <MarkdownLogo size={15} />
                               )}
                               {name === 'preview'
                                 ? 'Preview'
                                 : name === 'problems'
                                   ? 'Problems'
-                                  : 'Output'}
+                                  : name === 'output'
+                                    ? 'Output'
+                                    : 'Markdown'}
                               {name === 'problems' && !!problemDiagnostics.length && (
                                 <span className="count">{problemDiagnostics.length}</span>
                               )}
@@ -3380,7 +3446,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       aria-label="Preview views"
                       data-mode={tabMode}
                     >
-                      {(['preview', 'problems', 'output'] as const).map((name, index, names) => (
+                      {(
+                        [
+                          'preview',
+                          'problems',
+                          'output',
+                          ...(hasMarkdown ? (['markdown'] as const) : []),
+                        ] as const
+                      ).map((name, index, names) => (
                         <button
                           key={name}
                           role="tab"
@@ -3394,14 +3467,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                               ? 'Preview'
                               : name === 'problems'
                                 ? 'Problems'
-                                : 'Output'
+                                : name === 'output'
+                                  ? 'Output'
+                                  : 'Markdown'
                           }
                           aria-label={
                             name === 'preview'
                               ? 'Preview'
                               : name === 'problems'
                                 ? 'Problems'
-                                : 'Output'
+                                : name === 'output'
+                                  ? 'Output'
+                                  : 'Markdown Preview'
                           }
                           onKeyDown={(event) => {
                             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
@@ -3421,15 +3498,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                               <FilePdf size={16} />
                             ) : name === 'problems' ? (
                               <Warning size={16} />
-                            ) : (
+                            ) : name === 'output' ? (
                               <Scroll size={16} />
+                            ) : (
+                              <MarkdownLogo size={16} />
                             ))}
                           {tabMode === 'full' &&
-                            (name === 'preview'
-                              ? 'Preview'
-                              : name === 'problems'
-                                ? 'Problems'
-                                : 'Output')}
+                            (name === 'preview' ? (
+                              'Preview'
+                            ) : name === 'problems' ? (
+                              'Problems'
+                            ) : name === 'output' ? (
+                              'Output'
+                            ) : (
+                              <>
+                                <MarkdownLogo size={14} />
+                                <span>Markdown</span>
+                              </>
+                            ))}
                           {name === 'problems' && !!problemDiagnostics.length && (
                             <span className="count">{problemDiagnostics.length}</span>
                           )}
@@ -3477,18 +3563,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 >
                   {previewFull ? <ArrowsInSimple size={16} /> : <ArrowsOutSimple size={16} />}
                 </IconButton>
-                <IconButton
-                  small={true}
-                  className="icon-button small"
-                  label="Collapse preview"
-                  title="Collapse preview"
-                  onClick={() => {
-                    setExpandedPane(null);
-                    updatePreferences({ previewVisible: false });
-                  }}
-                >
-                  <PanelRightClose size={17} />
-                </IconButton>
               </div>
               <div
                 className="pdf-tab-content"
@@ -3497,9 +3571,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 aria-labelledby="preview-tab"
                 hidden={panel !== 'preview'}
               >
-                {active && /\.md(?:own)?$/i.test(active.path) ? (
-                  <MarkdownPreview source={active.content} path={active.path} />
-                ) : previewLoaded && (currentBuild?.pdfPath || pdfPreviewPath || restoredPdf) ? (
+                {previewLoaded && (currentBuild?.pdfPath || pdfPreviewPath || restoredPdf) ? (
                   <PdfViewer
                     project={project}
                     build={
@@ -3533,7 +3605,27 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   </div>
                 )}
               </div>
-              {panel !== 'preview' && (
+              {hasMarkdown && (
+                <div
+                  className="pdf-tab-content markdown-tab-content"
+                  id="markdown-panel"
+                  role="tabpanel"
+                  aria-labelledby="markdown-tab"
+                  hidden={panel !== 'markdown'}
+                >
+                  {activeMarkdownDoc ? (
+                    <MarkdownPreview
+                      source={activeMarkdownDoc.content}
+                      path={activeMarkdownDoc.path}
+                    />
+                  ) : (
+                    <div className="feature-loading" role="status">
+                      Open a Markdown document to preview it.
+                    </div>
+                  )}
+                </div>
+              )}
+              {panel !== 'preview' && panel !== 'markdown' && (
                 <div
                   className="preview-diagnostics"
                   id={`${panel}-panel`}
@@ -3600,16 +3692,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             </section>
             {!preferences.previewVisible && (
               <div className="preview-collapsed">
-                <IconButton
-                  small={true}
-                  className="icon-button small"
-                  label="Expand preview"
-                  title="Expand preview"
-                  onClick={() => updatePreferences({ previewVisible: true })}
-                >
-                  <PanelRightOpen size={17} />
-                </IconButton>
                 <CompileControl
+                  variant="collapsed"
                   running={build.running}
                   feedback={buildFeedback}
                   canCompile={canCompile}
@@ -3660,6 +3744,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 >
                   <Scroll size={17} />
                 </IconButton>
+                {hasMarkdown && (
+                  <IconButton
+                    small={true}
+                    className="icon-button small"
+                    label="Show Markdown preview"
+                    title="Show Markdown preview"
+                    onClick={() => {
+                      setPanel('markdown');
+                      updatePreferences({ previewVisible: true });
+                    }}
+                  >
+                    <MarkdownLogo size={17} />
+                  </IconButton>
+                )}
               </div>
             )}
           </div>

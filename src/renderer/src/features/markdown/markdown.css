@@ -34,6 +34,7 @@
 .markdown-preview-body h4,
 .markdown-preview-body h5,
 .markdown-preview-body h6 {
+  font-family: var(--font-sans);
   margin: 1.5em 0 0.5em;
   color: var(--text);
   font-weight: 650;

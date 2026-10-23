@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DialogShell } from '../../components/DialogShell';
 import { Button } from '../../components/Button';
+import { DropdownMenu } from '../../components/DropdownMenu';
 import { X, Check } from '../../icons';
 import {
   RECIPE_COMMANDS,
@@ -79,25 +80,23 @@ export function ToolEditorDialog({ open, tool, onSave, onClose }: ToolEditorDial
 
         <label className="field-label">
           Program Command
-          <select
-            aria-label="Program command"
+          <DropdownMenu
+            ariaLabel="Program command"
             value={draft.command.replace(/\.exe$/i, '').toLowerCase()}
-            onChange={(e) => {
+            onChange={(value) => {
               const defaultTools = createDefaultRecipeSettings()['latex-workshop.latex.tools'];
-              const preset = defaultTools.find((p) => p.command === e.target.value);
+              const preset = defaultTools.find((p) => p.command === value);
               setDraft({
                 ...draft,
-                command: preset ? preset.command : e.target.value,
+                command: preset ? preset.command : value,
                 args: preset ? structuredClone(preset.args) : draft.args,
               });
             }}
-          >
-            {RECIPE_COMMANDS.map((cmd) => (
-              <option key={cmd} value={cmd}>
-                {cmd}
-              </option>
-            ))}
-          </select>
+            items={RECIPE_COMMANDS.map((cmd) => ({
+              value: cmd,
+              label: cmd,
+            }))}
+          />
         </label>
 
         <label className="field-label">Common Options</label>

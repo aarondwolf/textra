@@ -311,4 +311,97 @@ describe('flat-file compressed automatic file history', () => {
     expect(remainingIds.has(sMonthEarly.id)).toBe(false);
     expect(remainingIds.has(sOldPinned.id)).toBe(true);
   });
+
+  it('deletes a historical snapshot and removes its compressed file from disk', async () => {
+    const snap = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'Snapshot to delete.\n',
+      trigger: 'manual',
+    });
+    expect(snap).not.toBeNull();
+
+    const historyDir = join(root, '.textra', 'history');
+    let files = await readdir(historyDir);
+    const gz = files.find((f) => f.includes(snap!.id));
+    expect(gz).toBeDefined();
+
+    await history.deleteSnapshot({
+      projectId: project.id,
+      path: 'main.tex',
+      snapshotId: snap!.id,
+    });
+
+    files = await readdir(historyDir);
+    expect(files.find((f) => f.includes(snap!.id))).toBeUndefined();
+
+    const list = await history.list({ projectId: project.id, path: 'main.tex' });
+    expect(list.find((s) => s.id === snap!.id)).toBeUndefined();
+  });
+
+  it('thins intermediate save snapshots older than 30 minutes in the same 10-minute window', async () => {
+    const historyDir = join(root, '.textra', 'history');
+    await mkdir(historyDir, { recursive: true });
+
+    const now = new Date('2026-10-23T12:00:00.000Z').getTime();
+    const createSnap = async (
+      id: string,
+      createdAtIso: string,
+      trigger: 'save' | 'manual' = 'save',
+    ) => {
+      const fileName = `main.tex.${id}.gz`;
+      const compressed = await gzipAsync(Buffer.from(`Content for ${id}`, 'utf8'));
+      await writeFile(join(historyDir, fileName), compressed);
+      return {
+        id,
+        path: 'main.tex',
+        createdAt: createdAtIso,
+        trigger,
+        pinned: false,
+        label: null,
+        hash: 'hash_' + id,
+        sizeBytes: compressed.length,
+        revision: 1,
+      };
+    };
+
+    // Save 1: 10 minutes ago (within 30m grace period) -> KEEP
+    const saveRecent1 = await createSnap('save-rec1', new Date(now - 10 * 60 * 1000).toISOString());
+    // Save 2: 12 minutes ago (within 30m grace period) -> KEEP
+    const saveRecent2 = await createSnap('save-rec2', new Date(now - 12 * 60 * 1000).toISOString());
+
+    // Save 3 & 4: 45m and 48m ago (same 10-minute bucket: ~11:10-11:20) -> keep latest (Save 3 at 45m), prune Save 4
+    const saveOldEarly = await createSnap(
+      'save-old-early',
+      new Date(now - 48 * 60 * 1000).toISOString(),
+    );
+    const saveOldLate = await createSnap(
+      'save-old-late',
+      new Date(now - 45 * 60 * 1000).toISOString(),
+    );
+
+    // Non-save (manual): 50m ago -> KEEP
+    const manualOld = await createSnap(
+      'manual-old',
+      new Date(now - 50 * 60 * 1000).toISOString(),
+      'manual',
+    );
+
+    const indexData = {
+      version: 1,
+      snapshots: [saveRecent1, saveRecent2, saveOldEarly, saveOldLate, manualOld],
+    };
+    await writeFile(join(historyDir, 'index.json'), JSON.stringify(indexData, null, 2), 'utf8');
+
+    const prunedCount = await history.prune(project.id, now);
+    expect(prunedCount).toBe(1);
+
+    const remaining = await history.list({ projectId: project.id, path: 'main.tex' });
+    const remainingIds = new Set(remaining.map((s) => s.id));
+    expect(remainingIds.has('save-rec1')).toBe(true);
+    expect(remainingIds.has('save-rec2')).toBe(true);
+    expect(remainingIds.has('save-old-late')).toBe(true);
+    expect(remainingIds.has('save-old-early')).toBe(false);
+    expect(remainingIds.has('manual-old')).toBe(true);
+  });
 });

@@ -131,13 +131,20 @@ export function HistoryDiffView({
           <h2>History Comparison: {historicalSnapshot.path}</h2>
           <p>
             Historical snapshot from {dateFormatted} ({historicalSnapshot.trigger} trigger)
-            {historicalSnapshot.label ? ` • “${historicalSnapshot.label}”` : ''}
+            {historicalSnapshot.label ? (
+              <>
+                {' • '}
+                <span className="history-diff-header-label">{historicalSnapshot.label}</span>
+              </>
+            ) : null}
           </p>
         </div>
         <div className="history-diff-actions">
           <button
             type="button"
+            className={historicalSnapshot.pinned ? 'is-pinned' : ''}
             title={historicalSnapshot.pinned ? 'Unpin this snapshot' : 'Pin this snapshot'}
+            aria-label={historicalSnapshot.pinned ? 'Unpin this snapshot' : 'Pin this snapshot'}
             onClick={() => void handlePin()}
             disabled={busy}
           >
@@ -147,6 +154,7 @@ export function HistoryDiffView({
           <button
             type="button"
             title="Export snapshot to an external file"
+            aria-label="Export snapshot to an external file"
             onClick={() => void handleExport()}
             disabled={busy}
           >
@@ -157,6 +165,7 @@ export function HistoryDiffView({
             type="button"
             className="restore-btn"
             title="Restore this version (replaces current file on disk)"
+            aria-label="Restore this version (replaces current file on disk)"
             onClick={() => void handleRestore()}
             disabled={busy}
           >
@@ -165,9 +174,9 @@ export function HistoryDiffView({
           </button>
           <button
             type="button"
-            className="icon-button close-diff-btn"
-            aria-label="Close history comparison"
-            title="Close comparison"
+            className="exit-diff-btn icon-button small"
+            aria-label="Exit history comparison"
+            title="Exit history comparison"
             onClick={onClose}
           >
             <X size={15} />

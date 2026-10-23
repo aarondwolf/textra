@@ -478,7 +478,7 @@ function EditorFormattingToolbar({
   };
 
   const handleOpenMarkdown = () => {
-    setPanel('preview');
+    setPanel('markdown');
     updatePreferences({ previewVisible: true });
     window.dispatchEvent(new CustomEvent('textra:open-markdown-preview'));
   };
@@ -665,6 +665,27 @@ export function SourceEditor({
       theme: 'textra-dark',
     });
     editor.current = instance;
+
+    const handleFindPointerOver = (event: Event) => {
+      const target = (event.target as HTMLElement | null)?.closest?.(
+        '.monaco-editor .find-widget .button.close-btn, .monaco-editor .find-widget .codicon-widget-close',
+      );
+      if (target) {
+        if (target.hasAttribute('title')) {
+          target.removeAttribute('title');
+        }
+        event.stopImmediatePropagation();
+      }
+    };
+
+    const hostElem = container.current;
+    if (hostElem) {
+      hostElem.addEventListener('pointerenter', handleFindPointerOver, true);
+      hostElem.addEventListener('pointerover', handleFindPointerOver, true);
+      hostElem.addEventListener('mouseover', handleFindPointerOver, true);
+      hostElem.addEventListener('mouseenter', handleFindPointerOver, true);
+    }
+
     let disposed = false;
     let preparing: Promise<void> | undefined;
     const prepareAI = (): Promise<void> => {
@@ -1263,6 +1284,10 @@ export function SourceEditor({
       window.removeEventListener('textra:apply-agent-edit', applyAgentEdit);
       window.removeEventListener('textra:insert-source', insertSource);
       window.removeEventListener('textra:format-source', formatSource);
+      hostElem?.removeEventListener('pointerenter', handleFindPointerOver, true);
+      hostElem?.removeEventListener('pointerover', handleFindPointerOver, true);
+      hostElem?.removeEventListener('mouseover', handleFindPointerOver, true);
+      hostElem?.removeEventListener('mouseenter', handleFindPointerOver, true);
       content.dispose();
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       cursor.dispose();

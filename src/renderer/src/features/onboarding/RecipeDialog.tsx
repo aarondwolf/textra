@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { parse, type ParseError } from 'jsonc-parser';
 import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Plus, Trash2, X } from '../../icons';
@@ -25,7 +25,8 @@ import {
   type OutputLocation,
   type OutputMode,
 } from '../../../../shared/recipe-help';
-import { useWorkspace } from '../../state/workspace';
+import { sortProjectTexFiles, useWorkspace } from '../../state/workspace';
+import { DropdownMenu } from '../../components/DropdownMenu';
 import './recipes.css';
 
 function initial(): ProjectConfig {
@@ -88,22 +89,19 @@ function ToolCard({
       </div>
       <label className="field-label">
         Program
-        <select
-          aria-label={`Program for ${name}`}
+        <DropdownMenu
+          ariaLabel={`Program for ${name}`}
           value={tool.command.replace(/\.exe$/i, '').toLowerCase()}
-          onChange={(event) => {
-            const preset = PRESETS.find((entry) => entry.command === event.target.value)!;
+          items={RECIPE_COMMANDS.map((command) => ({ value: command, label: command }))}
+          onChange={(val) => {
+            const preset = PRESETS.find((entry) => entry.command === val)!;
             onChange({
               command: preset.command,
               args: structuredClone(preset.args),
               cwd: preset.cwd,
             });
           }}
-        >
-          {RECIPE_COMMANDS.map((command) => (
-            <option key={command}>{command}</option>
-          ))}
-        </select>
+        />
       </label>
       <div className="chip-row" role="group" aria-label={`Options for ${name}`}>
         {catalog.map((entry) => (
@@ -201,6 +199,10 @@ export default function RecipeDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const project = useWorkspace((state) => state.project);
+  const workspaceRootFile = useWorkspace((state) => state.rootFile);
+  const sortedTexFiles = useMemo(() => {
+    return project?.files ? sortProjectTexFiles(project.files) : [];
+  }, [project?.files]);
   const [baseline, setBaseline] = useState<ProjectConfig | null>(null);
   const [draft, setDraft] = useState<ProjectConfig>(initial);
   const [recipeIndex, setRecipeIndex] = useState(0);
@@ -303,8 +305,14 @@ export default function RecipeDialog({
         expectedConfig: baseline,
       });
       if (!result.ok) throw new Error(result.error);
-      if (useWorkspace.getState().project?.id === project.id)
-        useWorkspace.setState({ projectConfig: result.value, recipes: result.value.recipes ?? {} });
+      if (useWorkspace.getState().project?.id === project.id) {
+        const nextRoot = result.value.rootFile ?? project.mainFile ?? sortedTexFiles[0]?.path ?? '';
+        useWorkspace.setState({
+          projectConfig: result.value,
+          recipes: result.value.recipes ?? {},
+          rootFile: nextRoot,
+        });
+      }
       onOpenChange(false);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Settings could not be saved.');
@@ -514,36 +522,69 @@ export default function RecipeDialog({
                 </ul>
                 <label className="field-label">
                   New tool
-                  <select
-                    aria-label="New tool"
+                  <DropdownMenu
+                    ariaLabel="New tool"
+                    placeholder="Choose a program…"
                     value=""
-                    onChange={(event) => event.target.value && newTool(event.target.value)}
-                  >
-                    <option value="">Choose a program…</option>
-                    {RECIPE_COMMANDS.map((command) => (
-                      <option key={command} value={command}>
-                        {command}
-                      </option>
-                    ))}
-                  </select>
+                    items={RECIPE_COMMANDS.map((command) => ({ value: command, label: command }))}
+                    onChange={(val) => val && newTool(val)}
+                  />
                 </label>
                 <label className="field-label">
                   Default recipe for new documents
-                  <select
-                    aria-label="Project default recipe"
+                  <DropdownMenu
+                    ariaLabel="Project default recipe"
                     value={defaultRecipe}
-                    onChange={(event) =>
-                      update({ 'latex-workshop.latex.recipe.default': event.target.value })
+                    items={[
+                      { value: 'lastUsed', label: 'Last used / app default' },
+                      { value: 'first', label: 'First recipe' },
+                      ...recipes.map((entry) => ({ value: entry.name, label: entry.name })),
+                    ]}
+                    onChange={(val) => update({ 'latex-workshop.latex.recipe.default': val })}
+                  />
+                </label>
+                <label className="field-label">
+                  Root document (.tex)
+                  <DropdownMenu
+                    ariaLabel="Root document (.tex)"
+                    value={draft.rootFile ?? ''}
+                    disabled={!project || sortedTexFiles.length === 0}
+                    placeholder={
+                      !project
+                        ? 'No project open'
+                        : sortedTexFiles.length === 0
+                          ? 'No .tex files found'
+                          : 'Select root document...'
                     }
-                  >
-                    <option value="lastUsed">Last used / app default</option>
-                    <option value="first">First recipe</option>
-                    {recipes.map((entry) => (
-                      <option key={entry.name} value={entry.name}>
-                        {entry.name}
-                      </option>
-                    ))}
-                  </select>
+                    items={
+                      !project
+                        ? [{ value: '', label: 'No project open', disabled: true }]
+                        : sortedTexFiles.length === 0
+                          ? [{ value: '', label: 'No .tex files found', disabled: true }]
+                          : [
+                              {
+                                value: '',
+                                label: `Auto-detect ${workspaceRootFile ? `(${workspaceRootFile})` : ''}`,
+                              },
+                              ...sortedTexFiles.map((file) => ({
+                                value: file.path,
+                                label: file.path,
+                              })),
+                              ...(draft.rootFile &&
+                              !sortedTexFiles.some((f) => f.path === draft.rootFile)
+                                ? [
+                                    {
+                                      value: draft.rootFile,
+                                      label: draft.rootFile,
+                                      description: '(missing)',
+                                      disabled: true,
+                                    },
+                                  ]
+                                : []),
+                            ]
+                    }
+                    onChange={(val) => update({ rootFile: val || null })}
+                  />
                 </label>
                 <h3>Output location</h3>
                 <div role="radiogroup" aria-label="Output location" className="location-options">
@@ -756,23 +797,18 @@ export default function RecipeDialog({
                 {recipe.tools.map((step, index) => (
                   <div className="recipe-step" key={index}>
                     <span>{index + 1}</span>
-                    <select
-                      aria-label={`Step ${index + 1} tool`}
+                    <DropdownMenu
+                      ariaLabel={`Step ${index + 1} tool`}
                       value={step}
-                      onChange={(event) =>
+                      items={tools.map((entry) => ({ value: entry.name, label: entry.name }))}
+                      onChange={(val) =>
                         updateRecipe({
                           tools: recipe.tools.map((name, position) =>
-                            position === index ? event.target.value : name,
+                            position === index ? val : name,
                           ),
                         })
                       }
-                    >
-                      {tools.map((entry) => (
-                        <option key={entry.name} value={entry.name}>
-                          {entry.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                     <button
                       type="button"
                       aria-label={`Edit tool ${step}`}
@@ -816,27 +852,25 @@ export default function RecipeDialog({
                 ))}
                 <label className="field-label">
                   Add a step
-                  <select
-                    aria-label="Add step"
+                  <DropdownMenu
+                    ariaLabel="Add step"
+                    placeholder="Choose a program…"
                     value=""
-                    onChange={(event) => addStep(event.target.value)}
-                  >
-                    <option value="">Choose a program…</option>
-                    <optgroup label="Existing tools">
-                      {tools.map((entry) => (
-                        <option key={entry.name} value={entry.name}>
-                          {entry.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="New tool">
-                      {RECIPE_COMMANDS.map((command) => (
-                        <option key={command} value={`new:${command}`}>
-                          New {command} tool
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
+                    items={[
+                      {
+                        group: 'Existing tools',
+                        items: tools.map((entry) => ({ value: entry.name, label: entry.name })),
+                      },
+                      {
+                        group: 'New tool',
+                        items: RECIPE_COMMANDS.map((command) => ({
+                          value: `new:${command}`,
+                          label: `New ${command} tool`,
+                        })),
+                      },
+                    ]}
+                    onChange={(val) => val && addStep(val)}
+                  />
                 </label>
                 <div className="draft-helper">
                   <button type="button" onClick={draftFirstPasses}>

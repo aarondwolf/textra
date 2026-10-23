@@ -39,7 +39,7 @@ export function useProjectAnalysis(
     if (listingComplete)
       for (const path of Object.keys(sources)) if (!knownFiles.has(path)) delete sources[path];
     for (const document of documents) {
-      if (document.projectId === projectId && /\.(?:tex|bib)$/i.test(document.path))
+      if (document.projectId === projectId && /\.(?:tex|bib|md)$/i.test(document.path))
         sources[document.path] = document.content;
     }
     return sources;
@@ -51,13 +51,14 @@ export function useProjectAnalysis(
     const initialSources = Object.fromEntries(
       documents
         .filter(
-          (document) => document.projectId === projectId && /\.(?:tex|bib)$/i.test(document.path),
+          (document) =>
+            document.projectId === projectId && /\.(?:tex|bib|md)$/i.test(document.path),
         )
         .map((document) => [document.path, document.content]),
     );
     const paths =
       files
-        ?.filter((file) => file.kind === 'file' && /\.(?:tex|bib)$/i.test(file.path))
+        ?.filter((file) => file.kind === 'file' && /\.(?:tex|bib|md)$/i.test(file.path))
         .map((file) => file.path) ?? [];
     setDisk((previous) => ({
       projectId,

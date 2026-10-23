@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Ellipsis, LocateFixed } from '../../icons';
+import { DropdownMenu } from '../../components/DropdownMenu';
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -781,25 +782,27 @@ export default function PdfViewer({
       >
         <ChevronRight size={15} aria-hidden="true" />
       </button>
-      <select
-        aria-label="PDF zoom"
+      <DropdownMenu
+        ariaLabel="PDF zoom"
+        className="pdf-zoom-dropdown"
+        fullWidth={false}
         value={fit ? 'fit' : String(zoom)}
-        onChange={(event) => {
+        onChange={(val) => {
           pendingScale.current = null;
-          setFit(event.target.value === 'fit');
-          if (event.target.value !== 'fit') setZoom(Number(event.target.value));
+          setFit(val === 'fit');
+          if (val !== 'fit') setZoom(Number(val));
         }}
-      >
-        <option value="fit">Fit width</option>
-        {!fit && !ZOOM_PRESETS.includes(zoom) && (
-          <option value={String(zoom)}>{Math.round(zoom * 100)}%</option>
-        )}
-        {ZOOM_PRESETS.map((value) => (
-          <option key={value} value={value}>
-            {value * 100}%
-          </option>
-        ))}
-      </select>
+        items={[
+          { value: 'fit', label: 'Fit width' },
+          ...(!fit && !ZOOM_PRESETS.includes(zoom)
+            ? [{ value: String(zoom), label: `${Math.round(zoom * 100)}%` }]
+            : []),
+          ...ZOOM_PRESETS.map((value) => ({
+            value: String(value),
+            label: `${value * 100}%`,
+          })),
+        ]}
+      />
       <button
         className="pdf-source-sync"
         aria-label="Go to source line"

@@ -8,10 +8,10 @@ interface UIState {
   /** Autosave progress for preference changes, shown in the Settings footer. */
   saveState: 'idle' | 'saving' | 'saved' | 'error';
   paletteOpen: boolean;
-  panel: 'preview' | 'problems' | 'output';
+  panel: 'preview' | 'problems' | 'output' | 'markdown';
   updatePreferences: (patch: Partial<Omit<Preferences, 'version'>>) => void;
   setPaletteOpen: (open: boolean) => void;
-  setPanel: (panel: 'preview' | 'problems' | 'output') => void;
+  setPanel: (panel: 'preview' | 'problems' | 'output' | 'markdown') => void;
   /** Session-only: one pane fills the whole workspace and the other is hidden. */
   expandedPane: 'editor' | 'preview' | null;
   setExpandedPane: (pane: 'editor' | 'preview' | null) => void;

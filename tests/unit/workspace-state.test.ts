@@ -7,10 +7,11 @@ import {
   reloadDocument,
   saveAll,
   saveDocument,
+  sortProjectTexFiles,
   useWorkspace,
   type OpenDocument,
 } from '../../src/renderer/src/state/workspace';
-import type { FileSnapshot, ProjectInfo, Result } from '../../src/shared/api';
+import type { FileEntry, FileSnapshot, ProjectInfo, Result } from '../../src/shared/api';
 
 const project: ProjectInfo = {
   id: 'a',
@@ -141,5 +142,47 @@ describe('editor state preserves concurrent work', () => {
       conflict: true,
     });
     expect(flag).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('sortProjectTexFiles', () => {
+  it('sorts root-level .tex files alphabetically first, then subfolder files alphabetically', () => {
+    const entries: FileEntry[] = [
+      { path: 'chapters/intro.tex', name: 'intro.tex', kind: 'file' },
+      { path: 'main.tex', name: 'main.tex', kind: 'file' },
+      { path: 'appendix.tex', name: 'appendix.tex', kind: 'file' },
+      { path: 'chapters/conclusion.tex', name: 'conclusion.tex', kind: 'file' },
+      { path: 'notes/meeting.tex', name: 'meeting.tex', kind: 'file' },
+      { path: 'abstract.tex', name: 'abstract.tex', kind: 'file' },
+      { path: 'images/plot.png', name: 'plot.png', kind: 'file' },
+      { path: 'chapters', name: 'chapters', kind: 'directory' },
+    ];
+
+    const sorted = sortProjectTexFiles(entries);
+
+    expect(sorted.map((file) => file.path)).toEqual([
+      'abstract.tex',
+      'appendix.tex',
+      'main.tex',
+      'chapters/conclusion.tex',
+      'chapters/intro.tex',
+      'notes/meeting.tex',
+    ]);
+  });
+
+  it('filters out non-tex files and directories', () => {
+    const entries: FileEntry[] = [
+      { path: 'README.md', name: 'README.md', kind: 'file' },
+      { path: 'refs.bib', name: 'refs.bib', kind: 'file' },
+      { path: 'src', name: 'src', kind: 'directory' },
+      { path: 'document.TEX', name: 'document.TEX', kind: 'file' },
+    ];
+
+    const sorted = sortProjectTexFiles(entries);
+    expect(sorted.map((f) => f.path)).toEqual(['document.TEX']);
+  });
+
+  it('returns an empty array when no .tex files exist', () => {
+    expect(sortProjectTexFiles([])).toEqual([]);
   });
 });

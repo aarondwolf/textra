@@ -1,24 +1,33 @@
 # To Do List
-Some sections are blank. If so, that area is clean.
+Some sections are blank. If so, that area is clean. Implement changes first, then run tests. 
 
-## UI Updates
-### General
+## General UI
 
-### Settings
+## History & Projects
+Nothing to change 
 
-### Editor
+## Settings
+### Appearance
 
-### Files Tab
+## Files Tab
 
-### Writing Tab
+## Writing Tab
+Nothing to change 
 
-### Build Tab
+## Build Tab
+Nothing to change
 
-### Snippets & Symbols
+## Snippets & Symbols
+Nothing to change
 
-### Assistant Tab
+## Assistant Tab
+Nothing to change
 
-### Keyboard Shortcuts Tab
+## Keyboard Shortcuts Tab
+Nothing to change 
 
-### Preview Pane
-**Problems**
+## Editor
+Nothing to change 
+
+## Preview Pane
+Nothing to change 

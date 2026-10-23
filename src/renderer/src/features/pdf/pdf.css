@@ -38,6 +38,11 @@
 .pdf-controls input {
   border-color: var(--border);
 }
+.pdf-zoom-dropdown .dropdown-trigger {
+  padding: 2px 8px;
+  font-size: 11px;
+  min-height: 24px;
+}
 .pdf-controls select option {
   color: var(--text);
   background: var(--raised);

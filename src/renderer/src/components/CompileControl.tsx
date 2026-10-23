@@ -3,6 +3,7 @@ import { Check, ChevronDown, Play, Square, Warning } from '../icons';
 import { Button, IconButton } from './Button';
 
 export interface CompileControlProps {
+  variant?: 'toolbar' | 'collapsed';
   running: boolean;
   feedback: 'idle' | 'success' | 'failed';
   canCompile: boolean;
@@ -19,6 +20,7 @@ export interface CompileControlProps {
 
 /** Shared Compile/Cancel feedback; the caller owns the recipe popup and its focus handling. */
 export function CompileControl({
+  variant = 'toolbar',
   running,
   feedback,
   canCompile,
@@ -49,6 +51,32 @@ export function CompileControl({
                 ' with ' +
                 engine +
                 ' (Ctrl/Cmd+Enter)';
+
+  if (variant === 'collapsed') {
+    return (
+      <button
+        type="button"
+        className={`collapsed-compile collapsed-feedback-${feedback}`}
+        data-feedback={feedback}
+        data-running={running ? 'true' : undefined}
+        aria-label={running ? 'Cancel build' : 'Compile active document'}
+        title={title}
+        disabled={!running && (!canCompile || busy)}
+        onClick={running ? onCancel : onCompile}
+      >
+        {running ? (
+          <Square size={11} />
+        ) : feedback === 'success' ? (
+          <Check size={11} />
+        ) : feedback === 'failed' ? (
+          <Warning size={11} />
+        ) : (
+          <Play size={11} weight="fill" />
+        )}
+      </button>
+    );
+  }
+
   return (
     <>
       <Button

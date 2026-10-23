@@ -635,6 +635,9 @@ void app.whenReady().then(() => {
   handleRequest<'exportFileHistorySnapshot'>('textra:history:export', (request) =>
     history.exportSnapshot(request, requireWindow()),
   );
+  handleRequest<'deleteFileHistorySnapshot'>('textra:history:delete', (request) =>
+    history.deleteSnapshot(request),
+  );
   handle('textra:recent:get', 0, () => projects.getRecentProjects());
   handleRequest<'openRecentProject'>('textra:recent:open', async (id) => {
     requireIdleProject();

@@ -3,7 +3,6 @@ import * as Dialog from '@radix-ui/react-dialog';
 import {
   AIChat,
   Article,
-  CaretDown,
   Hammer,
   Palette,
   Pencil,
@@ -21,14 +20,16 @@ import {
   type ConfigurableTool,
   type CustomTheme,
   type DiagnosticSeverity,
+  type ProjectConfig,
   type SetupLink,
   type Theme,
   type TexlabStatus,
 } from '../../../../shared/api';
 import { preferencesSaved, useUI } from '../../state/ui';
-import { useWorkspace } from '../../state/workspace';
+import { sortProjectTexFiles, useWorkspace } from '../../state/workspace';
 import { Button } from '../../components/Button';
 import { SettingRow, StatusMessage } from '../../components/Layout';
+import { DropdownMenu } from '../../components/DropdownMenu';
 import { SaveFooter } from '../save-status/SaveFooter';
 import { aiSavesSettled, currentAISaveState, useAISaveState } from '../chat/useAISettings';
 import { validateRecipeSettings } from '../../../../shared/recipes';
@@ -57,8 +58,8 @@ export type SectionId =
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'editor', label: 'Editor', icon: Article },
-  { id: 'preferences', label: 'Files & Diagnostics', icon: Article },
-  { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Article },
+  { id: 'preferences', label: 'Files', icon: Article },
+  { id: 'shortcuts', label: 'Shortcuts', icon: Article },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
   { id: 'ai', label: 'AI Settings', icon: AIChat },
@@ -167,95 +168,23 @@ interface ActionSelectMenuProps {
 }
 
 function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSelectMenuProps) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener('mousedown', handleClickOutside);
-    return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
-
-  const selectedAction = availableActions.find((a) => a.id === selectedId);
-  const displayLabel = selectedAction ? selectedAction.label : 'Select Action';
+  const items = availableActions.map((action) => ({
+    value: action.id,
+    label: action.label,
+  }));
 
   return (
-    <div
-      ref={containerRef}
-      className="editor-format-heading"
-      style={{
-        flex: 1,
-        minWidth: 0,
-      }}
-    >
-      <button
-        type="button"
-        className="editor-format-heading-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Select Action"
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <DropdownMenu
+        value={selectedId}
+        items={items}
+        onChange={onSelect}
+        placeholder={availableActions.length === 0 ? 'All actions have shortcuts' : 'Select Action'}
         disabled={availableActions.length === 0}
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {availableActions.length === 0 ? 'All actions have shortcuts' : displayLabel}
-        </span>
-        <CaretDown size={11} aria-hidden="true" style={{ flexShrink: 0, marginLeft: '6px' }} />
-      </button>
-
-      {open && (
-        <div
-          className="editor-format-heading-menu"
-          role="menu"
-          aria-label="Actions list"
-          style={{
-            top: 'auto',
-            bottom: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
-            minWidth: '220px',
-            maxHeight: '220px',
-            overflowY: 'auto',
-          }}
-        >
-          <div
-            style={{
-              padding: '4px 8px',
-              fontSize: '9px',
-              fontWeight: 600,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              color: 'var(--faint)',
-            }}
-          >
-            Select Action
-          </div>
-          {availableActions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onSelect(action.id);
-                setOpen(false);
-              }}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                fontWeight: selectedId === action.id ? 600 : 400,
-              }}
-            >
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+        direction="up"
+        ariaLabel="Select Action"
+        menuStyle={{ minWidth: '220px', maxHeight: '220px' }}
+      />
     </div>
   );
 }
@@ -371,7 +300,49 @@ export default function SetupDialog({
   const [newThemeAccentBg, setNewThemeAccentBg] = useState('#293e37');
   const [selectedActionId, setSelectedActionId] = useState('');
   const [recordingShortcutId, setRecordingShortcutId] = useState<string | null>(null);
+  const project = useWorkspace((state) => state.project);
   const projectConfig = useWorkspace((state) => state.projectConfig);
+  const workspaceRootFile = useWorkspace((state) => state.rootFile);
+  const sortedTexFiles = useMemo(() => {
+    return project?.files ? sortProjectTexFiles(project.files) : [];
+  }, [project?.files]);
+
+  async function updateProjectRootFile(newRootFile: string | null) {
+    if (!project) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const currentConfig =
+        useWorkspace.getState().projectConfig ??
+        (await window.textra
+          .getProjectConfig(project.id)
+          .then((res) => (res.ok ? res.value : null)));
+      const nextConfig: ProjectConfig = {
+        schemaVersion: 1,
+        engine: useWorkspace.getState().engine,
+        ...currentConfig,
+        rootFile: newRootFile,
+      };
+      const result = await window.textra.setProjectConfig({
+        projectId: project.id,
+        config: nextConfig,
+        expectedConfig: currentConfig ?? undefined,
+      });
+      if (!result.ok) throw new Error(result.error);
+      const effectiveRoot = newRootFile ?? project.mainFile ?? sortedTexFiles[0]?.path ?? '';
+      useWorkspace.setState({
+        projectConfig: result.value,
+        rootFile: effectiveRoot,
+      });
+    } catch (error) {
+      setMessage(
+        `Root document could not be updated: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const allAvailableRecipes = useMemo(() => {
     const list: Array<{ value: string; label: string }> = [...BUILD_RECIPES];
     if (projectConfig) {
@@ -492,14 +463,33 @@ export default function SetupDialog({
                   <h3>Appearance</h3>
                   <label className="field-label">
                     Theme
-                    <select
-                      aria-label="Theme"
+                    <DropdownMenu
+                      ariaLabel="Theme"
                       value={preferences.theme}
-                      onChange={(event) => {
-                        const newTheme = event.target.value as Theme;
-                        const def = THEME_DEFAULTS[newTheme] ?? THEME_DEFAULTS.dark;
+                      items={[
+                        { value: 'dark', label: 'Dark (default)' },
+                        { value: 'light', label: 'Light' },
+                        { value: 'midnight', label: 'Midnight' },
+                        { value: 'forest', label: 'Forest' },
+                        { value: 'ocean', label: 'Ocean' },
+                        { value: 'rose', label: 'Rose' },
+                        { value: 'sand', label: 'Sand' },
+                        ...((preferences.customThemes ?? []).length > 0
+                          ? [
+                              {
+                                group: 'Custom themes',
+                                items: (preferences.customThemes ?? []).map((ct) => ({
+                                  value: ct.id,
+                                  label: `${ct.name} (Custom)`,
+                                })),
+                              },
+                            ]
+                          : []),
+                      ]}
+                      onChange={(newTheme) => {
+                        const def = THEME_DEFAULTS[newTheme as Theme] ?? THEME_DEFAULTS.dark;
                         updatePreferences({
-                          theme: newTheme,
+                          theme: newTheme as Theme,
                           themeCustomizations: {
                             accent: def.accent,
                             accentStrong: def.accentStrong,
@@ -510,20 +500,7 @@ export default function SetupDialog({
                           },
                         });
                       }}
-                    >
-                      <option value="dark">Dark (default)</option>
-                      <option value="light">Light</option>
-                      <option value="midnight">Midnight</option>
-                      <option value="forest">Forest</option>
-                      <option value="ocean">Ocean</option>
-                      <option value="rose">Rose</option>
-                      <option value="sand">Sand</option>
-                      {(preferences.customThemes ?? []).map((ct) => (
-                        <option key={ct.id} value={ct.id}>
-                          {ct.name} (Custom)
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                   {(preferences.customThemes ?? []).some((ct) => ct.id === preferences.theme) && (
                     <button
@@ -667,11 +644,20 @@ export default function SetupDialog({
                       </label>
                       <label className="field-label">
                         Base Theme
-                        <select
-                          aria-label="New theme base"
+                        <DropdownMenu
+                          ariaLabel="New theme base"
                           value={newThemeBase}
-                          onChange={(e) => {
-                            const base = e.target.value as
+                          items={[
+                            { value: 'dark', label: 'Dark' },
+                            { value: 'light', label: 'Light' },
+                            { value: 'midnight', label: 'Midnight' },
+                            { value: 'forest', label: 'Forest' },
+                            { value: 'ocean', label: 'Ocean' },
+                            { value: 'rose', label: 'Rose' },
+                            { value: 'sand', label: 'Sand' },
+                          ]}
+                          onChange={(baseVal) => {
+                            const base = baseVal as
                               'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
                             const def = THEME_DEFAULTS[base] ?? THEME_DEFAULTS.dark;
                             setNewThemeBase(base);
@@ -682,15 +668,7 @@ export default function SetupDialog({
                             setNewThemeAccentStrong(def.accentStrong);
                             setNewThemeAccentBg(def.accentBackground);
                           }}
-                        >
-                          <option value="dark">Dark</option>
-                          <option value="light">Light</option>
-                          <option value="midnight">Midnight</option>
-                          <option value="forest">Forest</option>
-                          <option value="ocean">Ocean</option>
-                          <option value="rose">Rose</option>
-                          <option value="sand">Sand</option>
-                        </select>
+                        />
                       </label>
                       <div
                         style={{
@@ -883,17 +861,19 @@ export default function SetupDialog({
                   </label>
                   <label className="chktex-field">
                     Tab close buttons
-                    <select
+                    <DropdownMenu
+                      ariaLabel="Tab close buttons"
                       value={preferences.tabCloseButtons}
-                      onChange={(event) =>
+                      items={[
+                        { value: 'hover', label: 'Show on hover' },
+                        { value: 'always', label: 'Always show' },
+                      ]}
+                      onChange={(val) =>
                         updatePreferences({
-                          tabCloseButtons: event.target.value as 'always' | 'hover',
+                          tabCloseButtons: val as 'always' | 'hover',
                         })
                       }
-                    >
-                      <option value="hover">Show on hover</option>
-                      <option value="always">Always show</option>
-                    </select>
+                    />
                   </label>
                   <p className="setup-hint">
                     Reopen files from your last session and choose how editor tabs are displayed.
@@ -925,7 +905,11 @@ export default function SetupDialog({
                     Choose whether sections in the Snippets & Symbols sidebar tab start expanded or
                     collapsed.
                   </p>
-                  <h3>Automatic file history</h3>
+                </>
+              )}
+              {section === 'preferences' && (
+                <>
+                  <h3>File history</h3>
                   <label className="texlab-toggle editor-session-toggle">
                     <span>Enable automatic file history</span>
                     <input
@@ -937,33 +921,75 @@ export default function SetupDialog({
                       }
                     />
                   </label>
-                  {preferences.historyEnabled && (
-                    <label className="chktex-field">
-                      Snapshot interval (minutes)
-                      <input
-                        type="number"
-                        min={1}
-                        max={120}
-                        step={1}
-                        value={preferences.historyIntervalMinutes}
-                        onChange={(event) => {
-                          const val = Number.parseInt(event.target.value, 10);
-                          if (Number.isFinite(val) && val >= 1 && val <= 120) {
-                            updatePreferences({ historyIntervalMinutes: val });
-                          }
-                        }}
-                      />
-                    </label>
-                  )}
                   <p className="setup-hint">
-                    Store compressed backups of changed files in .textra/history. Automatic tiered
-                    retention preserves all snapshots for 30 days, daily snapshots up to 90 days,
-                    and weekly/monthly snapshots thereafter. Pinned snapshots are never pruned.
+                    Storage location: <code>&lt;workspace&gt;/.textra/history/</code>. Flat-file
+                    compressed gzip snapshots mirroring your project structure.
                   </p>
-                </>
-              )}
-              {section === 'preferences' && (
-                <>
+                  {preferences.historyEnabled && (
+                    <>
+                      <label className="chktex-field">
+                        Snapshot interval (minutes)
+                        <input
+                          type="number"
+                          min={1}
+                          max={120}
+                          step={1}
+                          value={preferences.historyIntervalMinutes}
+                          onChange={(event) => {
+                            const val = Number.parseInt(event.target.value, 10);
+                            if (Number.isFinite(val) && val >= 1 && val <= 120) {
+                              updatePreferences({ historyIntervalMinutes: val });
+                            }
+                          }}
+                        />
+                      </label>
+                      <div
+                        className="history-settings-retention"
+                        style={{ margin: '8px 0', fontSize: '12px', color: 'var(--muted)' }}
+                      >
+                        <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+                          Retention & Pruning Rules
+                        </div>
+                        <ul style={{ margin: '0 0 8px 16px', padding: 0, lineHeight: 1.6 }}>
+                          <li>
+                            <strong>0–30 days:</strong> Keep all snapshots (intermediate saves
+                            closer than 10 mins thinned after 30 mins)
+                          </li>
+                          <li>
+                            <strong>31–90 days:</strong> Keep 1 snapshot per day
+                          </li>
+                          <li>
+                            <strong>91–365 days:</strong> Keep 1 snapshot per week
+                          </li>
+                          <li>
+                            <strong>&gt; 1 year:</strong> Keep 1 snapshot per month
+                          </li>
+                          <li>
+                            <strong>Pinned versions:</strong> Never pruned
+                          </li>
+                        </ul>
+                      </div>
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            borderRadius: 'var(--radius-pill)',
+                          }}
+                          onClick={() =>
+                            updatePreferences({
+                              historyEnabled: true,
+                              historyIntervalMinutes: 10,
+                            })
+                          }
+                        >
+                          Reset Defaults
+                        </button>
+                      </div>
+                    </>
+                  )}
                   <h3>External file changes</h3>
                   <p className="setup-hint">
                     Protect the buffer you have open when another app, including a background
@@ -983,20 +1009,22 @@ export default function SetupDialog({
                   </label>
                   <label className="chktex-field">
                     Quiet period before comparison (seconds)
-                    <select
+                    <DropdownMenu
+                      ariaLabel="Quiet period before comparison (seconds)"
                       disabled={!preferences.externalChangeDetection}
-                      value={preferences.externalChangeQuietPeriodMs}
-                      onChange={(event) =>
+                      value={String(preferences.externalChangeQuietPeriodMs)}
+                      items={[
+                        { value: '2000', label: '2 seconds' },
+                        { value: '3000', label: '3 seconds' },
+                        { value: '4000', label: '4 seconds' },
+                        { value: '5000', label: '5 seconds' },
+                      ]}
+                      onChange={(val) =>
                         updatePreferences({
-                          externalChangeQuietPeriodMs: Number(event.target.value),
+                          externalChangeQuietPeriodMs: Number(val),
                         })
                       }
-                    >
-                      <option value={2000}>2 seconds</option>
-                      <option value={3000}>3 seconds</option>
-                      <option value={4000}>4 seconds</option>
-                      <option value={5000}>5 seconds</option>
-                    </select>
+                    />
                   </label>
                   <p className="setup-hint">
                     The external version must stop changing for this long before TeXtra enables its
@@ -1063,7 +1091,7 @@ export default function SetupDialog({
                       alignItems: 'center',
                     }}
                   >
-                    <h3>Keyboard shortcuts</h3>
+                    <h3>Shortcuts</h3>
                     <button
                       type="button"
                       className="text-button"
@@ -1366,18 +1394,20 @@ export default function SetupDialog({
                     </div>
                     <label className="field-label chktex-field">
                       Check timing
-                      <select
+                      <DropdownMenu
+                        ariaLabel="Check timing"
                         value={preferences.chktexRunMode}
                         disabled={busy || !preferences.chktexEnabled}
-                        onChange={(event) =>
+                        items={[
+                          { value: 'save', label: 'After saving' },
+                          { value: 'live', label: 'While typing (debounced)' },
+                        ]}
+                        onChange={(val) =>
                           updatePreferences({
-                            chktexRunMode: event.target.value as 'save' | 'live',
+                            chktexRunMode: val as 'save' | 'live',
                           })
                         }
-                      >
-                        <option value="save">After saving</option>
-                        <option value="live">While typing (debounced)</option>
-                      </select>
+                      />
                     </label>
                     <label className="field-label chktex-field">
                       Hide rule codes
@@ -1506,20 +1536,64 @@ export default function SetupDialog({
               {section === 'compilation' && (
                 <>
                   <h3>Compilation</h3>
-                  <SettingRow label="Default recipe for new documents">
-                    <select
-                      aria-label="Default recipe for new documents"
-                      value={preferences.defaultRecipe}
-                      onChange={(event) =>
-                        updatePreferences({ defaultRecipe: event.target.value as BuildEngine })
+                  <SettingRow label="Root document (.tex)">
+                    <DropdownMenu
+                      ariaLabel="Root document (.tex)"
+                      value={project ? (projectConfig?.rootFile ?? '') : ''}
+                      disabled={busy || buildRunning || !project || sortedTexFiles.length === 0}
+                      placeholder={
+                        !project
+                          ? 'No project open'
+                          : sortedTexFiles.length === 0
+                            ? 'No .tex files found'
+                            : 'Select root document...'
                       }
-                    >
-                      {allAvailableRecipes.map((recipe) => (
-                        <option key={recipe.value} value={recipe.value}>
-                          {recipe.label}
-                        </option>
-                      ))}
-                    </select>
+                      items={
+                        !project
+                          ? [{ value: '', label: 'No project open', disabled: true }]
+                          : sortedTexFiles.length === 0
+                            ? [{ value: '', label: 'No .tex files found', disabled: true }]
+                            : [
+                                {
+                                  value: '',
+                                  label: `Auto-detect ${workspaceRootFile ? `(${workspaceRootFile})` : ''}`,
+                                },
+                                ...sortedTexFiles.map((file) => ({
+                                  value: file.path,
+                                  label: file.path,
+                                })),
+                                ...(projectConfig?.rootFile &&
+                                !sortedTexFiles.some((f) => f.path === projectConfig.rootFile)
+                                  ? [
+                                      {
+                                        value: projectConfig.rootFile,
+                                        label: projectConfig.rootFile,
+                                        description: '(missing)',
+                                        disabled: true,
+                                      },
+                                    ]
+                                  : []),
+                              ]
+                      }
+                      onChange={(nextRoot) => {
+                        void updateProjectRootFile(nextRoot || null);
+                      }}
+                    />
+                  </SettingRow>
+                  <p className="setup-hint">
+                    Choose the root .tex document to build for this project. If set to Auto-detect,
+                    TeXtra automatically uses the active document or detected main file.
+                  </p>
+                  <SettingRow label="Default recipe for new documents">
+                    <DropdownMenu
+                      ariaLabel="Default recipe for new documents"
+                      value={preferences.defaultRecipe}
+                      items={allAvailableRecipes.map((recipe) => ({
+                        value: recipe.value,
+                        label: recipe.label,
+                      }))}
+                      onChange={(val) => updatePreferences({ defaultRecipe: val as BuildEngine })}
+                    />
                   </SettingRow>
                   <p className="setup-hint">
                     Compile builds the active .tex document. Each document remembers its last used

@@ -570,6 +570,7 @@ export interface TextraAPI {
     request: PinHistorySnapshotRequest,
   ): Promise<Result<HistorySnapshotSummary>>;
   exportFileHistorySnapshot(request: HistorySnapshotRef): Promise<Result<boolean>>;
+  deleteFileHistorySnapshot(request: HistorySnapshotRef): Promise<Result<void>>;
 }
 declare global {
   interface Window {

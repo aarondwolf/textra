@@ -3,6 +3,7 @@ import { useStartup } from './startup';
 import type {
   BuildEngine,
   BuildState,
+  FileEntry,
   FileSnapshot,
   ProjectInfo,
   ProjectConfig,
@@ -76,6 +77,17 @@ export function beginRestoration(): number {
 export function restorationIsCurrent(generation: number): boolean {
   return generation === restorationGeneration;
 }
+export function sortProjectTexFiles(files: FileEntry[]): FileEntry[] {
+  const texFiles = files.filter((entry) => entry.kind === 'file' && /\.tex$/i.test(entry.path));
+  const rootFiles = texFiles
+    .filter((file) => !file.path.includes('/'))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const subfolderFiles = texFiles
+    .filter((file) => file.path.includes('/'))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  return [...rootFiles, ...subfolderFiles];
+}
+
 export function cancelWorkspaceRestoration(): void {
   restorationGeneration++;
   useStartup.setState({ restoration: 'settled' });

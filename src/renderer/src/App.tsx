@@ -15,6 +15,10 @@ import {
   LocateFixed,
   Palette,
   PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   Play,
   Plus,
@@ -385,11 +389,39 @@ function CommandPalette() {
   );
 }
 
+function isLightColor(color: string): boolean {
+  const hex = color.trim().replace(/^#/, '');
+  if (hex.length !== 3 && hex.length !== 6) return false;
+  const full =
+    hex.length === 3
+      ? hex
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 140;
+}
+
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
-  const { preferences, hydrated, error } = useUI();
+  const { preferences, hydrated, error, updatePreferences } = useUI();
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('0.1.0');
+
+  useEffect(() => {
+    void window.textra
+      ?.getAppInfo()
+      .then((res) => {
+        if (res?.ok && res.value?.version) {
+          setAppVersion(res.value.version);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
   useEffect(() => {
     if (settingsOpen) setSettingsLoaded(true);
   }, [settingsOpen]);
@@ -456,6 +488,17 @@ export function App() {
     if (custom.background) root.style.setProperty('--bg', custom.background);
     if (custom.surface) root.style.setProperty('--surface', custom.surface);
     if (custom.text) root.style.setProperty('--text', custom.text);
+
+    const effectiveBg =
+      custom.surface || custom.background || activeCustom?.surface || activeCustom?.background;
+    if (effectiveBg) {
+      const isLight = isLightColor(effectiveBg);
+      root.style.setProperty('--logo-dark-accent', isLight ? '#1c1e20' : '#9bc9bb');
+      root.style.setProperty('--logo-light-accent', isLight ? '#293e37' : '#ffffff');
+    } else {
+      root.style.removeProperty('--logo-dark-accent');
+      root.style.removeProperty('--logo-light-accent');
+    }
 
     const uiFont = preferences.uiFont || activeCustom?.uiFont;
     if (uiFont) {
@@ -605,6 +648,51 @@ export function App() {
         <div className="window-titlebar-brand">
           <TextraLogo size={18} />
           <span>TeXtra</span>
+          <span className="window-titlebar-version">
+            {appVersion.startsWith('v') ? appVersion : `v${appVersion}`}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="window-titlebar-search"
+          onClick={() => useUI.getState().setPaletteOpen(true)}
+          aria-label="Search commands and files (Ctrl+K)"
+        >
+          <Search size={12} aria-hidden="true" />
+          <span className="window-titlebar-search-text">Search commands, files...</span>
+          <kbd className="window-titlebar-search-kbd">Ctrl K</kbd>
+        </button>
+        <div className="window-titlebar-actions">
+          <button
+            type="button"
+            className="window-titlebar-action"
+            aria-label="Toggle sidebar"
+            title={
+              preferences.sidebarVisible ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'
+            }
+            onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+          >
+            {preferences.sidebarVisible ? (
+              <PanelLeftClose size={15} />
+            ) : (
+              <PanelLeftOpen size={15} />
+            )}
+          </button>
+          <button
+            type="button"
+            className="window-titlebar-action"
+            aria-label="Toggle preview"
+            title={
+              preferences.previewVisible ? 'Collapse preview (Ctrl+J)' : 'Expand preview (Ctrl+J)'
+            }
+            onClick={() => updatePreferences({ previewVisible: !preferences.previewVisible })}
+          >
+            {preferences.previewVisible ? (
+              <PanelRightClose size={15} />
+            ) : (
+              <PanelRightOpen size={15} />
+            )}
+          </button>
         </div>
       </header>
       {error && (

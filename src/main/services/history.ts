@@ -369,6 +369,38 @@ export class HistoryService {
     return true;
   }
 
+  async deleteSnapshot(value: HistorySnapshotRef): Promise<void> {
+    return this.serialize(async () => {
+      if (!value || typeof value !== 'object')
+        throw new ProjectError('INVALID_ARGUMENT', 'Invalid request.');
+      const req = record(value);
+      if (typeof req.projectId !== 'string')
+        throw new ProjectError('INVALID_ARGUMENT', 'Project ID must be a string.');
+      if (typeof req.path !== 'string')
+        throw new ProjectError('INVALID_ARGUMENT', 'Path must be a string.');
+      if (typeof req.snapshotId !== 'string')
+        throw new ProjectError('INVALID_ARGUMENT', 'Snapshot ID must be a string.');
+
+      const root = this.projects.getRoot(req.projectId);
+      const path = validateRelativePath(req.path);
+      const index = await this.loadIndex(root);
+      const historyRoot = this.historyDirectory(root);
+
+      const snapshot = index.snapshots.find((s) => s.path === path && s.id === req.snapshotId);
+      if (!snapshot) throw new ProjectError('NOT_FOUND', 'Historical snapshot not found.');
+
+      const { filePath } = this.snapshotDirAndFilename(historyRoot, snapshot.path, snapshot.id);
+      await unlink(filePath).catch((err: unknown) => {
+        if (!missing(err)) throw err;
+      });
+
+      index.snapshots = index.snapshots.filter(
+        (s) => !(s.path === path && s.id === req.snapshotId),
+      );
+      await this.saveIndex(root, index);
+    });
+  }
+
   async prune(projectId: string, nowMs = Date.now()): Promise<number> {
     return this.serialize(async () => {
       const root = this.projects.getRoot(projectId);
@@ -393,22 +425,32 @@ export class HistoryService {
       }
 
       const toPrune: HistorySnapshotSummary[] = [];
+      const THIRTY_MIN_MS = 30 * 60 * 1000;
+      const TEN_MIN_MS = 10 * 60 * 1000;
 
       for (const [, snapshots] of byFile) {
         snapshots.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-        // Grouping buckets for tiered retention
+        // Grouping buckets for tiered retention & save thinning
+        const tenMinSaves = new Map<number, HistorySnapshotSummary>();
         const dailyLatest = new Map<string, HistorySnapshotSummary>();
         const weeklyLatest = new Map<string, HistorySnapshotSummary>();
         const monthlyLatest = new Map<string, HistorySnapshotSummary>();
 
         for (const snap of snapshots) {
           const snapTime = new Date(snap.createdAt).getTime();
-          const ageDays = (nowMs - snapTime) / DAY_MS;
+          const ageMs = nowMs - snapTime;
+          const ageDays = ageMs / DAY_MS;
 
           if (ageDays <= 30) {
-            // Keep all within 30 days
-            toKeep.add(snap.id);
+            // Keep all saves within the last 30 minutes grace period
+            // Beyond 30 minutes, thin intermediate saves within the same 10-minute window
+            if (snap.trigger === 'save' && ageMs > THIRTY_MIN_MS) {
+              const bucket = Math.floor(snapTime / TEN_MIN_MS);
+              tenMinSaves.set(bucket, snap); // overwrites earlier in same 10m window
+            } else {
+              toKeep.add(snap.id);
+            }
           } else if (ageDays <= 90) {
             // 31–90 days: 1 per day (keep latest of that day)
             const dayKey = snap.createdAt.slice(0, 10);
@@ -424,6 +466,7 @@ export class HistoryService {
           }
         }
 
+        for (const snap of tenMinSaves.values()) toKeep.add(snap.id);
         for (const snap of dailyLatest.values()) toKeep.add(snap.id);
         for (const snap of weeklyLatest.values()) toKeep.add(snap.id);
         for (const snap of monthlyLatest.values()) toKeep.add(snap.id);

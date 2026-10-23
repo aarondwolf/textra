@@ -3,7 +3,6 @@ import {
   CaretDown,
   EyeSlash,
   FilePdf,
-  FileText,
   ImageSquare,
   ListBullets,
   ListNumbers,
@@ -11,6 +10,7 @@ import {
   TextB,
   TextItalic,
 } from '@phosphor-icons/react';
+import { MarkdownLogo } from '../../icons';
 
 type FormatCommand = 'bold' | 'italic' | 'enumerate' | 'itemize' | 'figure' | 'table' | 'heading';
 
@@ -169,7 +169,7 @@ export default function FormattingToolbar({
           onMouseDown={(event) => event.preventDefault()}
           onClick={onOpenMarkdown}
         >
-          <FileText size={15} />
+          <MarkdownLogo size={15} />
         </button>
       ) : (
         <button

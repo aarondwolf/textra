@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzeLatexDocument,
+  analyzeMarkdownDocument,
   extractPromptContext,
   maskLatexComments,
 } from '../../src/shared/writing-analysis';
@@ -117,5 +118,66 @@ describe('extractPromptContext', () => {
       text: 'line 2\nline 3\nline 4\nline 5\nline 6',
       environment: null,
     });
+  });
+});
+
+describe('analyzeMarkdownDocument', () => {
+  it('extracts headers with appropriate levels and line numbers', () => {
+    const md = [
+      '# Document Title',
+      'Introduction text with some words.',
+      '## Background',
+      '### Prior Work',
+      'TODO: write citation',
+      '## Methodology',
+      '#### Implementation details',
+      '##### Fine details',
+      '###### Sub fine details',
+      'FIXME: verify equation $E = mc^2$',
+    ].join('\n');
+
+    const result = analyzeMarkdownDocument(md);
+    expect(result.outline).toHaveLength(7);
+    expect(result.outline[0]).toEqual({
+      command: 'section',
+      level: 1,
+      title: 'Document Title',
+      starred: false,
+      line: 1,
+    });
+    expect(result.outline[1]).toEqual({
+      command: 'subsection',
+      level: 2,
+      title: 'Background',
+      starred: false,
+      line: 3,
+    });
+    expect(result.outline[2]).toEqual({
+      command: 'subsubsection',
+      level: 3,
+      title: 'Prior Work',
+      starred: false,
+      line: 4,
+    });
+    expect(result.outline[3]).toEqual({
+      command: 'subsection',
+      level: 2,
+      title: 'Methodology',
+      starred: false,
+      line: 6,
+    });
+    expect(result.outline[4]).toEqual({
+      command: 'paragraph',
+      level: 4,
+      title: 'Implementation details',
+      starred: false,
+      line: 7,
+    });
+    expect(result.todos).toHaveLength(2);
+    expect(result.todos[0]).toMatchObject({ kind: 'TODO', text: 'write citation', line: 5 });
+    expect(result.todos[1]).toMatchObject({ kind: 'FIXME', line: 10 });
+    expect(result.counts.sections).toBe(7);
+    expect(result.counts.equations).toBe(1);
+    expect(result.counts.words).toBeGreaterThan(15);
   });
 });

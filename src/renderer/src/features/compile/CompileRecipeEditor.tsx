@@ -10,6 +10,7 @@ import {
   type RecipeTool,
 } from '../../../../shared/recipes';
 import { ToolEditorDialog } from './ToolEditorDialog';
+import { DropdownMenu } from '../../components/DropdownMenu';
 
 interface CompileRecipeEditorProps {
   activePath: string | null;
@@ -192,22 +193,20 @@ export function CompileRecipeEditor({
       <fieldset disabled={locked}>
         <label className="field-label">
           Recipe
-          <select
-            aria-label="Select recipe"
+          <DropdownMenu
+            ariaLabel="Select recipe"
             value={recipe.name}
-            onChange={(event) => {
-              const name = event.target.value;
+            items={recipes.map((entry) => ({
+              value: entry.name,
+              label:
+                BUILD_RECIPES.find((preset) => preset.value === entry.name)?.label ?? entry.name,
+            }))}
+            onChange={(name) => {
               const idx = recipes.findIndex((r) => r.name === name);
               if (idx >= 0) setEditingRecipeIndex(idx);
               onSelectRecipe?.(name);
             }}
-          >
-            {recipes.map((entry) => (
-              <option key={entry.name} value={entry.name}>
-                {BUILD_RECIPES.find((preset) => preset.value === entry.name)?.label ?? entry.name}
-              </option>
-            ))}
-          </select>
+          />
         </label>
 
         <label className="field-label">
@@ -225,23 +224,21 @@ export function CompileRecipeEditor({
           return (
             <div className="compile-recipe-step" key={`${step}-${index}`}>
               <span className="compile-step-num">{index + 1}</span>
-              <select
-                aria-label={`Current recipe step ${index + 1}`}
+              <DropdownMenu
+                ariaLabel={`Current recipe step ${index + 1}`}
                 value={step}
-                onChange={(event) =>
+                onChange={(value) =>
                   updateRecipe({
                     tools: recipe.tools.map((entry, position) =>
-                      position === index ? event.target.value : entry,
+                      position === index ? value : entry,
                     ),
                   })
                 }
-              >
-                {tools.map((tool) => (
-                  <option key={tool.name} value={tool.name}>
-                    {tool.name}
-                  </option>
-                ))}
-              </select>
+                items={tools.map((tool) => ({
+                  value: tool.name,
+                  label: tool.name,
+                }))}
+              />
               <button
                 type="button"
                 className="icon-button small"
@@ -318,21 +315,19 @@ export function CompileRecipeEditor({
         </label>
         <label className="field-label">
           Project default recipe
-          <select
-            aria-label="Project default recipe"
+          <DropdownMenu
+            ariaLabel="Project default recipe"
             value={settings['latex-workshop.latex.recipe.default']}
-            onChange={(event) =>
-              update({ 'latex-workshop.latex.recipe.default': event.target.value })
-            }
-          >
-            <option value="lastUsed">Last used / app default</option>
-            <option value="first">First recipe</option>
-            {recipes.map((entry) => (
-              <option key={entry.name} value={entry.name}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => update({ 'latex-workshop.latex.recipe.default': value })}
+            items={[
+              { value: 'lastUsed', label: 'Last used / app default' },
+              { value: 'first', label: 'First recipe' },
+              ...recipes.map((entry) => ({
+                value: entry.name,
+                label: entry.name,
+              })),
+            ]}
+          />
         </label>
       </fieldset>
 

@@ -145,6 +145,7 @@ const api: TextraAPI = {
   restoreFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:restore', request),
   pinFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:pin', request),
   exportFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:export', request),
+  deleteFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:delete', request),
 };
 
 contextBridge.exposeInMainWorld('textra', Object.freeze(api));

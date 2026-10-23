@@ -1,4 +1,3 @@
-import { streamText } from 'ai';
 import {
   ProviderHTTPError,
   resolveSDKModel,
@@ -431,6 +430,7 @@ export async function streamChat(
   const signal = AbortSignal.any([chat.signal, controller.signal]);
   let callbackError: unknown;
   try {
+    const { streamText } = await import('ai');
     const result = streamText({
       model: await resolveSDKModel(access, model, { signal }),
       system: chat.system,

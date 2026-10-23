@@ -45,6 +45,7 @@ import {
 } from './ai-providers';
 import { cleanModelList } from './ai-models';
 import { validateAIEndpoint } from './ai-endpoints';
+import { prepareSDKProvider } from './ai-sdk-runtime';
 
 export class AIError extends Error {
   constructor(
@@ -625,6 +626,39 @@ export class AIService {
     const settings = await this.read();
     this.normalize(settings);
     return this.view(settings);
+  }
+
+  async prepare(): Promise<void> {
+    const settings = await this.settings();
+    const prepared = new Set<AIProviderId>();
+    for (const role of ['assistant', 'inlineCompletion', 'completion'] as const) {
+      const ref = settings.roleDefaults[role];
+      if (!ref || prepared.has(ref.provider)) continue;
+      if (
+        role === 'completion' &&
+        (!settings.completion.enabled || !sameModel(ref, settings.completion.consentedModel))
+      )
+        continue;
+      const provider = settings.providers.find((item) => item.id === ref.provider);
+      if (!provider?.enabled || !provider.configured) continue;
+      if (
+        !provider.models.some(
+          (model) =>
+            model.id === ref.model &&
+            supportsAIRole(model, role) &&
+            isModelVisible(
+              (role === 'completion' ? provider.filters?.completion : provider.filters?.chat) ?? {
+                mode: 'all',
+                models: [],
+              },
+              model.id,
+            ),
+        )
+      )
+        continue;
+      prepared.add(ref.provider);
+      await prepareSDKProvider(ref.provider);
+    }
   }
 
   // ----- Validation helpers -----

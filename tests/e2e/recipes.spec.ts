@@ -40,9 +40,19 @@ test('project recipes round-trip through builder, JSON and external settings edi
     async function openRecipes() {
       await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
       await page.getByRole('button', { name: 'Manage recipes…', exact: true }).click();
+      const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
+      await settings
+        .getByRole('button', { name: 'Advanced project settings…', exact: true })
+        .click();
       await expect(page.getByRole('dialog', { name: 'Build recipes', exact: true })).toBeVisible();
     }
     const dialog = page.getByRole('dialog', { name: 'Build recipes', exact: true });
+    async function closeSettings() {
+      await page
+        .getByRole('dialog', { name: 'Settings', exact: true })
+        .getByRole('button', { name: 'Close settings', exact: true })
+        .click();
+    }
     await openRecipes();
     await dialog.getByRole('button', { name: 'New recipe', exact: true }).click();
     await dialog.getByRole('textbox', { name: 'Recipe name', exact: true }).fill('Draft proof');
@@ -69,6 +79,7 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await dialog.screenshot({ path: test.info().outputPath('recipe-builder.png') });
     await dialog.getByRole('button', { name: 'Save project settings', exact: true }).click();
     await expect(dialog).toBeHidden({ timeout: 15000 });
+    await closeSettings();
     let saved = JSON.parse(await readFile(filename, 'utf8')) as ProjectConfig;
     expect(saved['latex-workshop.latex.recipes']).toContainEqual({
       name: 'Draft proof',
@@ -101,6 +112,7 @@ test('project recipes round-trip through builder, JSON and external settings edi
       .fill(JSON.stringify(saved, null, 2));
     await dialog.getByRole('button', { name: 'Save project settings', exact: true }).click();
     await expect(dialog).toBeHidden({ timeout: 15000 });
+    await closeSettings();
     await compileTo('build/from-json/');
 
     // Direct disk edits are read afresh before the next compile, including JSONC.
@@ -146,6 +158,7 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await expect(dialog.getByRole('alert')).toContainText('changed');
     expect(await readFile(filename, 'utf8')).toBe(external);
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await closeSettings();
   } finally {
     if (application) {
       await application

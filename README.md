@@ -33,6 +33,12 @@ npm run dev
 Validation: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`,
 `npm run build`, `npm run test:e2e`. Installer packaging is not configured yet.
 The primary iteration loop is a native Electron window with React HMR.
+Startup restores the active saved document first, then the remaining tabs and file
+tree. The editor, PDF preview and optional panels load separately. When available,
+the last validated PDF is labelled **Last compiled**; compilation still requires
+your action. AI background preparation only reads local settings and imports code,
+prioritizing selected defaults without contacting a provider or warming a model.
+See [startup measurements](docs/PERFORMANCE.md) for reproducible checks and limits.
 `npm run test:dev` verifies HMR and main/preload reload behavior; run it without
 concurrent source edits because it temporarily appends and restores test probes.
 

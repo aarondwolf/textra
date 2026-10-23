@@ -74,7 +74,7 @@ if (testUserData) {
 let mainWindow: BrowserWindow | null = null;
 const preferences = new PreferencesStore(app.getPath('userData'));
 const ai = new AIService(
-  join(app.getAppPath(), '.textra-local'),
+  join(testUserData ?? app.getAppPath(), '.textra-local'),
   {
     available: () =>
       safeStorage.isEncryptionAvailable() &&
@@ -128,7 +128,7 @@ const aiChats = new AIChatStore(join(app.getPath('userData'), 'ai-chats'), (id) 
   projects.getRoot(id),
 );
 const externalEditor = new ExternalEditorService(projects);
-const builds = new BuildService((id) => projects.getRoot(id));
+const builds = new BuildService((id) => projects.getRoot(id), 120_000, app.getPath('userData'));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
 const language = new LanguageService(projects, () => preferences.get());
 const texlab = new TexlabManager(
@@ -385,6 +385,7 @@ void app.whenReady().then(() => {
     platform: process.platform,
   }));
   handle('textra:ai:settings', 0, () => ai.settings());
+  handle('textra:ai:prepare', 0, () => ai.prepare());
   handleRequest<'configureAIProvider'>('textra:ai:provider:configure', (request) =>
     ai.configureProvider(request),
   );
@@ -541,13 +542,13 @@ void app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return null;
     requireIdleProject();
     externalEditor.clear();
-    const project = await projects.openRoot(result.filePaths[0]);
-    await config
-      .ensureProjectConfig(project.id)
-      .catch((error: unknown) => log('warn', 'project-settings-unavailable', error));
+    const project = await projects.openRoot(result.filePaths[0], { initialTree: true });
     return project;
   });
   handleRequest<'refreshProject'>('textra:project:refresh', (id) => projects.refreshProject(id));
+  handleRequest<'prepareProject'>('textra:project:prepare', async (id) => {
+    await config.ensureProjectConfig(id);
+  });
   handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
   handleRequest<'saveFile'>('textra:file:save', async (request) => {
     const snapshot = await projects.saveFile(request);
@@ -610,10 +611,7 @@ void app.whenReady().then(() => {
   handleRequest<'openRecentProject'>('textra:recent:open', async (id) => {
     requireIdleProject();
     externalEditor.clear();
-    const project = await projects.openRecentProject(id);
-    await config
-      .ensureProjectConfig(project.id)
-      .catch((error: unknown) => log('warn', 'project-settings-unavailable', error));
+    const project = await projects.openRecentProject(id, { initialTree: true });
     return project;
   });
   handleRequest<'setProjectPinned'>('textra:recent:pin', (request) =>
@@ -891,6 +889,7 @@ void app.whenReady().then(() => {
   });
   handle('textra:build:state', 0, () => builds.getState());
   handleRequest<'readPdf'>('textra:pdf:read', (request) => builds.readPdf(request));
+  handleRequest<'restoreLastPdf'>('textra:pdf:restore', (id) => builds.restoreLastPdf(id));
   handleRequest<'readProjectPdf'>('textra:pdf:read-project', (request) =>
     projects.readProjectPdf(request),
   );

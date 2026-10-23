@@ -1,0 +1,258 @@
+{
+  "measuredAt": "2026-10-23T05:55:06.759Z",
+  "platform": "win32",
+  "architecture": "x64",
+  "profile": "INVALID/CONFOUNDED TIMING BASELINE: synthetic Chromium session used incomplete preferences and renderer fallback defaults. AI cached settings still use repository-local store. No generation requested. Use bundle sizes only for comparison.",
+  "cacheState": "Same profile after one setup launch; OS caches not reset.",
+  "timingOrigin": "Observed timings: before electron.launch(); renderer marks: navigation start.",
+  "limitations": "No compiled PDF fixture or compile execution in this benchmark. CPU is Electron process-metric sampling, not a system profiler.",
+  "bundle": {
+    "entry": "./assets/index-dXvgiQdq.js",
+    "javascript": [
+      {
+        "file": "editor.worker-BireoB1h.js",
+        "bytes": 599526
+      },
+      {
+        "file": "index-dXvgiQdq.js",
+        "bytes": 10124403
+      }
+    ]
+  },
+  "samples": [
+    {
+      "launch": 1,
+      "shellObservedMs": 20001.846499999996,
+      "editorObservedMs": 20080.073399999997,
+      "compileEnabledObservedMs": 20092.013499999997,
+      "rendererMarks": [],
+      "rendererLongTasks": [
+        {
+          "startTime": 13265,
+          "duration": 308
+        },
+        {
+          "startTime": 13574.5,
+          "duration": 109
+        },
+        {
+          "startTime": 13838.799999952316,
+          "duration": 350
+        }
+      ],
+      "processMetricsAfterSettle": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 8.170308,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 134680,
+            "peakWorkingSetSize": 145656,
+            "privateBytes": 97268
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 0.49093,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 367088,
+            "peakWorkingSetSize": 367088,
+            "privateBytes": 137096
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.135273,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 259600,
+            "peakWorkingSetSize": 259664,
+            "privateBytes": 12036
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 1.51443,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 340512,
+            "peakWorkingSetSize": 348948,
+            "privateBytes": 99960
+          }
+        }
+      ],
+      "settleMs": 2000,
+      "pdfReady": false,
+      "compileDispatched": false
+    },
+    {
+      "launch": 2,
+      "shellObservedMs": 18647.459300000002,
+      "editorObservedMs": 18672.8854,
+      "compileEnabledObservedMs": 18686.525999999998,
+      "rendererMarks": [],
+      "rendererLongTasks": [
+        {
+          "startTime": 11884.100000023842,
+          "duration": 280
+        },
+        {
+          "startTime": 12164.899999976158,
+          "duration": 91
+        },
+        {
+          "startTime": 12406.399999976158,
+          "duration": 284
+        }
+      ],
+      "processMetricsAfterSettle": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 7.993604,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 135320,
+            "peakWorkingSetSize": 148064,
+            "privateBytes": 100548
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 0.374971,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 364560,
+            "peakWorkingSetSize": 364560,
+            "privateBytes": 135852
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.102525,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 259484,
+            "peakWorkingSetSize": 259484,
+            "privateBytes": 11900
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 1.398633,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 339944,
+            "peakWorkingSetSize": 348768,
+            "privateBytes": 100148
+          }
+        }
+      ],
+      "settleMs": 2000,
+      "pdfReady": false,
+      "compileDispatched": false
+    },
+    {
+      "launch": 3,
+      "shellObservedMs": 18009.02010000001,
+      "editorObservedMs": 18035.17760000001,
+      "compileEnabledObservedMs": 18048.219000000012,
+      "rendererMarks": [],
+      "rendererLongTasks": [
+        {
+          "startTime": 10967.300000071526,
+          "duration": 314
+        },
+        {
+          "startTime": 11282.5,
+          "duration": 97
+        },
+        {
+          "startTime": 11525.900000095367,
+          "duration": 296
+        }
+      ],
+      "processMetricsAfterSettle": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 7.634913,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 139492,
+            "peakWorkingSetSize": 147340,
+            "privateBytes": 102800
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 0.418893,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 364684,
+            "peakWorkingSetSize": 364684,
+            "privateBytes": 135944
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.133565,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 259500,
+            "peakWorkingSetSize": 259644,
+            "privateBytes": 11868
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 1.521474,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 340556,
+            "peakWorkingSetSize": 348896,
+            "privateBytes": 100096
+          }
+        }
+      ],
+      "settleMs": 2000,
+      "pdfReady": false,
+      "compileDispatched": false
+    }
+  ]
+}

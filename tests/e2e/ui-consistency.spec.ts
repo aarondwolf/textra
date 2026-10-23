@@ -21,6 +21,13 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
     await page.getByRole('button', { name: 'Snippets & Symbols', exact: true }).click();
     const palette = page.locator('.snippet-palette');
     await expect(palette).toBeVisible();
+    // Both groups default to collapsed. Expand them before measuring the full palette.
+    for (const name of [/^Math Symbols/, /^Templates & Snippets/]) {
+      const section = palette.getByRole('button', { name });
+      await expect(section).toHaveAttribute('aria-expanded', 'false');
+      await section.click();
+      await expect(section).toHaveAttribute('aria-expanded', 'true');
+    }
     expect(await palette.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
       true,
     );
@@ -42,10 +49,8 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
     await palette.hover();
     await page.mouse.wheel(0, 500);
     await expect.poll(() => palette.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-    await page
-      .getByRole('button', { name: 'Add custom snippet', exact: true })
-      .scrollIntoViewIfNeeded();
-    await page.getByRole('button', { name: 'Add custom snippet', exact: true }).click();
+    await page.getByRole('button', { name: 'Add snippet', exact: true }).scrollIntoViewIfNeeded();
+    await page.getByRole('button', { name: 'Add snippet', exact: true }).click();
     await expect(page.getByPlaceholder('Snippet name (e.g. My Theorem)')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('snippets-bottom.png') });
 

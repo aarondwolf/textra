@@ -65,6 +65,15 @@ traces. The managed desktop test environment needs elevated filesystem access fo
 junction and MiKTeX registry checks. No installer, cross-platform or TeX check should
 be reported as passing unless it was run on the relevant platform and distribution.
 
+Startup regression tests cover active-first restoration with 50 tabs, missing files,
+editing during background restoration, and a validated previous PDF rendered by real
+PDF.js without compiling. Run `npm run test:e2e -- tests/e2e/startup.spec.ts` for these
+functional checks. `npm run test:startup` runs the opt-in measurement harness, with
+isolated synthetic profiles and no live provider calls. See [Performance](PERFORMANCE.md)
+for fixture details, timing origins, memory/CPU caveats and recorded results.
+Run native tests and measurements after builds and unit/integration checks finish;
+concurrent runs can delete shared test fixtures and distort timings.
+
 ## Remaining gate checks
 
 - Cross-platform native checks for macOS/Linux, including compilation and SyncTeX.

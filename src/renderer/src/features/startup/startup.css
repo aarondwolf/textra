@@ -1,0 +1,11 @@
+.feature-loading {
+  padding: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.feature-loading button {
+  color: var(--accent);
+  background: transparent;
+  text-decoration: underline;
+}

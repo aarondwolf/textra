@@ -181,6 +181,8 @@ export function ChatPanel({
   reviewControls,
   reviewOutcome = null,
   onAgentWorkingChange,
+  documentAvailable = agentContext !== null,
+  onDocumentAccessChange,
 }: {
   draft: ChatDraft | null;
   onDraftConsumed?: () => void;
@@ -194,6 +196,8 @@ export function ChatPanel({
   reviewControls?: ReactNode;
   reviewOutcome?: ReviewOutcomeEvent | null;
   onAgentWorkingChange?: (working: boolean) => void;
+  documentAvailable?: boolean;
+  onDocumentAccessChange?: (needed: boolean) => void;
 }) {
   const { settings, error: settingsLoadError, refresh: refreshSettings } = useAISettings(active);
   const [settingsWarning, setSettingsError] = useState('');
@@ -236,6 +240,10 @@ export function ChatPanel({
   );
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<AssistantMode>('chat');
+  useEffect(() => {
+    onDocumentAccessChange?.(mode === 'agent');
+    return () => onDocumentAccessChange?.(false);
+  }, [mode, onDocumentAccessChange]);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState('');
@@ -1162,7 +1170,8 @@ export function ChatPanel({
                 !modelAvailable ||
                 sending.current ||
                 reviewActive ||
-                historyBusy
+                historyBusy ||
+                (mode === 'agent' && !agentContext)
               )
                 return;
               const text = input.trim();
@@ -1206,10 +1215,10 @@ export function ChatPanel({
                   <button
                     type="button"
                     aria-pressed={mode === 'agent'}
-                    disabled={loading || reviewActive || historyBusy || !agentContext}
+                    disabled={loading || reviewActive || historyBusy || !documentAvailable}
                     onClick={() => setMode('agent')}
                     title={
-                      agentContext
+                      documentAvailable
                         ? 'Agent can read the active document and stage edits for review.'
                         : 'Open an eligible .tex document to use Agent mode.'
                     }
@@ -1245,7 +1254,13 @@ export function ChatPanel({
                   type="submit"
                   className="ai-chat-send"
                   data-active={Boolean(input.trim())}
-                  disabled={!input.trim() || !modelAvailable || reviewActive || historyBusy}
+                  disabled={
+                    !input.trim() ||
+                    !modelAvailable ||
+                    reviewActive ||
+                    historyBusy ||
+                    (mode === 'agent' && !agentContext)
+                  }
                   aria-label="Send message"
                   title="Send message"
                 >

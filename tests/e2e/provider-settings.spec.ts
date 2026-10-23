@@ -107,6 +107,8 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
     await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
     const ai = settings.locator('.ai-settings-inline');
+    await expect(ai).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     await expect(ai.locator('.ai-provider-connection')).toHaveCount(0);
     await ai.getByRole('button', { name: 'Add provider', exact: true }).click();
     const chooser = page.getByRole('dialog', { name: 'Add provider', exact: true });
@@ -226,7 +228,6 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     expect(state.refreshes).toBe(1);
     expect(state.statusChecks).toBe(0);
     await page.screenshot({ path: test.info().outputPath('custom-provider-row.png') });
-    await ai.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
   } finally {
     if (application) {

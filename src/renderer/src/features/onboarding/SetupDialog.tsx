@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   AIChat,
@@ -27,10 +27,10 @@ import {
 } from '../../../../shared/api';
 import { preferencesSaved, useUI } from '../../state/ui';
 import { useWorkspace } from '../../state/workspace';
-import { TexLabSettings } from './TexLabSettings';
-import { AISettingsDialog } from '../chat/AISettingsDialog';
-import { CompileRecipeEditor } from '../compile/CompileRecipeEditor';
+import { Button } from '../../components/Button';
+import { SettingRow, StatusMessage } from '../../components/Layout';
 import { SaveFooter } from '../save-status/SaveFooter';
+import { aiSavesSettled, currentAISaveState, useAISaveState } from '../chat/useAISettings';
 import { validateRecipeSettings } from '../../../../shared/recipes';
 import {
   DEFAULT_SHORTCUTS,
@@ -38,6 +38,19 @@ import {
   formatShortcutFromEvent,
 } from '../../../../shared/shortcuts';
 import './setup.css';
+
+const TexLabSettings = lazy(() =>
+  import('./TexLabSettings').then((module) => ({ default: module.TexLabSettings })),
+);
+const AISettingsPanel = lazy(() =>
+  import('../chat/AISettingsDialog').then((module) => ({ default: module.AISettingsPanel })),
+);
+const CompileRecipeEditor = lazy(() =>
+  import('../compile/CompileRecipeEditor').then((module) => ({
+    default: module.CompileRecipeEditor,
+  })),
+);
+const RecipeDialog = lazy(() => import('./RecipeDialog'));
 
 export type SectionId =
   'appearance' | 'editor' | 'preferences' | 'shortcuts' | 'tools' | 'compilation' | 'backup' | 'ai';
@@ -322,8 +335,18 @@ export default function SetupDialog({
   onOpenChange: (open: boolean) => void;
   initialSection?: SectionId;
 }) {
-  const { tools, build } = useWorkspace();
+  const tools = useWorkspace((state) => state.tools);
+  const buildRunning = useWorkspace((state) => state.build.running);
   const { preferences, updatePreferences, saveState, error: preferenceError } = useUI();
+  const aiSaveState = useAISaveState();
+  const combinedSaveState = [saveState, aiSaveState].includes('error')
+    ? 'error'
+    : [saveState, aiSaveState].includes('saving')
+      ? 'saving'
+      : [saveState, aiSaveState].includes('saved')
+        ? 'saved'
+        : 'idle';
+  const [advancedRecipesOpen, setAdvancedRecipesOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -454,12 +477,15 @@ export default function SetupDialog({
             </nav>
             <div className="setup-scroll">
               {section === 'ai' && (
-                <AISettingsDialog
-                  onClose={() => setSection('appearance')}
-                  onOpenChange={(isOpen) => {
-                    if (!isOpen) setSection('appearance');
-                  }}
-                />
+                <Suspense fallback={<StatusMessage>Loading settings…</StatusMessage>}>
+                  <AISettingsPanel
+                    embedded
+                    onClose={() => setSection('appearance')}
+                    onOpenChange={(isOpen) => {
+                      if (!isOpen) setSection('appearance');
+                    }}
+                  />
+                </Suspense>
               )}
               {section === 'appearance' && (
                 <>
@@ -503,7 +529,11 @@ export default function SetupDialog({
                     <button
                       type="button"
                       className="text-button"
-                      style={{ alignSelf: 'start', marginTop: '4px', color: 'var(--alert-error)' }}
+                      style={{
+                        alignSelf: 'start',
+                        marginTop: '4px',
+                        color: 'var(--alert-error)',
+                      }}
                       onClick={() => {
                         const remaining = (preferences.customThemes ?? []).filter(
                           (ct) => ct.id !== preferences.theme,
@@ -1248,34 +1278,36 @@ export default function SetupDialog({
                       );
                     })}
                   </div>
-                  <TexLabSettings
-                    enabled={preferences.texlabEnabled}
-                    installation={texLabStatus?.installation ?? 'checking'}
-                    version={texLabStatus?.version}
-                    path={texLabStatus?.path}
-                    detail={texLabStatus?.detail}
-                    busy={busy}
-                    onEnabledChange={(enabled) => {
-                      updatePreferences({ texlabEnabled: enabled });
-                      void preferencesSaved()
-                        .then(() => refreshTexlab())
-                        .catch((error: unknown) => {
-                          setMessage(
-                            error instanceof Error
-                              ? error.message
-                              : 'TexLab preferences could not be saved.',
-                          );
-                        });
-                    }}
-                    onCheck={() =>
-                      perform(async () => {
-                        const status = await refreshTexlab(true);
-                        return status.installation === 'error'
-                          ? (status.detail ?? 'TexLab checks failed.')
-                          : `TexLab ${status.version ?? ''} passed its executable check.`.trim();
-                      })
-                    }
-                  />
+                  <Suspense fallback={<StatusMessage>Loading settings…</StatusMessage>}>
+                    <TexLabSettings
+                      enabled={preferences.texlabEnabled}
+                      installation={texLabStatus?.installation ?? 'checking'}
+                      version={texLabStatus?.version}
+                      path={texLabStatus?.path}
+                      detail={texLabStatus?.detail}
+                      busy={busy}
+                      onEnabledChange={(enabled) => {
+                        updatePreferences({ texlabEnabled: enabled });
+                        void preferencesSaved()
+                          .then(() => refreshTexlab())
+                          .catch((error: unknown) => {
+                            setMessage(
+                              error instanceof Error
+                                ? error.message
+                                : 'TexLab preferences could not be saved.',
+                            );
+                          });
+                      }}
+                      onCheck={() =>
+                        perform(async () => {
+                          const status = await refreshTexlab(true);
+                          return status.installation === 'error'
+                            ? (status.detail ?? 'TexLab checks failed.')
+                            : `TexLab ${status.version ?? ''} passed its executable check.`.trim();
+                        })
+                      }
+                    />
+                  </Suspense>
                   <section className="texlab-settings" aria-labelledby="chktex-settings-title">
                     <div className="texlab-settings-heading">
                       <div>
@@ -1380,7 +1412,7 @@ export default function SetupDialog({
                     <button
                       disabled={
                         busy ||
-                        build.running ||
+                        buildRunning ||
                         !tools.some((tool) => tool.name === 'pdflatex' && tool.path)
                       }
                       onClick={() =>
@@ -1439,8 +1471,7 @@ export default function SetupDialog({
               {section === 'compilation' && (
                 <>
                   <h3>Compilation</h3>
-                  <label className="field-label">
-                    Default recipe for new documents
+                  <SettingRow label="Default recipe for new documents">
                     <select
                       aria-label="Default recipe for new documents"
                       value={preferences.defaultRecipe}
@@ -1454,7 +1485,7 @@ export default function SetupDialog({
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </SettingRow>
                   <p className="setup-hint">
                     Compile builds the active .tex document. Each document remembers its last used
                     recipe in the project settings.
@@ -1467,25 +1498,27 @@ export default function SetupDialog({
                       Customize compile tools and recipe steps for this project.
                     </p>
                     {useWorkspace.getState().project ? (
-                      <CompileRecipeEditor
-                        activePath={useWorkspace.getState().activePath}
-                        config={useWorkspace.getState().projectConfig}
-                        disabled={busy || build.running}
-                        projectId={useWorkspace.getState().project!.id}
-                        recipeName={useWorkspace.getState().engine}
-                        onSelectRecipe={(recipeName) =>
-                          useWorkspace.setState({ engine: recipeName as BuildEngine })
-                        }
-                        onSaved={(updatedConfig, savedRecipeName) => {
-                          useWorkspace.setState((state) => ({
-                            projectConfig: updatedConfig,
-                            engine: savedRecipeName as BuildEngine,
-                            recipes: state.activePath
-                              ? { ...state.recipes, [state.activePath]: savedRecipeName }
-                              : state.recipes,
-                          }));
-                        }}
-                      />
+                      <Suspense fallback={<StatusMessage>Loading settings…</StatusMessage>}>
+                        <CompileRecipeEditor
+                          activePath={useWorkspace.getState().activePath}
+                          config={useWorkspace.getState().projectConfig}
+                          disabled={busy || buildRunning}
+                          projectId={useWorkspace.getState().project!.id}
+                          recipeName={useWorkspace.getState().engine}
+                          onSelectRecipe={(recipeName) =>
+                            useWorkspace.setState({ engine: recipeName as BuildEngine })
+                          }
+                          onSaved={(updatedConfig, savedRecipeName) => {
+                            useWorkspace.setState((state) => ({
+                              projectConfig: updatedConfig,
+                              engine: savedRecipeName as BuildEngine,
+                              recipes: state.activePath
+                                ? { ...state.recipes, [state.activePath]: savedRecipeName }
+                                : state.recipes,
+                            }));
+                          }}
+                        />
+                      </Suspense>
                     ) : (
                       <p className="setup-hint">
                         Open a project folder to configure its build recipes.
@@ -1496,6 +1529,20 @@ export default function SetupDialog({
                     Recipes and the output location (build folder or PDF beside the source) are
                     stored per project.
                   </p>
+                  <Button
+                    disabled={!useWorkspace.getState().project || busy || buildRunning}
+                    onClick={() => setAdvancedRecipesOpen(true)}
+                  >
+                    Advanced project settings…
+                  </Button>
+                  {advancedRecipesOpen && (
+                    <Suspense fallback={<StatusMessage>Loading settings…</StatusMessage>}>
+                      <RecipeDialog
+                        open={advancedRecipesOpen}
+                        onOpenChange={setAdvancedRecipesOpen}
+                      />
+                    </Suspense>
+                  )}
                   <h3>Generated files</h3>
                   <p className="setup-hint">
                     TeXtra keeps its default PDFs, logs, and auxiliary files in build/textra. Clean
@@ -1504,7 +1551,7 @@ export default function SetupDialog({
                   </p>
                   <div className="setup-actions">
                     <button
-                      disabled={!useWorkspace.getState().project || busy || build.running}
+                      disabled={!useWorkspace.getState().project || busy || buildRunning}
                       onClick={() =>
                         void perform(async () => {
                           const project = useWorkspace.getState().project;
@@ -1578,11 +1625,8 @@ export default function SetupDialog({
                   </div>
                 </>
               )}
-              {message && (
-                <p role="status" className="setup-message">
-                  {message}
-                </p>
-              )}
+              {message && <StatusMessage className="setup-message">{message}</StatusMessage>}
+
               {log && (
                 <details>
                   <summary>Test compile output</summary>
@@ -1592,12 +1636,15 @@ export default function SetupDialog({
             </div>
           </div>
           <SaveFooter
-            state={saveState}
-            error={preferenceError}
+            state={combinedSaveState}
+            error={
+              preferenceError ??
+              (aiSaveState === 'error' ? 'An AI setting was not saved. Review AI Settings.' : null)
+            }
             onSave={async () => {
               // Fields that commit on blur have already blurred by the time the click lands.
-              await preferencesSaved();
-              return useUI.getState().saveState !== 'error';
+              await Promise.all([preferencesSaved(), aiSavesSettled()]);
+              return useUI.getState().saveState !== 'error' && currentAISaveState() !== 'error';
             }}
             onClose={() => onOpenChange(false)}
           />

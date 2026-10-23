@@ -1,7 +1,35 @@
 import type { LanguageModel, streamText } from 'ai';
 import type { ProviderAccess } from './ai-providers';
 import { validateAIEndpoint } from './ai-endpoints';
-import { AI_DEFAULT_ENDPOINTS } from '../../shared/ai';
+import { AI_DEFAULT_ENDPOINTS, type AIProviderId } from '../../shared/ai';
+
+/** Import code only: never creates a client, decrypts a key or starts a request. */
+export async function prepareSDKProvider(provider: AIProviderId): Promise<void> {
+  await import('ai');
+  switch (provider) {
+    case 'openai':
+      await import('@ai-sdk/openai');
+      break;
+    case 'google':
+      await import('@ai-sdk/google');
+      break;
+    case 'anthropic':
+      await import('@ai-sdk/anthropic');
+      break;
+    case 'mistral':
+    case 'codestral':
+      await import('@ai-sdk/mistral');
+      break;
+    case 'deepseek':
+      await import('@ai-sdk/deepseek');
+      break;
+    case 'openrouter':
+      await import('@openrouter/ai-sdk-provider');
+      break;
+    default:
+      await import('@ai-sdk/openai-compatible');
+  }
+}
 
 /**
  * Main-process model factory for the Vercel AI SDK. Provider packages load lazily, only for a

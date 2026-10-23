@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { create } from 'zustand';
 import type { AISettings, Result } from '../../../../shared/api';
 import type { SaveState } from '../save-status/SaveFooter';
 import {
@@ -14,34 +15,52 @@ import {
 
 export const AI_SETTINGS_CHANGED = 'textra-ai-settings-changed';
 
+const useCachedSettings = create<{ settings: AISettings | null; error: string }>(() => ({
+  settings: null,
+  error: '',
+}));
+let loadingSettings: Promise<void> | undefined;
+let settingsRevision = 0;
+
+/** One offline read shared by the editor, chat and settings; writes supersede stale reads. */
+export function loadAISettings(force = false): Promise<void> {
+  if (!force && useCachedSettings.getState().settings) return Promise.resolve();
+  loadingSettings ??= (async () => {
+    const revision = settingsRevision;
+    try {
+      const result = await window.textra.getAISettings();
+      if (revision !== settingsRevision) return;
+      if (result.ok) useCachedSettings.setState({ settings: result.value, error: '' });
+      else useCachedSettings.setState({ error: result.error });
+    } catch {
+      if (revision === settingsRevision)
+        useCachedSettings.setState({ error: 'Could not load AI settings. Please try again.' });
+    }
+  })().finally(() => {
+    loadingSettings = undefined;
+  });
+  return loadingSettings;
+}
+
 /** Broadcasts saved settings so every open chat and dialog stays in sync. */
 export function publishAISettings(settings: AISettings): void {
+  settingsRevision++;
+  useCachedSettings.setState({ settings, error: '' });
   window.dispatchEvent(new CustomEvent<AISettings>(AI_SETTINGS_CHANGED, { detail: settings }));
 }
 
 export function useAISettings(active = true) {
-  const [settings, setSettings] = useState<AISettings | null>(null);
-  const [error, setError] = useState('');
-  const refresh = useCallback(async () => {
-    try {
-      const result = await window.textra.getAISettings();
-      if (result.ok) {
-        setSettings(result.value);
-        setError('');
-      } else setError(result.error);
-    } catch {
-      setError('Could not load AI settings. Please try again.');
-    }
-  }, []);
+  const { settings, error } = useCachedSettings();
+  const refresh = useCallback(() => loadAISettings(true), []);
   useEffect(() => {
-    if (active) void refresh();
+    if (active) void loadAISettings();
   }, [active, refresh]);
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AISettings | undefined>).detail;
       if (detail) {
-        setSettings(detail);
-        setError('');
+        settingsRevision++;
+        useCachedSettings.setState({ settings: detail, error: '' });
       } else void refresh();
     };
     window.addEventListener(AI_SETTINGS_CHANGED, listener);

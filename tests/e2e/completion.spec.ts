@@ -185,6 +185,8 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     const editor = page.getByRole('textbox', { name: 'LaTeX source editor', exact: true });
+    await expect(editor).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     const source = page.locator('.source-editor .view-lines');
     const panel = page.locator('[aria-label="Inline AI edit"]');
     const prompt = page.getByRole('textbox', { name: 'Inline edit instruction', exact: true });
@@ -213,6 +215,8 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
     const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
     await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
     const aiSettings = settings.locator('.ai-settings-inline');
+    await expect(aiSettings).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     const enabled = aiSettings.getByRole('checkbox', { name: /^Enable automatic completion/ });
     await expect(enabled).not.toBeChecked();
     await expect(
@@ -222,7 +226,6 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
     await enabled.click();
     await expect(enabled).toBeChecked();
     await expect(aiSettings).toContainText('math');
-    await aiSettings.getByRole('button', { name: 'Close AI settings', exact: true }).click();
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await go(3);
     await page.keyboard.insertText(' prose Th');

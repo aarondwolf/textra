@@ -1,5 +1,35 @@
 # Test evidence
 
+2026-10-23 startup/UI refactor:
+
+- Final full unit/integration suite 586/586 passes (55 files, 52.81s); typecheck, lint
+  (zero warnings), format:check and production build pass.
+- Focused editor/startup regressions 37/37 pass after fixing deferred Monaco's
+  side-effect import and concurrent tab-limit selection. Main/PDF/AI/analysis
+  focused checks passed independently; no paid or live-provider requests.
+- All three native startup cases pass in isolated synthetic fixtures, including 50-tab
+  editing/saving, missing-active recovery and cached-PDF rendering without compilation.
+  All 12 functional native cases pass across serial full/targeted runs: shell/security,
+  Agent, Chat, prompted/automatic edits, word selection, real project conflict/compile/PDF,
+  provider settings, recipes, UI consistency and three startup restoration cases.
+  Live-provider integration deliberately skipped; no real AI request was made.
+- Native review caught and fixed core editor styles following lazy Agent CSS and
+  redundant context resets cancelling Agent requests. Monaco ghost-text registration
+  stays before editor construction; test expectations now follow the owner's current
+  integrated settings, Chat/Agent controls, compact PDF menu and conflict dialog.
+- Initial renderer entry 485.33kB minified; the pre-renderer entry was 10,124.40kB
+  unminified. Independent chunks keep Monaco, PDF.js, AI UI, settings and full icon
+  metadata out of the initial script graph. Size change combines minification and
+  deferred work; it is not a like-for-like runtime latency result.
+- Original timing fixture omitted required preferences; recorded 18.673s median
+  editor observation is confounded and not a valid performance comparison. Corrected
+  fixture/measurement details belong in docs/PERFORMANCE.md.
+- Final opt-in benchmark passes 1/1 with three measured launches, OS-temp profile and
+  editor-size assertion: median shell 16.281s, editor 17.074s, compile enabled 17.087s.
+  No renderer exceptions. No cold measurement or valid original latency comparison;
+  private-byte sum 320–327MiB, working-set sum includes shared pages. Raw final data
+  retained in tests/performance/final-2026-10-23.json. Warm target remains unmet.
+
 2026-10-22 assistant activity UI follow-up: typecheck passes, Markdown rendering tests pass 2/2,
 and changed-file Prettier check passes. Native chat e2e passes 1/1 after retrying with desktop
 process access; the sandboxed launch attempt was denied by Electron startup.

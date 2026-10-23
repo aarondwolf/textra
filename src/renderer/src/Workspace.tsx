@@ -5,14 +5,19 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
+  type ComponentProps,
   type FormEvent,
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ChatPanel, type ReviewOutcomeEvent } from './features/chat/ChatPanel';
-import { AgentInlineReview, AgentReviewControls } from './features/chat/AgentInlineReview';
+import type { ReviewOutcomeEvent } from './features/chat/ChatPanel';
+import { lazyFeature } from './features/startup/LazyFeature';
+import { afterPaint, markStartup, scheduleBackground } from './features/startup/scheduling';
+import { persistWorkspaceSession, restoreWorkspaceSession } from './features/startup/session';
+import { useStartup } from './state/startup';
+import { loadAISettings } from './features/chat/useAISettings';
+import { CompileControl, ProblemsButton } from './components/CompileControl';
 import { agentEditHunks } from '../../shared/ai-edits';
 import { AGENT_SOURCE_LIMIT, type AIAgentContext, type AIEditProposal } from '../../shared/ai';
 import {
@@ -46,16 +51,14 @@ import {
   FolderPlus,
   Pin,
   FilePdf,
-  Play,
   Scroll,
   Warning,
   Pencil,
   Save,
-  Square,
   TextraLogo,
   X,
 } from './icons';
-import { FileIcon } from './features/files/fileIcons';
+import { FileIcon } from './features/files/FileIcon';
 import {
   BUILD_RECIPES,
   DEFAULT_PREFERENCES,
@@ -63,6 +66,7 @@ import {
   type BuildEngine,
   type ExternalFileChangeEvent,
   type Result,
+  type RestoredPdf,
   type TexlabStatus,
 } from '../../shared/api';
 import { useUI } from './state/ui';
@@ -70,10 +74,13 @@ import { validateRecipeSettings } from '../../shared/recipes';
 import {
   checkExternalChanges,
   closeDocument,
+  selectDocument,
   dirty,
   discardAll,
   editDocument,
   initializeWorkspace,
+  discoverWorkspaceTools,
+  cancelWorkspaceRestoration,
   markExternalChange,
   openDocument,
   reorderDocuments,
@@ -83,24 +90,96 @@ import {
   showError,
   useWorkspace,
 } from './state/workspace';
-import { ConflictDialog, ConflictDiffView, type ExternalChangeStatus } from './features/conflicts';
-import { SourceEditor, type TexlabDiagnostic } from './features/editor/SourceEditor';
+import type { ExternalChangeStatus } from './features/conflicts/types';
+import type { TexlabDiagnostic } from './features/editor/SourceEditor';
 import { createTexlabAdapter, texlabMarkers } from './features/editor/texlabAdapter';
-import PdfViewer from './features/pdf/PdfViewer';
-import { MarkdownPreview } from './features/markdown';
-import SnippetPalette from './features/snippets/SnippetPalette';
 import { notify } from './features/notifications/ToastViewport';
-import { ProblemsPanel, type ProblemDiagnostic } from './features/problems/ProblemsPanel';
-import { WritingPanel } from './features/writing/WritingPanel';
-import { CompileRecipeEditor } from './features/compile/CompileRecipeEditor';
+import type { ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import type { SectionId } from './features/onboarding/SetupDialog';
-import { parseBibliography } from '../../shared/bibliography';
-import {
-  analyzeLatexDocument,
-  extractPromptContext,
-  findReferenceIssues,
-  type SourceOccurrence,
-} from '../../shared/writing-analysis';
+import { useProjectAnalysis } from './features/writing/useProjectAnalysis';
+import { IconButton } from './components/Button';
+import { PaneHeader } from './components/Layout';
+import { extractPromptContext } from '../../shared/writing-analysis';
+
+const loadSourceEditor = () =>
+  import('./features/editor/SourceEditor').then((module) => ({ default: module.SourceEditor }));
+const SourceEditor = lazyFeature(loadSourceEditor, 'Editor');
+const ChatPanel = lazyFeature<ComponentProps<typeof import('./features/chat/ChatPanel').ChatPanel>>(
+  () => import('./features/chat/ChatPanel').then((module) => ({ default: module.ChatPanel })),
+  'Assistant',
+);
+const AgentInlineReview = lazyFeature<
+  ComponentProps<typeof import('./features/chat/AgentInlineReview').AgentInlineReview>
+>(
+  () =>
+    import('./features/chat/AgentInlineReview').then((module) => ({
+      default: module.AgentInlineReview,
+    })),
+  'Edit review',
+);
+const AgentReviewControls = lazyFeature<
+  ComponentProps<typeof import('./features/chat/AgentInlineReview').AgentReviewControls>
+>(
+  () =>
+    import('./features/chat/AgentInlineReview').then((module) => ({
+      default: module.AgentReviewControls,
+    })),
+  'Review controls',
+);
+const ConflictDialog = lazyFeature<
+  ComponentProps<typeof import('./features/conflicts/ConflictDialog').ConflictDialog>
+>(
+  () =>
+    import('./features/conflicts/ConflictDialog').then((module) => ({
+      default: module.ConflictDialog,
+    })),
+  'Conflict decision',
+);
+const ConflictDiffView = lazyFeature<
+  ComponentProps<typeof import('./features/conflicts/ConflictDiffView').ConflictDiffView>
+>(
+  () =>
+    import('./features/conflicts/ConflictDiffView').then((module) => ({
+      default: module.ConflictDiffView,
+    })),
+  'Comparison',
+);
+const PdfViewer = lazyFeature(() => import('./features/pdf/PdfViewer'), 'PDF preview');
+const MarkdownPreview = lazyFeature<
+  ComponentProps<typeof import('./features/markdown/MarkdownPreview').MarkdownPreview>
+>(
+  () =>
+    import('./features/markdown/MarkdownPreview').then((module) => ({
+      default: module.MarkdownPreview,
+    })),
+  'Markdown preview',
+);
+const SnippetPalette = lazyFeature(() => import('./features/snippets/SnippetPalette'), 'Snippets');
+const ProblemsPanel = lazyFeature<
+  ComponentProps<typeof import('./features/problems/ProblemsPanel').ProblemsPanel>
+>(
+  () =>
+    import('./features/problems/ProblemsPanel').then((module) => ({
+      default: module.ProblemsPanel,
+    })),
+  'Problems',
+);
+const WritingPanel = lazyFeature<
+  ComponentProps<typeof import('./features/writing/WritingPanel').WritingPanel>
+>(
+  () =>
+    import('./features/writing/WritingPanel').then((module) => ({ default: module.WritingPanel })),
+  'Writing tools',
+);
+const CompileRecipeEditor = lazyFeature<
+  ComponentProps<typeof import('./features/compile/CompileRecipeEditor').CompileRecipeEditor>
+>(
+  () =>
+    import('./features/compile/CompileRecipeEditor').then((module) => ({
+      default: module.CompileRecipeEditor,
+    })),
+  'Recipe editor',
+);
 
 interface Prompt {
   title: string;
@@ -384,17 +463,73 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     navigation,
     source,
     projectConfig,
+    configReady,
     error,
     busy,
   } = state;
   const {
     preferences,
+    hydrated,
     updatePreferences,
     panel,
     setPanel,
     expandedPane: requestedPane,
     setExpandedPane,
   } = useUI();
+  const projectId = project?.id;
+  const treeState = project?.treeState;
+  const editorReady = useStartup((state) => state.editorReady);
+  const restoration = useStartup((state) => state.restoration);
+  const coreReady = editorReady || (hydrated && restoration === 'settled' && !activePath);
+  useEffect(() => {
+    void afterPaint().then(() => markStartup('shell-visible'));
+  }, []);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (preferences.restoreSession) void restoreWorkspaceSession();
+    else cancelWorkspaceRestoration();
+  }, [hydrated, preferences.restoreSession]);
+  const sessionTabs = documents.map((document) => document.path).join('\0');
+  useEffect(() => {
+    persistWorkspaceSession(preferences.restoreSession);
+  }, [sessionTabs, activePath, project?.id, recents, preferences.restoreSession, restoration]);
+  useEffect(() => {
+    if (projectId) void loadSourceEditor().catch(() => undefined);
+  }, [projectId]);
+  useEffect(() => {
+    if (!coreReady) return;
+    return scheduleBackground(() => {
+      void discoverWorkspaceTools();
+      void loadAISettings()
+        .then(() => window.textra.prepareAI())
+        .catch(() => undefined);
+    });
+  }, [coreReady]);
+  useEffect(() => {
+    if (!projectId || !coreReady || !configReady) return;
+    const id = projectId;
+    return scheduleBackground(() => {
+      void window.textra.prepareProject(id).catch(() => undefined);
+    });
+  }, [projectId, coreReady, configReady]);
+  useEffect(() => {
+    if (!projectId || treeState !== 'loading' || !coreReady) return;
+    const id = projectId;
+    let cancelled = false;
+    const cancel = scheduleBackground(() => {
+      void window.textra
+        .refreshProject(id)
+        .then((result) => {
+          if (!cancelled && useWorkspace.getState().project?.id === id && result.ok)
+            useWorkspace.setState({ project: result.value });
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [projectId, treeState, coreReady]);
   const expandedPane = preferences.previewVisible ? requestedPane : null;
   const previewFull = expandedPane === 'preview';
   const editorFull = expandedPane === 'editor';
@@ -407,65 +542,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     if (!activePath && useUI.getState().expandedPane === 'editor')
       useUI.getState().setExpandedPane(null);
   }, [activePath]);
-  useEffect(() => {
-    if (restoredSession.current || !preferences.restoreSession) return;
-    restoredSession.current = true;
-    const raw = window.localStorage.getItem('textra:workspace-session');
-    if (!raw) return;
-    try {
-      const saved = JSON.parse(raw) as {
-        projectId?: string;
-        recentId?: string;
-        paths?: string[];
-        activePath?: string;
-      };
-      const idToOpen = saved.recentId ?? saved.projectId;
-      if (!idToOpen) return;
-      void (async () => {
-        try {
-          const recentsResult = await window.textra.getRecentProjects();
-          if (!recentsResult.ok || recentsResult.value.length === 0) {
-            window.localStorage.removeItem('textra:workspace-session');
-            return;
-          }
-          const recentsList = recentsResult.value;
-          const targetEntry =
-            recentsList.find((item) => item.id === idToOpen) ??
-            (recentsList.length > 0 ? recentsList[0] : null);
-          if (!targetEntry) {
-            window.localStorage.removeItem('textra:workspace-session');
-            return;
-          }
-          const result = await window.textra.openRecentProject(targetEntry.id);
-          if (!result.ok || !result.value) {
-            window.localStorage.removeItem('textra:workspace-session');
-            return;
-          }
-          await setProject(result.value);
-          for (const path of saved.paths?.slice(0, 50) ?? []) await openDocument(path);
-          if (saved.activePath) useWorkspace.setState({ activePath: saved.activePath });
-        } catch {
-          window.localStorage.removeItem('textra:workspace-session');
-        }
-      })();
-    } catch {
-      window.localStorage.removeItem('textra:workspace-session');
-    }
-  }, [preferences.restoreSession]);
-  useEffect(() => {
-    if (!project || !preferences.restoreSession) return;
-    const matchingRecent = recents.find((item) => item.rootPath === project.rootPath);
-    if (!matchingRecent) return;
-    window.localStorage.setItem(
-      'textra:workspace-session',
-      JSON.stringify({
-        recentId: matchingRecent.id,
-        projectId: matchingRecent.id,
-        paths: documents.map((document) => document.path),
-        activePath,
-      }),
-    );
-  }, [activePath, documents, preferences.restoreSession, project, recents]);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [pending, setPending] = useState<(() => Promise<void>) | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -489,6 +565,36 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const [fileFilter, setFileFilter] = useState('');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [pdfPreviewPath, setPdfPreviewPath] = useState<string | null>(null);
+  const [restoredPdf, setRestoredPdf] = useState<RestoredPdf | null>(null);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
+  useEffect(() => {
+    if ((coreReady && preferences.previewVisible) || pdfPreviewPath) setPreviewLoaded(true);
+  }, [coreReady, preferences.previewVisible, pdfPreviewPath]);
+  useEffect(() => {
+    setRestoredPdf(null);
+    if (!projectId || !coreReady) return;
+    let cancelled = false;
+    const id = projectId;
+    void window.textra
+      .restoreLastPdf(id)
+      .then((result) => {
+        const current = useWorkspace.getState();
+        if (
+          !cancelled &&
+          result.ok &&
+          current.project?.id === id &&
+          !(current.build.projectId === id && current.build.outcome === 'success')
+        )
+          setRestoredPdf(result.value);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, coreReady]);
+  useEffect(() => {
+    if (build.projectId === project?.id && build.outcome === 'success') setRestoredPdf(null);
+  }, [build.projectId, build.outcome, project?.id]);
   const [savedTabPath, setSavedTabPath] = useState<string | null>(null);
   const savedTabTimer = useRef<number | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{
@@ -498,7 +604,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     index: number;
   } | null>(null);
   const [tabOverflowOpen, setTabOverflowOpen] = useState(false);
-  const restoredSession = useRef(false);
 
   useEffect(() => {
     if (!tabContextMenu && !tabOverflowOpen) return;
@@ -553,7 +658,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     }
     wasRunning.current = build.running;
   }, [build.running, build.outcome]);
-  const [projectSources, setProjectSources] = useState<Record<string, string>>({});
   const [lintDiagnostics, setLintDiagnostics] = useState<ProblemDiagnostic[]>([]);
   const [texlabStatus, setTexlabStatus] = useState<TexlabStatus | null>(null);
   const [texlabDiagnostics, setTexlabDiagnostics] = useState<
@@ -584,13 +688,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     let active = true;
     setTexlabDiagnostics(new Map());
     setTexlabProblemDiagnostics(new Map());
+    if (!coreReady || !preferences.texlabEnabled) return;
     void window.textra.getTexlabStatus().then((result) => {
       if (active && result.ok) setTexlabStatus(result.value);
     });
     return () => {
       active = false;
     };
-  }, [preferences.texlabEnabled, project?.id]);
+  }, [coreReady, preferences.texlabEnabled, project?.id]);
   const texlabAdapter = useMemo(() => {
     const adapter = createTexlabAdapter({
       documents,
@@ -673,37 +778,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const editorOptions = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setExpandedFolders(new Set());
-  }, [project]);
-  useEffect(() => {
-    if (!project) {
-      setProjectSources({});
-      return;
-    }
-    let cancelled = false;
-    const texFiles = project.files
-      .filter((file) => file.kind === 'file' && /\.(?:tex|bib)$/i.test(file.path))
-      .slice(0, 250);
-    void Promise.all(
-      texFiles.map(async (file) => {
-        const result = await window.textra.readFile({ projectId: project.id, path: file.path });
-        return result.ok ? ([file.path, result.value.content] as const) : null;
-      }),
-    )
-      .then((entries) => {
-        if (!cancelled)
-          setProjectSources(
-            Object.fromEntries(
-              entries.filter((entry): entry is readonly [string, string] => entry !== null),
-            ),
-          );
-      })
-      .catch(() => {
-        if (!cancelled) setProjectSources({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [project]);
+  }, [project?.id]);
   useEffect(() => {
     if (!activePath) return;
     setExpandedFolders((previous) =>
@@ -771,6 +846,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const active = documents.find((document) => document.path === activePath);
   const [agentContext, setAgentContext] = useState<AIAgentContext | null>(null);
   const [agentWorking, setAgentWorking] = useState(false);
+  const [agentAccessNeeded, setAgentAccessNeeded] = useState(false);
   const [agentProposal, setAgentProposal] = useState<AIEditProposal | null>(null);
   const agentApprovedSnapshot = useRef<Pick<
     AIEditProposal,
@@ -817,15 +893,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       setAgentReviewBusy(false);
     }
   }
+  const hadAgentContext = useRef(false);
+  const agentReviewActive = agentProposal !== null;
   const agentProjectId = active?.projectId;
   const agentPath = active?.path;
   const agentContent = active?.content;
   const agentRevision = active?.revision;
   const agentConflict = active?.conflict;
+  const synchronizeAgentDocument = agentAccessNeeded || agentReviewActive || agentWorking;
   useEffect(() => {
     let current = true;
     setAgentContext(null);
     const snapshot =
+      synchronizeAgentDocument &&
       agentProjectId &&
       agentPath &&
       agentContent !== undefined &&
@@ -841,6 +921,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             revision: agentRevision,
           }
         : null;
+    if (!snapshot && !hadAgentContext.current) return;
+    hadAgentContext.current = snapshot !== null;
     void window.textra
       .syncAIAgentDocument(snapshot)
       .then((result) => {
@@ -850,7 +932,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     return () => {
       current = false;
     };
-  }, [agentProjectId, agentPath, agentContent, agentRevision, agentConflict, busy]);
+  }, [
+    synchronizeAgentDocument,
+    agentProjectId,
+    agentPath,
+    agentContent,
+    agentRevision,
+    agentConflict,
+    busy,
+  ]);
   useEffect(
     () => () => {
       void window.textra.syncAIAgentDocument(null);
@@ -1002,7 +1092,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const engine = availableRecipes.some((recipe) => recipe.name === preferred)
     ? preferred
     : availableRecipes[0].name;
-  const canCompile = !!active && /\.tex$/i.test(active.path);
+  const canCompile = configReady && !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
   const recipeControl = useRef<HTMLDivElement>(null);
   const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
@@ -1061,74 +1151,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }, [recipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
-  const analysisSources = useMemo(() => {
-    const next = { ...projectSources };
-    for (const document of documents)
-      if (/\.(?:tex|bib)$/i.test(document.path)) next[document.path] = document.content;
-    return next;
-  }, [documents, projectSources]);
-  const bibliographyEntries = useMemo(
-    () =>
-      Object.entries(analysisSources)
-        .filter(([path]) => /\.bib$/i.test(path))
-        .flatMap(([, content]) => parseBibliography(content)),
-    [analysisSources],
-  );
-  const documentAnalysis = useMemo(
-    () => (active && /\.tex$/i.test(active.path) ? analyzeLatexDocument(active.content) : null),
-    [active],
-  );
-  const referenceDiagnostics = useMemo<ProblemDiagnostic[]>(() => {
-    const labels: Array<SourceOccurrence & { file: string }> = [];
-    const references: Array<SourceOccurrence & { file: string }> = [];
-    const graphics: Array<SourceOccurrence & { file: string }> = [];
-    const targetPaths = activePath
-      ? [activePath]
-      : Object.keys(analysisSources).filter((path) => /\.tex$/i.test(path));
-    for (const path of targetPaths) {
-      const content = analysisSources[path];
-      if (!content || !/\.tex$/i.test(path)) continue;
-      const analysis = analyzeLatexDocument(content);
-      labels.push(...analysis.labels.map((item) => ({ ...item, file: path })));
-      references.push(...analysis.references.map((item) => ({ ...item, file: path })));
-      graphics.push(...analysis.graphics.map((item) => ({ ...item, file: path })));
-    }
-    const issues: ProblemDiagnostic[] = [];
-    for (const issue of findReferenceIssues(labels, references))
-      for (const occurrence of issue.occurrences as Array<SourceOccurrence & { file: string }>)
-        issues.push({
-          severity: 'warning',
-          source: 'reference',
-          code: issue.kind,
-          message:
-            issue.kind === 'duplicate-label'
-              ? `Duplicate label: ${issue.value}`
-              : `Missing label: ${issue.value}`,
-          file: occurrence.file,
-          line: occurrence.line,
-          column: occurrence.column,
-        });
-    const knownFiles = new Set(
-      project?.files.filter((file) => file.kind === 'file').map((file) => file.path) ?? [],
-    );
-    for (const graphic of graphics) {
-      const candidate = graphic.value.replace(/^\{+|\}+$/g, '').replace(/^\.\//, '');
-      const exists = [...knownFiles].some(
-        (path) => path === candidate || path.replace(/\.[^.]+$/, '') === candidate,
-      );
-      if (!exists)
-        issues.push({
-          severity: 'warning',
-          source: 'reference',
-          code: 'missing-graphic',
-          message: `Missing graphic: ${graphic.value}`,
-          file: graphic.file,
-          line: graphic.line,
-          column: graphic.column,
-        });
-    }
-    return issues;
-  }, [activePath, analysisSources, project?.files]);
+  const { analysisSources, bibliographyEntries, documentAnalysis, referenceDiagnostics } =
+    useProjectAnalysis(project, documents, activePath, coreReady);
   const problemDiagnostics = useMemo<ProblemDiagnostic[]>(() => {
     const all = [
       ...(currentBuild?.diagnostics ?? []),
@@ -1280,13 +1304,14 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       showError('Cancel the running build before switching projects.');
       return;
     }
+    cancelWorkspaceRestoration();
     protect(async () => {
       const result = recentId
         ? await window.textra.openRecentProject(recentId)
         : await window.textra.chooseProject();
       const next = unwrap(result);
       if (next) {
-        await setProject(next);
+        void setProject(next).catch(showError);
         setSelected(null);
       }
     });
@@ -1405,11 +1430,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       if (!current) return;
       if (!result.ok) {
         setComparison({ path, localContent: current.content, externalContent: null });
-        useWorkspace.setState({ activePath: path });
+        selectDocument(path);
         return;
       }
       setComparison({ path, localContent: current.content, externalContent: result.value.content });
-      useWorkspace.setState({ activePath: path });
+      selectDocument(path);
     },
     [conflictPath, project],
   );
@@ -1706,6 +1731,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         );
       }
       useWorkspace.setState((state) => ({ recipes: { ...state.recipes, [rootFile]: engine } }));
+      markStartup('compile-dispatch');
       const result = await window.textra.compile({
         projectId: project.id,
         rootFile,
@@ -1891,9 +1917,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       <div className="workspace-body">
         <nav className="activity-rail" aria-label="Workspace controls">
           <div className="activity-rail-header">
-            <button
+            <IconButton
+              small={false}
               className="icon-button"
-              aria-label="Toggle sidebar"
+              label="Toggle sidebar"
               title={
                 preferences.sidebarVisible
                   ? 'Collapse sidebar (Ctrl/Cmd+B)'
@@ -1907,11 +1934,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               ) : (
                 <PanelLeftOpen size={19} />
               )}
-            </button>
+            </IconButton>
           </div>
-          <button
+          <IconButton
+            small={false}
             className="icon-button activity-view"
-            aria-label="File Explorer"
+            label="File Explorer"
             title="File Explorer"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'explorer'}
             onClick={() => selectSidebarView('explorer')}
@@ -1922,21 +1950,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 preferences.sidebarVisible && sidebarView === 'explorer' ? 'duotone' : 'light'
               }
             />
-          </button>
+          </IconButton>
           {comparison && (
-            <button
+            <IconButton
+              small={false}
               className="icon-button activity-view"
-              aria-label="Conflict comparison"
+              label="Conflict comparison"
               title="Conflict comparison (read-only)"
               aria-pressed={comparison.path === activePath}
-              onClick={() => useWorkspace.setState({ activePath: comparison.path })}
+              onClick={() => selectDocument(comparison.path)}
             >
               <Columns2 size={19} weight={comparison.path === activePath ? 'duotone' : 'light'} />
-            </button>
+            </IconButton>
           )}
-          <button
+          <IconButton
+            small={false}
             className="icon-button activity-view"
-            aria-label="Writing tools"
+            label="Writing tools"
             title="Writing: outline, counts and notes"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'writing'}
             onClick={() => selectSidebarView('writing')}
@@ -1945,10 +1975,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               size={19}
               weight={preferences.sidebarVisible && sidebarView === 'writing' ? 'duotone' : 'light'}
             />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            small={false}
             className="icon-button activity-view"
-            aria-label="Build"
+            label="Build"
             title="Build"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'compile'}
             onClick={() => selectSidebarView('compile')}
@@ -1957,10 +1988,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               size={19}
               weight={preferences.sidebarVisible && sidebarView === 'compile' ? 'duotone' : 'light'}
             />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            small={false}
             className="icon-button activity-view"
-            aria-label="Snippets & Symbols"
+            label="Snippets & Symbols"
             title="Snippets & Symbols: math symbols, tables, templates"
             aria-pressed={
               preferences.sidebarVisible &&
@@ -1977,10 +2009,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   : 'light'
               }
             />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            small={false}
             className="icon-button activity-view"
-            aria-label="AI Chat"
+            label="AI Chat"
             title="AI Chat"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'chat'}
             onClick={() => selectSidebarView('chat')}
@@ -1990,18 +2023,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               aria-hidden="true"
               weight={preferences.sidebarVisible && sidebarView === 'chat' ? 'duotone' : 'light'}
             />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            small={false}
             className="icon-button rail-bottom"
-            aria-label="Command palette"
+            label="Command palette"
             title="Search commands (Ctrl/Cmd+K)"
             onClick={() => useUI.getState().setPaletteOpen(true)}
           >
             <Search size={18} />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            small={false}
             className="icon-button activity-view"
-            aria-label="Recent Projects"
+            label="Recent Projects"
             title="Recent Projects"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'recents'}
             onClick={() => selectSidebarView('recents')}
@@ -2010,15 +2045,16 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               size={20}
               weight={preferences.sidebarVisible && sidebarView === 'recents' ? 'duotone' : 'light'}
             />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            small={false}
             className="icon-button"
-            aria-label="Settings and TeX setup"
+            label="Settings and TeX setup"
             title="Settings"
             onClick={() => onOpenSettings?.()}
           >
             <Settings size={19} />
-          </button>
+          </IconButton>
         </nav>
         {chatOpened && (
           <aside
@@ -2029,6 +2065,13 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           >
             <ChatPanel
               agentContext={agentContext}
+              documentAvailable={
+                !!active &&
+                /\.tex$/i.test(active.path) &&
+                !active.conflict &&
+                active.content.length <= AGENT_SOURCE_LIMIT
+              }
+              onDocumentAccessChange={setAgentAccessNeeded}
               onAgentWorkingChange={setAgentWorking}
               reviewActive={agentProposal !== null}
               reviewOutcome={reviewOutcome}
@@ -2098,25 +2141,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               />
             ) : sidebarView === 'snippets' || sidebarView === 'equations' ? (
               <>
-                <div className="sidebar-title">
-                  <span className="sidebar-heading">Snippets & Symbols</span>
-                </div>
+                <PaneHeader title="Snippets & Symbols" className="sidebar-title"></PaneHeader>
                 <SnippetPalette canInsert={!!active} onAskChat={askSnippetInChat} />
               </>
             ) : sidebarView === 'recents' ? (
               <>
-                <div className="sidebar-title">
-                  <span className="sidebar-heading">Recent Projects</span>
-                  <button
+                <PaneHeader title="Recent Projects" className="sidebar-title">
+                  <IconButton
+                    small={true}
                     className="icon-button small"
-                    aria-label="Open folder"
+                    label="Open folder"
                     title="Open folder"
                     onClick={() => openFolder()}
                     disabled={busy || build.running}
                   >
                     <FolderOpen size={15} />
-                  </button>
-                </div>
+                  </IconButton>
+                </PaneHeader>
                 {recents.length > 0 ? (
                   <div className="recent-project-list recent-project-list-full">
                     {[...recents]
@@ -2133,9 +2174,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             <FolderOpen size={13} />
                             <span>{recent.name}</span>
                           </button>
-                          <button
+                          <IconButton
+                            small={true}
                             className="icon-button small"
-                            aria-label={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
+                            label={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
                             title={`${recent.pinned ? 'Unpin' : 'Pin'} ${recent.name}`}
                             aria-pressed={recent.pinned}
                             onClick={() =>
@@ -2152,7 +2194,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             }
                           >
                             <Pin size={12} />
-                          </button>
+                          </IconButton>
                         </div>
                       ))}
                   </div>
@@ -2166,104 +2208,42 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               </>
             ) : sidebarView === 'compile' ? (
               <div className="writing-panel compile-sidebar">
-                <div className="sidebar-title writing-title build-sidebar-title">
-                  <span className="sidebar-heading">Build</span>
+                <PaneHeader
+                  title="Build"
+                  className="sidebar-title writing-title build-sidebar-title"
+                >
                   <div className="build-header-actions">
-                    <button
-                      className={`toolbar-button compile-button compile-feedback-${buildFeedback}`}
-                      data-feedback={buildFeedback}
-                      aria-label={build.running ? 'Cancel build' : 'Compile active document'}
-                      title={
-                        build.running
-                          ? 'Cancel build'
-                          : buildFeedback === 'success'
-                            ? 'Build succeeded!'
-                            : buildFeedback === 'failed'
-                              ? 'Build failed.'
-                              : !canCompile
-                                ? 'Open a .tex document to compile it.'
-                                : busy
-                                  ? 'Wait for the current file operation to finish.'
-                                  : missingTool
-                                    ? engine + ' not found. Check Settings, LaTeX tools.'
-                                    : 'Compile ' +
-                                      (activePath ?? 'active document') +
-                                      ' with ' +
-                                      engine +
-                                      ' (Ctrl/Cmd+Enter)'
+                    <CompileControl
+                      running={build.running}
+                      feedback={buildFeedback}
+                      canCompile={canCompile}
+                      busy={busy}
+                      missingTool={Boolean(missingTool)}
+                      engine={engine}
+                      activePath={activePath}
+                      stepsDone={build.stepsDone}
+                      stepCount={build.stepCount}
+                      onCompile={() => void compile()}
+                      onCancel={() =>
+                        void run(async () => {
+                          unwrap(await window.textra.cancelBuild());
+                        })
                       }
-                      style={
-                        build.running && build.stepCount
-                          ? ({
-                              '--progress': `${Math.min(
-                                95,
-                                (((build.stepsDone ?? 0) + 0.5) / build.stepCount) * 100,
-                              )}%`,
-                            } as CSSProperties)
-                          : undefined
-                      }
-                      data-progress={build.running && build.stepCount ? 'true' : undefined}
-                      disabled={!build.running && (!canCompile || busy)}
-                      onClick={() =>
-                        build.running
-                          ? void run(async () => {
-                              unwrap(await window.textra.cancelBuild());
-                            })
-                          : void compile()
-                      }
-                    >
-                      {build.running ? (
-                        <Square size={13} />
-                      ) : buildFeedback === 'success' ? (
-                        <Check size={13} />
-                      ) : buildFeedback === 'failed' ? (
-                        <Warning size={13} />
-                      ) : (
-                        <Play size={13} />
-                      )}
-                      {build.running
-                        ? 'Cancel'
-                        : buildFeedback === 'success'
-                          ? 'Success!'
-                          : buildFeedback === 'failed'
-                            ? 'Failed'
-                            : 'Compile'}
-                    </button>
-                    <button
-                      className="icon-button small collapsed-alert"
-                      data-severity={issueSeverity}
-                      aria-label={'Show problems' + (issueCount ? ` (${issueCount})` : '')}
-                      title={
-                        issueSeverity === 'error'
-                          ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
-                          : issueSeverity === 'warning'
-                            ? `${warningCount} warning${warningCount === 1 ? '' : 's'}`
-                            : issueSeverity === 'ok'
-                              ? 'No problems'
-                              : 'Show problems'
-                      }
+                    />
+                    <ProblemsButton
+                      severity={issueSeverity}
+                      issueCount={issueCount}
+                      errorCount={errorCount}
+                      warningCount={warningCount}
                       onClick={() => {
                         setPanel('problems');
                         updatePreferences({ previewVisible: true });
                       }}
-                    >
-                      <span className="alert-glyph">
-                        <Warning
-                          size={15}
-                          weight={
-                            issueSeverity === 'error' || issueSeverity === 'warning'
-                              ? 'fill'
-                              : 'light'
-                          }
-                        />
-                        {issueSeverity === 'ok' && (
-                          <Check size={8} weight="bold" className="alert-check" />
-                        )}
-                      </span>
-                    </button>
-                    <button
+                    />
+                    <IconButton
+                      small={true}
                       className="icon-button small"
-                      aria-label="Clear auxiliary files"
+                      label="Clear auxiliary files"
                       title={
                         !canCompile
                           ? 'Open a .tex document to clear auxiliary files.'
@@ -2296,9 +2276,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       }}
                     >
                       <Broom size={15} />
-                    </button>
+                    </IconButton>
                   </div>
-                </div>
+                </PaneHeader>
                 {project && (
                   <div
                     className="build-recipe-editor-wrap"
@@ -2325,23 +2305,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               </div>
             ) : (
               <>
-                <div className="sidebar-title">
-                  <span className="sidebar-heading">Files</span>
+                <PaneHeader title="Files" className="sidebar-title">
                   <div className="inline-actions">
-                    <button
+                    <IconButton
+                      small={true}
                       className="icon-button small"
-                      aria-label="Open folder"
+                      label="Open folder"
                       title="Open folder"
                       onClick={() => openFolder()}
                       disabled={busy || build.running}
                     >
                       <FolderOpen size={15} />
-                    </button>
+                    </IconButton>
                     {project && (
                       <>
-                        <button
+                        <IconButton
+                          small={true}
                           className="icon-button small"
-                          aria-label="Reveal folder in explorer"
+                          label="Reveal folder in explorer"
                           title="Reveal folder in explorer"
                           disabled={busy}
                           onClick={() =>
@@ -2356,10 +2337,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           }
                         >
                           <ArrowSquareOut size={15} />
-                        </button>
-                        <button
+                        </IconButton>
+                        <IconButton
+                          small={true}
                           className="icon-button small"
-                          aria-label="Open folder in VS Code"
+                          label="Open folder in VS Code"
                           title="Open folder in VS Code"
                           disabled={busy}
                           onClick={() =>
@@ -2371,11 +2353,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           }
                         >
                           <Code size={15} />
-                        </button>
+                        </IconButton>
                       </>
                     )}
                   </div>
-                </div>
+                </PaneHeader>
                 {project && (
                   <label className="file-filter">
                     <span className="sr-only">Filter project files</span>
@@ -2391,24 +2373,26 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   <span>{project?.name ?? 'No project open'}</span>
                   {project && (
                     <div className="inline-actions">
-                      <button
+                      <IconButton
+                        small={true}
                         className="icon-button small"
-                        aria-label="New file"
+                        label="New file"
                         title="New file"
                         disabled={busy}
                         onClick={() => newEntry('file')}
                       >
                         <FilePlus2 size={15} />
-                      </button>
-                      <button
+                      </IconButton>
+                      <IconButton
+                        small={true}
                         className="icon-button small"
-                        aria-label="New folder"
+                        label="New folder"
                         title="New folder"
                         disabled={busy}
                         onClick={() => newEntry('directory')}
                       >
                         <FolderPlus size={15} />
-                      </button>
+                      </IconButton>
                     </div>
                   )}
                 </div>
@@ -2614,7 +2598,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             if (/\.md(?:own)?$/i.test(document.path)) {
                               setPdfPreviewPath(null);
                             }
-                            useWorkspace.setState({ activePath: document.path, navigation: null });
+                            selectDocument(document.path);
                           }}
                         >
                           <FileText size={13} />
@@ -2648,14 +2632,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 </div>
                 {documents.length > 2 && (
                   <div className="tab-overflow-container">
-                    <button
+                    <IconButton
+                      small={true}
                       className="icon-button small"
-                      aria-label="Open tabs list"
+                      label="Open tabs list"
                       title="Open tabs list"
                       onClick={() => setTabOverflowOpen(!tabOverflowOpen)}
                     >
                       <ChevronDown size={13} />
-                    </button>
+                    </IconButton>
                     {tabOverflowOpen && (
                       <div className="tab-overflow-menu" role="menu">
                         <div className="tab-overflow-header">OPEN EDITORS ({documents.length})</div>
@@ -2666,7 +2651,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             role="menuitem"
                             onClick={() => {
                               setTabOverflowOpen(false);
-                              useWorkspace.setState({ activePath: doc.path, navigation: null });
+                              selectDocument(doc.path);
                             }}
                           >
                             <FileText size={13} />
@@ -2680,9 +2665,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 )}
                 {active && (
                   <div className="editor-tab-actions">
-                    <button
+                    <IconButton
+                      small={true}
                       className="icon-button small"
-                      aria-label="Save file"
+                      label="Save file"
                       title="Save (Ctrl/Cmd+S)"
                       disabled={!dirty(active) || busy || active.conflict}
                       onClick={() =>
@@ -2692,7 +2678,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       }
                     >
                       <Save size={15} />
-                    </button>
+                    </IconButton>
                     {/* Expand-editor button disabled: "Collapse right pane" covers it.
                         Wiring (expandedPane "editor", palette command, effects) is kept
                         so the decision can be revisited.
@@ -2728,16 +2714,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                         }
                       }}
                     >
-                      <button
+                      <IconButton
+                        small={true}
                         className="icon-button small"
-                        aria-label="Editor options"
+                        label="Editor options"
                         title="Editor options"
                         aria-expanded={editorOptionsOpen}
                         aria-controls="editor-options-panel"
                         onClick={() => setEditorOptionsOpen(!editorOptionsOpen)}
                       >
                         <Ellipsis size={17} />
-                      </button>
+                      </IconButton>
                       {editorOptionsOpen && (
                         <div
                           className="editor-options-menu"
@@ -3010,86 +2997,35 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     }
                   }}
                 >
-                  <button
-                    className={`toolbar-button compile-button compile-feedback-${buildFeedback}`}
-                    data-feedback={buildFeedback}
-                    aria-label={build.running ? 'Cancel build' : 'Compile active document'}
-                    title={
-                      build.running
-                        ? 'Cancel build'
-                        : buildFeedback === 'success'
-                          ? 'Build succeeded!'
-                          : buildFeedback === 'failed'
-                            ? 'Build failed.'
-                            : !canCompile
-                              ? 'Open a .tex document to compile it.'
-                              : busy
-                                ? 'Wait for the current file operation to finish.'
-                                : missingTool
-                                  ? engine + ' not found. Check Settings, LaTeX tools.'
-                                  : 'Compile ' +
-                                    (activePath ?? 'active document') +
-                                    ' with ' +
-                                    engine +
-                                    ' (Ctrl/Cmd+Enter)'
+                  <CompileControl
+                    running={build.running}
+                    feedback={buildFeedback}
+                    canCompile={canCompile}
+                    busy={busy}
+                    missingTool={Boolean(missingTool)}
+                    engine={engine}
+                    activePath={activePath}
+                    stepsDone={build.stepsDone}
+                    stepCount={build.stepCount}
+                    onCompile={() => void compile()}
+                    onCancel={() =>
+                      void run(async () => {
+                        unwrap(await window.textra.cancelBuild());
+                      })
                     }
-                    style={
-                      build.running && build.stepCount
-                        ? ({
-                            '--progress': `${Math.min(
-                              95,
-                              (((build.stepsDone ?? 0) + 0.5) / build.stepCount) * 100,
-                            )}%`,
-                          } as CSSProperties)
-                        : undefined
-                    }
-                    data-progress={build.running && build.stepCount ? 'true' : undefined}
-                    disabled={!build.running && (!canCompile || busy)}
-                    onClick={() =>
-                      build.running
-                        ? void run(async () => {
-                            unwrap(await window.textra.cancelBuild());
-                          })
-                        : void compile()
-                    }
-                  >
-                    {build.running ? (
-                      <Square size={13} />
-                    ) : buildFeedback === 'success' ? (
-                      <Check size={13} />
-                    ) : buildFeedback === 'failed' ? (
-                      <Warning size={13} />
-                    ) : (
-                      <Play size={13} />
-                    )}
-                    {build.running
-                      ? 'Cancel'
-                      : buildFeedback === 'success'
-                        ? 'Success!'
-                        : buildFeedback === 'failed'
-                          ? 'Failed'
-                          : 'Compile'}
-                  </button>
-                  <button
-                    className={`toolbar-button compile-button recipe-toggle compile-feedback-${buildFeedback}`}
-                    data-feedback={buildFeedback}
-                    aria-label="Choose compile recipe"
-                    aria-expanded={recipeOpen}
-                    aria-controls="compile-recipes"
-                    disabled={!canCompile || busy || build.running}
-                    title={'Recipe: ' + engine}
-                    onClick={() => {
-                      if (recipeOpen) setRecipeOpen(false);
-                      else if (project)
-                        void run(async () => {
-                          const config = unwrap(await window.textra.getProjectConfig(project.id));
-                          useWorkspace.setState({ projectConfig: config });
-                          setRecipeOpen(true);
-                        });
+                    recipeToggle={{
+                      open: recipeOpen,
+                      onToggle: () => {
+                        if (recipeOpen) setRecipeOpen(false);
+                        else if (project)
+                          void run(async () => {
+                            const config = unwrap(await window.textra.getProjectConfig(project.id));
+                            useWorkspace.setState({ projectConfig: config });
+                            setRecipeOpen(true);
+                          });
+                      },
                     }}
-                  >
-                    <ChevronDown size={14} />
-                  </button>
+                  />
                   {recipeOpen && (
                     <div
                       className="recipe-menu"
@@ -3137,16 +3073,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 <div className="preview-tabs-host" ref={setTabsHost}>
                   {tabMode === 'menu' ? (
                     <>
-                      <button
+                      <IconButton
+                        small={true}
                         className="icon-button small"
-                        aria-label="Preview menu"
+                        label="Preview menu"
                         aria-haspopup="menu"
                         aria-expanded={tabMenuOpen}
                         title="Views and PDF controls"
                         onClick={() => setTabMenuOpen((open) => !open)}
                       >
                         <Ellipsis size={17} />
-                      </button>
+                      </IconButton>
                       {tabMenuOpen && (
                         <div className="preview-tabs-menu" role="menu" aria-label="Preview views">
                           {(['preview', 'problems', 'output'] as const).map((name) => (
@@ -3249,9 +3186,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 </div>
                 <div className="pdf-slot" ref={setPdfSlot} />
                 {panel === 'output' && (
-                  <button
+                  <IconButton
+                    small={true}
                     className="icon-button small header-secondary"
-                    aria-label="Copy build output"
+                    label="Copy build output"
                     title={logCopied ? 'Copied' : 'Copy build output'}
                     disabled={!currentBuild?.log}
                     onClick={() => {
@@ -3265,11 +3203,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     }}
                   >
                     {logCopied ? <Check size={15} /> : <Copy size={15} />}
-                  </button>
+                  </IconButton>
                 )}
-                <button
+                <IconButton
+                  small={true}
                   className="icon-button small header-secondary"
-                  aria-label={
+                  label={
                     previewFull
                       ? 'Restore editor and preview split'
                       : 'Expand preview to full width'
@@ -3283,10 +3222,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   onClick={() => setExpandedPane(previewFull ? null : 'preview')}
                 >
                   {previewFull ? <ArrowsInSimple size={16} /> : <ArrowsOutSimple size={16} />}
-                </button>
-                <button
+                </IconButton>
+                <IconButton
+                  small={true}
                   className="icon-button small"
-                  aria-label="Collapse preview"
+                  label="Collapse preview"
                   title="Collapse preview"
                   onClick={() => {
                     setExpandedPane(null);
@@ -3294,7 +3234,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   }}
                 >
                   <PanelRightClose size={17} />
-                </button>
+                </IconButton>
               </div>
               <div
                 className="pdf-tab-content"
@@ -3305,10 +3245,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               >
                 {active && /\.md(?:own)?$/i.test(active.path) ? (
                   <MarkdownPreview source={active.content} path={active.path} />
-                ) : (
+                ) : previewLoaded && (currentBuild?.pdfPath || pdfPreviewPath || restoredPdf) ? (
                   <PdfViewer
                     project={project}
-                    build={build}
+                    build={
+                      currentBuild?.pdfPath
+                        ? build
+                        : restoredPdf
+                          ? {
+                              ...build,
+                              projectId: restoredPdf.projectId,
+                              rootFile: restoredPdf.rootFile,
+                              pdfPath: restoredPdf.path,
+                              pdfVersion: restoredPdf.pdfVersion,
+                            }
+                          : build
+                    }
+                    restored={!!restoredPdf && !pdfPreviewPath}
                     externalPdfPath={pdfPreviewPath}
                     source={source}
                     toolbarSlot={pdfSlot}
@@ -3320,6 +3273,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       void openDocument(location.path, location);
                     }}
                   />
+                ) : (
+                  <div className="feature-loading" role="status">
+                    Compile a document to see its PDF preview.
+                  </div>
                 )}
               </div>
               {panel !== 'preview' && (
@@ -3389,52 +3346,36 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             </section>
             {!preferences.previewVisible && (
               <div className="preview-collapsed">
-                <button
+                <IconButton
+                  small={true}
                   className="icon-button small"
-                  aria-label="Expand preview"
+                  label="Expand preview"
                   title="Expand preview"
                   onClick={() => updatePreferences({ previewVisible: true })}
                 >
                   <PanelRightOpen size={17} />
-                </button>
-                <button
-                  className={`collapsed-compile collapsed-feedback-${buildFeedback}`}
-                  data-feedback={buildFeedback}
-                  data-running={build.running ? 'true' : undefined}
-                  aria-label={build.running ? 'Cancel build' : 'Compile active document'}
-                  title={
-                    build.running
-                      ? 'Cancel build'
-                      : buildFeedback === 'success'
-                        ? 'Build succeeded!'
-                        : buildFeedback === 'failed'
-                          ? 'Build failed.'
-                          : !canCompile
-                            ? 'Open a .tex document to compile it.'
-                            : 'Compile with ' + engine + ' (Ctrl/Cmd+Enter)'
+                </IconButton>
+                <CompileControl
+                  running={build.running}
+                  feedback={buildFeedback}
+                  canCompile={canCompile}
+                  busy={busy}
+                  missingTool={Boolean(missingTool)}
+                  engine={engine}
+                  activePath={activePath}
+                  stepsDone={build.stepsDone}
+                  stepCount={build.stepCount}
+                  onCompile={() => void compile()}
+                  onCancel={() =>
+                    void run(async () => {
+                      unwrap(await window.textra.cancelBuild());
+                    })
                   }
-                  disabled={!build.running && (!canCompile || busy)}
-                  onClick={() =>
-                    build.running
-                      ? void run(async () => {
-                          unwrap(await window.textra.cancelBuild());
-                        })
-                      : void compile()
-                  }
-                >
-                  {build.running ? (
-                    <Square size={11} weight="fill" />
-                  ) : buildFeedback === 'success' ? (
-                    <Check size={12} weight="bold" />
-                  ) : buildFeedback === 'failed' ? (
-                    <Warning size={12} weight="fill" />
-                  ) : (
-                    <Play size={12} weight="fill" />
-                  )}
-                </button>
-                <button
+                />
+                <IconButton
+                  small={true}
                   className="icon-button small"
-                  aria-label="Show PDF preview"
+                  label="Show PDF preview"
                   title="Show PDF preview"
                   onClick={() => {
                     setPanel('preview');
@@ -3442,40 +3383,21 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   }}
                 >
                   <FilePdf size={17} />
-                </button>
-                <button
-                  className="icon-button small collapsed-alert"
-                  data-severity={issueSeverity}
-                  aria-label={'Show problems' + (issueCount ? ` (${issueCount})` : '')}
-                  title={
-                    issueSeverity === 'error'
-                      ? `${errorCount} error${errorCount === 1 ? '' : 's'}`
-                      : issueSeverity === 'warning'
-                        ? `${warningCount} warning${warningCount === 1 ? '' : 's'}`
-                        : issueSeverity === 'ok'
-                          ? 'No problems'
-                          : 'Show problems'
-                  }
+                </IconButton>
+                <ProblemsButton
+                  severity={issueSeverity}
+                  issueCount={issueCount}
+                  errorCount={errorCount}
+                  warningCount={warningCount}
                   onClick={() => {
                     setPanel('problems');
                     updatePreferences({ previewVisible: true });
                   }}
-                >
-                  <span className="alert-glyph">
-                    <Warning
-                      size={17}
-                      weight={
-                        issueSeverity === 'error' || issueSeverity === 'warning' ? 'fill' : 'light'
-                      }
-                    />
-                    {issueSeverity === 'ok' && (
-                      <Check size={9} weight="bold" className="alert-check" />
-                    )}
-                  </span>
-                </button>
-                <button
+                />
+                <IconButton
+                  small={true}
                   className="icon-button small"
-                  aria-label="Show build output"
+                  label="Show build output"
                   title="Show build output"
                   onClick={() => {
                     setPanel('output');
@@ -3483,7 +3405,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   }}
                 >
                   <Scroll size={17} />
-                </button>
+                </IconButton>
               </div>
             )}
           </div>
@@ -3703,29 +3625,31 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      <ConflictDialog
-        open={!!conflictedDocument}
-        document={conflictedDocument}
-        external={externalStatus}
-        onRefresh={async () => {
-          if (!conflictedDocument) return;
-          const result = await window.textra.watchExternalFile({
-            projectId: conflictedDocument.projectId,
-            path: conflictedDocument.path,
-            pollingOnly: preferences.externalChangePollingOnly,
-            quietPeriodMs: preferences.externalChangeQuietPeriodMs,
-          });
-          if (!result.ok) throw new Error(result.error);
-          if (result.value.state !== 'watching') setExternalChange(result.value);
-        }}
-        onPreserve={({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)}
-        onCreateSnapshot={
-          conflictSnapshotPath
-            ? ({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)
-            : undefined
-        }
-        onDiscard={discardConflictBuffer}
-      />
+      {conflictedDocument && (
+        <ConflictDialog
+          open={!!conflictedDocument}
+          document={conflictedDocument}
+          external={externalStatus}
+          onRefresh={async () => {
+            if (!conflictedDocument) return;
+            const result = await window.textra.watchExternalFile({
+              projectId: conflictedDocument.projectId,
+              path: conflictedDocument.path,
+              pollingOnly: preferences.externalChangePollingOnly,
+              quietPeriodMs: preferences.externalChangeQuietPeriodMs,
+            });
+            if (!result.ok) throw new Error(result.error);
+            if (result.value.state !== 'watching') setExternalChange(result.value);
+          }}
+          onPreserve={({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)}
+          onCreateSnapshot={
+            conflictSnapshotPath
+              ? ({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)
+              : undefined
+          }
+          onDiscard={discardConflictBuffer}
+        />
+      )}
       <PromptDialog prompt={prompt} close={() => setPrompt(null)} />
       <Dialog.Root
         open={!!pending}

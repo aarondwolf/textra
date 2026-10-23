@@ -22,7 +22,9 @@ The optional AI assistant transmits only user-submitted conversations and Proble
 the saved endpoint of the selected model's provider from the main process. All generation uses
 the Vercel AI SDK in main with provider objects built directly from the saved connection: no
 Vercel gateway, hosted backend, account or environment-derived key is involved. Provider
-packages load only when a connection receives a real request. Every SDK request goes through a
+packages load on request or during offline preparation of enabled selected defaults.
+Preparation imports code only: no clients, key decryption, network calls, model warming,
+downloads or server startup. Silenced providers are excluded. Every SDK request goes through a
 guarded fetch that pins the configured origin and path prefix, rejects URL credentials and
 redirects, joins the shared cancellation signal, and runs with `maxRetries: 0`. Built-in
 endpoints are prefilled; users can explicitly configure a replacement or one custom
@@ -152,8 +154,15 @@ bounded to 4,096 tokens/32,000 characters and sixty seconds. It has no Chat hist
 or project traversal. Selection replacements are previewed before an explicit,
 undoable acceptance guarded by buffer version, source range, project and conflict state.
 Source and suggestions remain memory-only; no retries, fallback routes, downloads,
-automatic server startup or warming on launch occur. Silenced providers retain
+automatic server startup or model warming on launch occur. Silenced providers retain
 encrypted credentials but cannot decrypt keys, initialize SDKs, ping or run requests.
+
+Last-PDF restoration accepts only a registered canonical project token. Main reads
+bounded, versioned metadata from app userData and revalidates source/output paths,
+symlink/hardlink restrictions, size, PDF header, file fingerprint and content hash.
+Stale, missing or invalid output is ignored. No document is compiled automatically,
+and cached bytes never authorize restored SyncTeX operations. Isolated native test
+profiles also use an isolated AI store; they cannot read the normal repository-local keys.
 
 TexLab document closure uses a narrow canonical project/file reference and only
 releases in-memory language-server state. Repeated unchanged source is not sent

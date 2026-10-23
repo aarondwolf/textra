@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { latexFoldingRanges } from './folding';
 import { minimalEditorScrollbars } from './scrollbars';
 import FormattingToolbar from './FormattingToolbar';
-import { installAICompletion } from './ai-completion';
-import { installInlineEdit } from './inline-edit';
+import type { installAICompletion } from './ai-completion';
+import type { installInlineEdit } from './inline-edit';
 import { isLatexSuggestionContext } from '../../../../shared/latex-completion';
-import { useAISettings } from '../chat/useAISettings';
+import { loadAISettings, useAISettings } from '../chat/useAISettings';
+import { useStartup } from '../../state/startup';
+import { afterPaint, markStartup, scheduleBackground } from '../startup/scheduling';
 import { useAIRoleSelection, useAIRoleSelections } from '../../state/ai-role-selections';
 import './ai-completion.css';
 // editor.api.js does not load the icon font that Monaco's widgets (find, suggest) use, and the
@@ -14,6 +16,8 @@ import '../../../../../node_modules/monaco-editor/esm/vs/base/browser/ui/codicon
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/editor/contrib/find/browser/findController.js';
 import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
+// Monaco captures its contribution registry when creating an editor. Register ghost-text
+// rendering here; our AI adapters, settings and request handlers still load after paint.
 import 'monaco-editor/editor/contrib/inlineCompletions/browser/inlineCompletions.contribution.js';
 // editor.api.js ships no optional features; each one must be imported to exist.
 import 'monaco-editor/editor/contrib/folding/browser/folding.js';
@@ -582,7 +586,7 @@ export function SourceEditor({
   const current = useRef<string | null>(null);
   const aiCompletion = useRef<ReturnType<typeof installAICompletion> | null>(null);
   const inlineEdit = useRef<ReturnType<typeof installInlineEdit> | null>(null);
-  const { settings: aiSettings } = useAISettings();
+  const { settings: aiSettings } = useAISettings(false);
   const activeDocument = documents.find((document) => document.path === activePath);
   const inlineModel = useAIRoleSelection(activeDocument?.projectId, 'inlineCompletion', aiSettings);
   const aiState = useRef({ settings: aiSettings, model: inlineModel.model });
@@ -661,33 +665,76 @@ export function SourceEditor({
       theme: 'textra-dark',
     });
     editor.current = instance;
-    aiCompletion.current = installAICompletion(
-      instance,
-      () => {
-        const document = documentsRef.current.find((item) => item.path === current.current);
-        return document
-          ? { document, settings: aiState.current.settings, manualModel: aiState.current.model }
-          : null;
-      },
-      () => {},
-    );
-    inlineEdit.current = installInlineEdit(
-      instance,
-      () => {
-        const document = documentsRef.current.find((item) => item.path === current.current);
-        return document
-          ? { document, settings: aiState.current.settings, model: aiState.current.model }
-          : null;
-      },
-      (ref) => {
-        const projectId = documentsRef.current.find(
-          (item) => item.path === current.current,
-        )?.projectId;
-        useAIRoleSelections.getState().select(projectId, 'inlineCompletion', ref);
-        aiState.current.model = ref;
-      },
-      () => aiCompletion.current?.dismiss(),
-    );
+    let disposed = false;
+    let preparing: Promise<void> | undefined;
+    const prepareAI = (): Promise<void> => {
+      preparing ??= (async () => {
+        const [completion, inline] = await Promise.all([
+          import('./ai-completion'),
+          import('./inline-edit'),
+          loadAISettings(),
+        ]);
+        if (disposed) return;
+        aiCompletion.current = completion.installAICompletion(
+          instance,
+          () => {
+            const document = documentsRef.current.find((item) => item.path === current.current);
+            return document
+              ? { document, settings: aiState.current.settings, manualModel: aiState.current.model }
+              : null;
+          },
+          () => {},
+        );
+        inlineEdit.current = inline.installInlineEdit(
+          instance,
+          () => {
+            const document = documentsRef.current.find((item) => item.path === current.current);
+            return document
+              ? { document, settings: aiState.current.settings, model: aiState.current.model }
+              : null;
+          },
+          (ref) => {
+            const projectId = documentsRef.current.find(
+              (item) => item.path === current.current,
+            )?.projectId;
+            useAIRoleSelections.getState().select(projectId, 'inlineCompletion', ref);
+            aiState.current.model = ref;
+          },
+          () => aiCompletion.current?.dismiss(),
+        );
+      })().catch(() => {
+        preparing = undefined;
+        window.dispatchEvent(
+          new CustomEvent('textra:notify', {
+            detail: {
+              message: 'AI editing could not be loaded. You can keep editing and try Ctrl+I again.',
+              tone: 'error',
+            },
+          }),
+        );
+      });
+      return preparing;
+    };
+    const cancelPreparation = scheduleBackground(() => {
+      void prepareAI();
+    });
+    const prepareOnKey = (event: KeyboardEvent) => {
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== 'i' ||
+        inlineEdit.current
+      )
+        return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void prepareAI().then(() => {
+        if (!disposed) inlineEdit.current?.open();
+      });
+    };
+    const keyboardHost = instance.getDomNode();
+    keyboardHost?.addEventListener('keydown', prepareOnKey, true);
     const applyAgentEdit = (event: Event) => {
       const proposal = (event as CustomEvent<AIEditProposal>).detail;
       const model = instance.getModel();
@@ -1205,6 +1252,9 @@ export function SourceEditor({
     });
     const retainedModels = models.current;
     return () => {
+      disposed = true;
+      cancelPreparation();
+      keyboardHost?.removeEventListener('keydown', prepareOnKey, true);
       inlineEdit.current?.dispose();
       inlineEdit.current = null;
       aiCompletion.current?.dispose();
@@ -1279,6 +1329,11 @@ export function SourceEditor({
         wordBasedSuggestions: 'off',
       });
       instance.focus();
+      void afterPaint().then(() => {
+        if (editor.current !== instance || current.current !== activePath) return;
+        markStartup('editor-ready');
+        useStartup.setState({ editorReady: true });
+      });
     }
     for (const [path, model] of models.current)
       if (!documents.some((document) => document.path === path)) {
@@ -1345,11 +1400,14 @@ export function SourceEditor({
 
   useEffect(() => {
     const doc = documents.find((d) => d.path === activePath);
-    if (doc) {
-      const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
-      setWordCount(words);
-      setLineEnding(doc.content.includes('\r\n') ? 'CRLF' : 'LF');
-    }
+    const timer = window.setTimeout(() => {
+      if (doc) {
+        const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+        setWordCount(words);
+        setLineEnding(doc.content.includes('\r\n') ? 'CRLF' : 'LF');
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
   }, [activePath, documents]);
 
   const handleGotoLine = () => {

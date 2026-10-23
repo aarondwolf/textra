@@ -22,6 +22,7 @@ export default defineConfig({
     ),
     plugins: [react(), tailwindcss()],
     build: {
+      minify: true,
       // Emit the ~1,200 file-type SVGs as files instead of inlining them into the bundle.
       assetsInlineLimit: (file) => (file.includes('material-icon-theme') ? false : undefined),
     },
@@ -45,6 +46,11 @@ export default defineConfig({
         'monaco-editor/editor/contrib/folding/browser/folding.js',
         'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js',
         'monaco-editor/editor/contrib/comment/browser/comment.js',
+        'monaco-editor/editor/contrib/wordOperations/browser/wordOperations.js',
+        'monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols.js',
+        'monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands.js',
+        'monaco-editor/editor/contrib/hover/browser/hoverContribution.js',
+        'monaco-editor/editor/contrib/inlayHints/browser/inlayHints.js',
         'pdfjs-dist',
       ],
     },

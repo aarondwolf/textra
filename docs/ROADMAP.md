@@ -16,6 +16,13 @@ Do not mark a gate complete until its acceptance checks pass.
 - Evaluate replacing the activity rail with a labelled sidebar switcher.
 - Highlight the outline section containing the editor cursor.
 
+### Startup performance verification
+
+- Profile packaged desktop warm/cold launches, native/module initialization and first
+  content paint. The managed final run still takes a median 17.074s to a normal-sized
+  editor; the two-second warm/four-second cold investigation targets remain open.
+  See [Performance](PERFORMANCE.md) for evidence and limitations.
+
 ### Release requirement
 
 Before public release, migrate the encrypted AI key from repository-local MVP storage

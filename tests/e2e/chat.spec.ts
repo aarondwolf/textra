@@ -242,10 +242,12 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     expect(railPlacement).toBe(true);
     await chatRail.click();
     const chat = page.getByRole('region', { name: 'AI assistant', exact: true });
+    await expect(chat).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     await expect(chat.getByText('Set up AI', { exact: true })).toBeVisible();
     await expect(chat.getByRole('textbox')).toHaveCount(0);
     await chat.getByRole('button', { name: 'Configure AI', exact: true }).click();
-    const aiDialog = page.getByRole('dialog', { name: 'AI Settings', exact: true });
+    const aiDialog = page.getByRole('dialog', { name: 'Settings', exact: true });
     await expect(aiDialog).toBeVisible();
     await expect(aiDialog.locator('.ai-provider-connection')).toHaveCount(0);
     await expect(
@@ -306,7 +308,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       aiDialog.getByRole('button', { name: /^Assistant model: Gemini 3.5 Flash Lite/ }),
     ).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('chat-onboarding.png') });
-    await aiDialog.getByRole('button', { name: 'Close AI settings', exact: true }).click();
+    await aiDialog.getByRole('button', { name: 'Close settings', exact: true }).click();
     const composer = chat.getByRole('textbox', { name: 'Message the assistant', exact: true });
     await expect(composer).toBeVisible();
     const headerHeights = await page.evaluate(() =>
@@ -316,15 +318,17 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     );
     expect(headerHeights[0]).toBe(headerHeights[1]);
     expect(headerHeights[0]).toBe(headerHeights[2]);
-    await expect(chat.locator('.ai-chat-header button').first()).toHaveCSS(
-      'border-radius',
-      '999px',
-    );
-    await expect(chat.locator('.ai-chat-header button').last()).toHaveCSS('border-radius', '999px');
+    await expect(chat.locator('.ai-chat-header button').first()).toHaveCSS('border-radius', '4px');
+    await expect(chat.locator('.ai-chat-header button').last()).toHaveCSS('border-radius', '4px');
     await expect(composer).toHaveAttribute('rows', '2');
     const ask = chat.getByRole('button', { name: 'Send message', exact: true });
     await expect(ask).toHaveCSS('border-radius', '999px');
     await expect(ask).toBeDisabled();
+    await expect(chat.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(chat.locator('.ai-context-chip')).toHaveCount(0);
     await expect(ask).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     const sendBounds = await ask.boundingBox();
     expect(sendBounds).not.toBeNull();
@@ -670,6 +674,11 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
       });
     await problem.getByRole('button', { name: 'Ask in Chat', exact: true }).click();
     await expect(composer).toHaveValue(/Undefined control sequence in debugging fixture\./);
+    await expect(chat.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(chat.locator('.ai-context-chip')).toHaveCount(0);
     const draft = await composer.inputValue();
     expect(draft).toContain('main.tex:8');
     expect(draft).toContain('Lines 3-13:');

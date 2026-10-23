@@ -20,6 +20,30 @@ Dependencies: renderer -> shared/preload bridge -> main handlers -> services -> 
 Services do not depend on renderer. Build processes use argument arrays and no
 shell, bounded logs/timeouts, one active build, and no shell escape.
 
+Startup separates shell, editor, tree, recipe configuration, tool discovery and
+optional-feature readiness. Project opening returns a canonical root token and an
+initial listing marked `treeState: loading`; `refreshProject` completes enumeration
+after the editor paints. Known files can be read before that scan. Session restore
+opens the saved active file first and reads remaining tabs without changing focus;
+explicit user actions cancel restoration. Session metadata is versioned, accepts
+the previous shape, and is not rewritten while restoration is incomplete.
+
+Each renderer feature has its own loading/error boundary. Monaco and PDF.js are
+separate chunks; settings sections, provider editing, chat, writing, snippets and
+diff views load when used. File-type icon catalogues and optional AI editor
+extensions follow the first editor frame. Shared button, pane-header, compile,
+problems, field and dialog components retain existing classes and layout.
+Core editor host styles load with the shell. Monaco's ghost-text contribution
+registers before editor construction; AI adapters and request handlers remain deferred.
+Project analysis reads at most four files per yielded batch, prioritizes the active
+file and its dependencies, and caches parses by content with a 300ms edit debounce.
+
+`restoreLastPdf` reads bounded metadata in userData/last-pdfs, validates canonical
+source/output paths, output fingerprint and SHA256, and registers only those PDF
+bytes. Restored output is labelled Last compiled and cannot use SyncTeX before a
+current successful build. `prepareProject` defers project-settings initialization
+until core readiness; existing config reads and compile validation remain immediate.
+
 Settings: versioned JSON under Electron userData, project overrides under
 `.textra/settings.json` with legacy project.json migration. Canonical project JSON
 uses LaTeX Workshop recipe/tool keys; shared shape validation is followed by main's
@@ -29,12 +53,14 @@ refreshes stable output paths in the viewer. No credentials in portable settings
 AI is not a prerequisite for editing. Main's AIService owns per-provider
 safeStorage-encrypted keys, cached model lists, provider preferences, role defaults and
 request-kind coordination. Generation runs through the Vercel AI SDK (`ai` 7) in main:
-ai-sdk-runtime.ts is the model factory. It lazily imports one provider package per real request
-(`@ai-sdk/openai` using Chat Completions, `@ai-sdk/google`, `@ai-sdk/anthropic`,
+ai-sdk-runtime.ts is the model factory. AI core and provider packages import on demand.
+After core readiness, offline preparation can import enabled selected-default adapters
+without constructing clients, decrypting credentials or contacting providers.
+Adapters include `@ai-sdk/openai` using Chat Completions, `@ai-sdk/google`, `@ai-sdk/anthropic`,
 `@ai-sdk/mistral`, `@ai-sdk/deepseek`, `@openrouter/ai-sdk-provider`, and
-`@ai-sdk/openai-compatible` for local Ollama, Ollama Cloud and custom endpoints), builds the
-model directly from the configured connection (no gateway, hosted backend or environment keys),
-and injects a guarded fetch. The guarded fetch pins every request to the configured origin and
+`@ai-sdk/openai-compatible` for local Ollama, Ollama Cloud and custom endpoints. A real request
+builds its model directly from the configured connection (no gateway, hosted backend or environment
+keys) and injects a guarded fetch. The guarded fetch pins every request to the configured origin and
 path prefix, refuses redirects, joins the shared foreground cancellation signal, and every call
 sets `maxRetries: 0`. SDK errors are mapped to TeXtra's error vocabulary without request bodies,
 URLs or keys. ai-providers.ts keeps only what the SDK does not own: model discovery and the two

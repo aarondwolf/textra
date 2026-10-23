@@ -1,5 +1,28 @@
 # Current state
 
+2026-10-23 Startup and UI refactor (implemented and Windows native workflows verified):
+
+- Preserved the owner's title bar, logos, recent styling, shortcuts and cleanup behavior.
+- Shared pane headers/icon controls and Compile/Problems components; settings and provider
+  editing now load on demand. Advanced project JSON/output controls remain reachable.
+- Active-first versioned session restore, background tabs without focus changes, partial tree
+  readiness and deferred project initialization/tool detection. Monaco, PDF.js, optional panes,
+  icon catalogue and AI editor extensions have independent load boundaries.
+- Last compiled PDF metadata is main-owned and fingerprint/hash validated; restored SyncTeX
+  remains blocked until a successful current build. AI preparation imports enabled default
+  adapters offline, without decrypting keys, networking or warming models; test AI stores isolated.
+- Background project analysis reads four files per yielded batch and caches changed-file parses.
+- All 12 functional native scenarios pass across serial runs; live-provider integration was
+  intentionally skipped. Startup restoration tests also enforce a normal-sized editor.
+- Evidence so far: full unit/integration 586/586, typecheck, lint (zero warnings), format:check
+  and production build pass. Initial renderer entry 485.33kB minified versus pre-refactor
+  10,124.40kB unminified; benchmark comparison caveats in docs/PERFORMANCE.md.
+- Final three-sample benchmark with an OS-temp profile and normal editor-size assertion passes:
+  median editor 17.074s, compile enabled 17.087s; warm target unmet. Earlier collapsed-layout
+  samples are explicitly superseded. Next: packaged desktop startup/first-paint profiling and
+  existing cross-platform/phase verification gates; see docs/PERFORMANCE.md.
+- Launch: npm run dev. No commit or push performed.
+
 2026-10-22 Comprehensive UI polish, Build tab synchronization, recursive auxiliary cleanup, and styled action popups:
 
 - Writing Tab Collapsible Sections: removed pill borders, backgrounds, and `border-radius: var(--radius-pill)` overrides on `.writing-section` and `.writing-section-toggle` with `border-radius: 0 !important`, producing flat, edge-to-edge section headers.

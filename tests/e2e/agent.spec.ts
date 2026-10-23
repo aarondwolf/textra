@@ -295,12 +295,18 @@ test('native assistant answers, stages active-file edits for review, applies und
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
     const chat = page.getByRole('region', { name: 'AI assistant', exact: true });
+    await expect(chat).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     const modelButton = chat.getByRole('button', { name: /^Model: / });
     const models = chat.getByRole('listbox', { name: 'Model', exact: true });
     await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
-    // One assistant: there is no Chat/Agent mode selector.
-    await expect(chat.getByRole('button', { name: 'Agent', exact: true })).toHaveCount(0);
-    await expect(chat.locator('.ai-context-chip')).toContainText('main.tex');
+    // Chat begins without document access; only an explicit Agent choice authorizes edits.
+    await expect(chat.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(chat.getByRole('button', { name: 'Agent', exact: true })).toBeVisible();
+    await expect(chat.locator('.ai-context-chip')).toHaveCount(0);
     await modelButton.click();
     await expect(models.getByRole('option', { name: /Gemini 3.5 Flash Lite/ })).toHaveAttribute(
       'aria-selected',
@@ -318,6 +324,8 @@ test('native assistant answers, stages active-file edits for review, applies und
     const approveAll = chat.getByRole('button', { name: 'Approve all', exact: true });
     const reject = chat.getByRole('button', { name: 'Reject all', exact: true });
     const editorLines = page.locator('.source-editor .view-lines');
+    await chat.getByRole('button', { name: 'Agent', exact: true }).click();
+    await expect(chat.locator('.ai-context-chip')).toContainText('main.tex');
     await input.fill('Revise the sentence.');
     await send.click();
     await expect(review).toBeVisible();
@@ -434,6 +442,8 @@ test('native assistant answers, stages active-file edits for review, applies und
     await page.getByRole('button', { name: 'AI Chat', exact: true }).click();
     await expect(input).toBeEnabled();
     await expect(chat.locator('.ai-context-chip')).toContainText('No document');
+    await chat.getByRole('button', { name: 'Chat', exact: true }).click();
+    await expect(chat.locator('.ai-context-chip')).toHaveCount(0);
     await input.fill('What does this warning mean?');
     await send.click();
     await expect(chat.getByRole('article', { name: 'Assistant response' }).last()).toContainText(
@@ -446,6 +456,8 @@ test('native assistant answers, stages active-file edits for review, applies und
     await application.evaluate(() => {
       (globalThis as typeof globalThis & { agentTest: AgentTestState }).agentTest.limited = true;
     });
+    await chat.getByRole('button', { name: 'Agent', exact: true }).click();
+    await expect(chat.locator('.ai-context-chip')).toContainText('main.tex');
     await input.fill('Exercise the provider rate limit.');
     await send.click();
     await expect(chat.getByRole('alert')).toContainText('rate or quota limit');
@@ -471,6 +483,8 @@ test('native assistant answers, stages active-file edits for review, applies und
           request.model.provider === 'google' && request.model.model === 'gemini-3.8-flash',
       ),
     ).toBe(true);
+    expect(state.requests[0].contextId).toBeUndefined();
+    expect(state.requests[1].contextId).toBeTruthy();
     expect(state.requests[0].messages).toEqual([{ role: 'user', text: 'Explain this document.' }]);
     // Review outcomes are application-owned context: a rejected proposal is never "applied".
     expect(state.requests[2].messages[3]).toEqual({
@@ -563,6 +577,8 @@ test('native assistant answers, stages active-file edits for review, applies und
     });
     await restarted.getByRole('button', { name: 'AI Chat', exact: true }).click();
     const restoredChat = restarted.getByRole('region', { name: 'AI assistant', exact: true });
+    await expect(restoredChat).toBeVisible();
+    await restarted.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     // Workspace model choices are temporary; the saved Assistant default returns on restart.
     await expect(restoredChat.getByRole('button', { name: /^Model: / })).toHaveAccessibleName(
       'Model: Gemini 3.5 Flash Lite',

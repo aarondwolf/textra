@@ -188,6 +188,15 @@ export interface ProjectInfo {
   files: FileEntry[];
   mainFile: string | null;
   truncated: boolean;
+  treeState?: 'loading' | 'complete';
+}
+export interface RestoredPdf {
+  projectId: string;
+  rootFile: string;
+  path: string;
+  recipeId: string | null;
+  compiledAt: string;
+  pdfVersion: number;
 }
 export interface FileRef {
   projectId: string;
@@ -448,6 +457,7 @@ export interface TextraAPI {
   setPreferences(value: Preferences): Promise<Result<Preferences>>;
   chooseProject(): Promise<Result<ProjectInfo | null>>;
   refreshProject(projectId: string): Promise<Result<ProjectInfo>>;
+  prepareProject(projectId: string): Promise<Result<void>>;
   readFile(request: FileRef): Promise<Result<FileSnapshot>>;
   saveFile(request: SaveRequest): Promise<Result<FileSnapshot>>;
   createEntry(request: CreateRequest): Promise<Result<ProjectInfo>>;
@@ -477,6 +487,8 @@ export interface TextraAPI {
   cancelBuild(): Promise<Result<void>>;
   getBuildState(): Promise<Result<BuildState>>;
   readPdf(request: FileRef): Promise<Result<Uint8Array>>;
+  restoreLastPdf(projectId: string): Promise<Result<RestoredPdf | null>>;
+  prepareAI(): Promise<Result<void>>;
   readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;
   /** Reads an explicit, validated PDF selected from the active project. */
   readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;

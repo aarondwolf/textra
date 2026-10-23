@@ -12,6 +12,7 @@ import {
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { BuildState, PdfLocation, ProjectInfo, SourceLocation } from '../../../../shared/api';
 import './pdf.css';
+import { markStartup } from '../startup/scheduling';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -188,6 +189,7 @@ function PdfPageItem({
           canvas.style.height = `${viewport.height}px`;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(buffer, 0, 0);
+          markStartup('pdf-ready');
           setRendered(true);
         }
       } catch (err) {
@@ -307,6 +309,8 @@ interface Props {
   menuMode?: boolean;
   /** A project PDF explicitly chosen from Files, rather than the latest build output. */
   externalPdfPath?: string | null;
+  /** A validated previous-session output has no current SyncTeX mapping. */
+  restored?: boolean;
 }
 
 export default function PdfViewer({
@@ -320,6 +324,7 @@ export default function PdfViewer({
   menuSlot = null,
   menuMode = false,
   externalPdfPath = null,
+  restored = false,
 }: Props) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -690,7 +695,7 @@ export default function PdfViewer({
   }
 
   async function forward() {
-    if (!project || !source || !build.rootFile) return;
+    if (restored || !project || !source || !build.rootFile) return;
     setError(null);
     const result = await window.textra.syncForward({
       projectId: project.id,
@@ -713,7 +718,7 @@ export default function PdfViewer({
       page: PDFPageProxy,
       pageScale: number,
     ) => {
-      if (!project || !build.rootFile) return;
+      if (restored || !project || !build.rootFile) return;
       const bounds = event.currentTarget.getBoundingClientRect();
       const viewport = page.getViewport({ scale: pageScale });
       const [x, y] = viewport.convertToPdfPoint(
@@ -732,7 +737,7 @@ export default function PdfViewer({
         onNavigate(result.value);
       } else setError(result.error);
     },
-    [project, build.rootFile, onNavigate],
+    [project, build.rootFile, onNavigate, restored],
   );
 
   const toolbarInner = pdf ? (
@@ -799,8 +804,12 @@ export default function PdfViewer({
         className="pdf-source-sync"
         aria-label="Go to source line"
         onClick={() => void forward()}
-        disabled={!source}
-        title="Find editor cursor in the PDF"
+        disabled={!source || restored}
+        title={
+          restored
+            ? 'Compile to enable source navigation for this restored PDF'
+            : 'Find editor cursor in the PDF'
+        }
       >
         <LocateFixed size={15} aria-hidden="true" />
       </button>
@@ -935,6 +944,11 @@ export default function PdfViewer({
             </>
           )}
         </form>
+      )}
+      {restored && (
+        <div className="pdf-restored-status" role="status">
+          Last compiled · Compile to update
+        </div>
       )}
       {error && (
         <div className="pdf-error" role="alert">

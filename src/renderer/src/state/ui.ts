@@ -8,11 +8,9 @@ interface UIState {
   /** Autosave progress for preference changes, shown in the Settings footer. */
   saveState: 'idle' | 'saving' | 'saved' | 'error';
   paletteOpen: boolean;
-  recipeEditorOpen: boolean;
   panel: 'preview' | 'problems' | 'output';
   updatePreferences: (patch: Partial<Omit<Preferences, 'version'>>) => void;
   setPaletteOpen: (open: boolean) => void;
-  setRecipeEditorOpen: (open: boolean) => void;
   setPanel: (panel: 'preview' | 'problems' | 'output') => void;
   /** Session-only: one pane fills the whole workspace and the other is hidden. */
   expandedPane: 'editor' | 'preview' | null;
@@ -57,7 +55,6 @@ export const useUI = create<UIState>((set, get) => ({
   error: null,
   saveState: 'idle',
   paletteOpen: false,
-  recipeEditorOpen: false,
   panel: 'preview',
   expandedPane: null,
   updatePreferences: (patch) => {
@@ -68,7 +65,6 @@ export const useUI = create<UIState>((set, get) => ({
     void savePreferences();
   },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-  setRecipeEditorOpen: (recipeEditorOpen) => set({ recipeEditorOpen }),
   setPanel: (panel) => set({ panel }),
   setExpandedPane: (expandedPane) => set({ expandedPane }),
 }));

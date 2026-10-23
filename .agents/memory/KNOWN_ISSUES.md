@@ -64,11 +64,18 @@
   races. TeX itself is not sandboxed; compile trusted documents.
 - Configured recipe output folders are never automatically pruned; legacy fixed
   build retention prunes current-process directories only. PDF search covers the first 2,000 pages and has no text selection. Crop/rotation SyncTeX cases need broader fixtures.
-- Renderer includes Monaco/PDF.js (~6.5MB); lazy loading remains performance work.
-  No critical runtime/data-loss failure remains known after the bounded review.
-- Phase 2 implementation is complete, but the final native interaction pass remains pending.
-  In the managed runner, Electron reaches `application-ready` then exits before the UI automation
-  service can bind a window. ChkTeX and latexindent are optional PATH tools; TeXtra keeps local
+- 2026-10-23: Monaco/PDF.js and optional renderer features now load separately, with
+  production minification and a 485.33kB initial renderer entry. The final managed-run
+  benchmark observed a 17.074s median normal-sized editable document; the two-second target remains
+  unmet. The initial timing fixture had invalid preferences and
+  must not be used to claim a launch-time improvement. See docs/PERFORMANCE.md.
+  Windows managed output directories can retain read-only sandbox ACLs; the verified
+  empty generated out/renderer/assets directory needed removal outside the sandbox
+  before a successful rebuild. Never weaken application atomic writes to work around it.
+- Phase 2 implementation is complete, but the full platform/native interaction matrix remains
+  open. Current Windows shell, editor, Agent/Chat, startup and settings native checks can bind
+  real Electron windows successfully; macOS/Linux and the remaining gate matrix still require
+  verification. ChkTeX and latexindent are optional PATH tools; TeXtra keeps local
   reference and writing analysis available when they are absent.
 - AI SDK migration (2026-10-21) was verified in a Linux container only. Re-run the serial
   Windows e2e suite and an opt-in live check (`TEXTRA_LIVE_AI_TEST=1`) before committing.

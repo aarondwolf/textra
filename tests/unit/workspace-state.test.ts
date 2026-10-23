@@ -3,6 +3,7 @@ import {
   discardAll,
   editDocument,
   openDocument,
+  selectDocument,
   reloadDocument,
   saveAll,
   saveDocument,
@@ -75,6 +76,19 @@ describe('editor state preserves concurrent work', () => {
     read.resolve(snapshot('main.tex'));
     await loading;
     expect(useWorkspace.getState().documents[0].content).toBe('other project');
+  });
+  it('keeps an explicit existing-tab selection ahead of a late file read', async () => {
+    const read = deferred<Result<FileSnapshot>>();
+    vi.stubGlobal('window', { textra: { readFile: () => read.promise } });
+    const opening = openDocument('chapter.tex');
+    selectDocument('main.tex');
+    read.resolve(snapshot('chapter.tex'));
+    await opening;
+    expect(useWorkspace.getState().activePath).toBe('main.tex');
+    expect(useWorkspace.getState().documents.map((item) => item.path)).toEqual([
+      'main.tex',
+      'chapter.tex',
+    ]);
   });
   it('bounds concurrent tab opens without disabling external conflict polling', async () => {
     const one = deferred<Result<FileSnapshot>>();

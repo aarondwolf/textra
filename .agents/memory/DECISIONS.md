@@ -1,5 +1,20 @@
 # Decisions
 
+- 2026-10-23 lazy-feature verification: core editor host/layout styles stay in styles.css,
+  independent of Agent review CSS. Monaco's ghost-text contribution must register before
+  editor construction; only TeXtra's AI adapters/handlers and settings load after paint.
+  Agent synchronization depends on aggregate document need, so starting a response cannot
+  invalidate its unchanged context. Native startup checks enforce an editor height over 200px.
+
+- 2026-10-23 startup/UI refactor: preserve layout and recent polish. Restore saved active disk
+  document before background tabs/tree. Persist no session buffer content. Keep explicit user
+  actions authoritative over late reads; preserve dirty buffers/revisions and current undo models.
+  Restore only main-validated previous PDF bytes, label Last compiled and require a fresh build
+  for SyncTeX. AI background preparation is local code/catalogue preparation only, prioritizing
+  enabled saved role defaults; no credentials, requests, server startup or model warmup.
+  Shared UI primitives retain existing CSS classes and accessible actions; avoid a new UI library.
+  Native benchmarks use isolated synthetic projects and distinguish observation/renderer timing.
+
 - 2026-10-22 Settings integration & dialog consolidation:
   Rather than maintaining standalone dialogs or DOM portal container hacks that duplicate
   settings UI across the app, all settings entry points route directly to the appropriate section

@@ -1,0 +1,559 @@
+{
+  "measuredAt": "2026-10-23T12:44:38.977Z",
+  "platform": "win32",
+  "architecture": "x64",
+  "host": {
+    "cpuModel": "11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz",
+    "logicalCpuCount": 8,
+    "memoryBytes": 16872411136,
+    "osRelease": "10.0.26200",
+    "nodeVersion": "v24.14.0"
+  },
+  "profile": "Isolated synthetic one-file session, AI unconfigured and TexLab disabled.",
+  "profileStorage": "OS temporary directory outside the workspace",
+  "projectStorage": "Workspace .test-data project under Dropbox",
+  "cacheState": "Same profile after one setup launch; OS caches not reset.",
+  "timingOrigin": "Observed timings: before electron.launch(); renderer marks: navigation start.",
+  "limitations": "No compiled PDF fixture. Compile dispatch uses real UI/IPC with mocked subprocess execution. CPU is Electron process-metric sampling, not a system profiler.",
+  "bundle": {
+    "entry": "./assets/index-hsOSzH7h.js",
+    "javascript": [
+      {
+        "file": "AgentInlineReview-DqK2Lbhz.js",
+        "bytes": 3260
+      },
+      {
+        "file": "ai-completion-B2Mv6IoG.js",
+        "bytes": 5794
+      },
+      {
+        "file": "ai-role-selections-BiVmpugN.js",
+        "bytes": 1091
+      },
+      {
+        "file": "AIProviderEditor-C7MOIG-P.js",
+        "bytes": 9497
+      },
+      {
+        "file": "AISettingsDialog-BwV4r47t.js",
+        "bytes": 9243
+      },
+      {
+        "file": "ArrowsClockwise.es-yyJ1Izqu.js",
+        "bytes": 3316
+      },
+      {
+        "file": "ArrowUp.es-N2NVnSl_.js",
+        "bytes": 1628
+      },
+      {
+        "file": "ChatPanel-BZGE5rHl.js",
+        "bytes": 196893
+      },
+      {
+        "file": "CompileRecipeEditor-Bz25jalU.js",
+        "bytes": 11653
+      },
+      {
+        "file": "ConflictDialog-BjwYkmQf.js",
+        "bytes": 3947
+      },
+      {
+        "file": "ConflictDiffView-C9SIoxME.js",
+        "bytes": 2385
+      },
+      {
+        "file": "editor.worker-BmdWdrHZ.js",
+        "bytes": 303777
+      },
+      {
+        "file": "editor.worker-iHxgOW3l.js",
+        "bytes": 121
+      },
+      {
+        "file": "fileIcons-DvigXaYa.js",
+        "bytes": 622808
+      },
+      {
+        "file": "index-hsOSzH7h.js",
+        "bytes": 485331
+      },
+      {
+        "file": "inline-edit-CVA6iiWa.js",
+        "bytes": 8365
+      },
+      {
+        "file": "MarkdownPreview-BAvOgTAx.js",
+        "bytes": 3604
+      },
+      {
+        "file": "ModelPicker-Bj8i94RW.js",
+        "bytes": 10902
+      },
+      {
+        "file": "pdf.worker.min-CjEcRF4W.mjs",
+        "bytes": 1264342
+      },
+      {
+        "file": "PdfViewer-BCHAcLX7.js",
+        "bytes": 444568
+      },
+      {
+        "file": "Plus.es-DyUZx3jz.js",
+        "bytes": 1568
+      },
+      {
+        "file": "ProblemsPanel-CplAwTAJ.js",
+        "bytes": 10073
+      },
+      {
+        "file": "react-sySUN5R7.js",
+        "bytes": 8539
+      },
+      {
+        "file": "recipe-help-DI8SXnvO.js",
+        "bytes": 5816
+      },
+      {
+        "file": "RecipeDialog-DxwOc0sF.js",
+        "bytes": 29180
+      },
+      {
+        "file": "scrollbars-C5c0tlzl.js",
+        "bytes": 2722667
+      },
+      {
+        "file": "SetupDialog-Dd_KfTPS.js",
+        "bytes": 41875
+      },
+      {
+        "file": "SnippetPalette-CefV-moW.js",
+        "bytes": 26765
+      },
+      {
+        "file": "SourceEditor-CsoN_Kwb.js",
+        "bytes": 974401
+      },
+      {
+        "file": "Sparkle.es-BOpl2Zq7.js",
+        "bytes": 4480
+      },
+      {
+        "file": "TexLabSettings-x6GtWBpK.js",
+        "bytes": 6121
+      },
+      {
+        "file": "WritingPanel-57yP62ID.js",
+        "bytes": 14594
+      }
+    ]
+  },
+  "samples": [
+    {
+      "launch": 1,
+      "shellObservedMs": 16281.248800000001,
+      "editorObservedMs": 17074.257299999997,
+      "compileEnabledObservedMs": 17086.515699999996,
+      "compileClickObservedMs": 507.7563000000009,
+      "launchEpochMs": 1792759415250,
+      "rendererTimeOriginEpochMs": 1792759419789.4,
+      "rendererMarkLaunchElapsedMs": [
+        {
+          "name": "textra:shell-visible",
+          "elapsedMs": 16148.599853515625
+        },
+        {
+          "name": "textra:editor-ready",
+          "elapsedMs": 16806.2998046875
+        },
+        {
+          "name": "textra:compile-dispatch",
+          "elapsedMs": 19578.89990234375
+        }
+      ],
+      "rendererMarks": [
+        {
+          "name": "textra:shell-visible",
+          "startTime": 11609.199999928474
+        },
+        {
+          "name": "textra:editor-ready",
+          "startTime": 12266.899999976158
+        },
+        {
+          "name": "textra:compile-dispatch",
+          "startTime": 15039.5
+        }
+      ],
+      "rendererLongTasks": [
+        {
+          "startTime": 11919.399999976158,
+          "duration": 132
+        },
+        {
+          "startTime": 12056.899999976158,
+          "duration": 170
+        }
+      ],
+      "rendererLoading": {
+        "navigation": {
+          "type": "navigate",
+          "duration": 11569.600000023842,
+          "fetchStart": 13.899999976158142,
+          "requestStart": 13.899999976158142,
+          "responseStart": 13.899999976158142,
+          "responseEnd": 18.5,
+          "domInteractive": 11524.899999976158,
+          "domContentLoadedEventStart": 11569.399999976158,
+          "domContentLoadedEventEnd": 11569.5,
+          "loadEventStart": 11569.600000023842,
+          "loadEventEnd": 11569.600000023842,
+          "transferSize": 4380,
+          "encodedBodySize": 4080,
+          "decodedBodySize": 4080
+        },
+        "resources": [],
+        "paintEntries": [
+          {
+            "name": "first-paint",
+            "startTime": 11948
+          },
+          {
+            "name": "first-contentful-paint",
+            "startTime": 11948
+          }
+        ],
+        "visibilityAtObservation": "visible"
+      },
+      "processMetricsAfterSettle": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 8.190551,
+            "percentCPUUsage": 1.1535527454846464,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 129348,
+            "peakWorkingSetSize": 149448,
+            "privateBytes": 93532
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 0.56067,
+            "percentCPUUsage": 0.3874857411292728,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 367132,
+            "peakWorkingSetSize": 367284,
+            "privateBytes": 136496
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.100192,
+            "percentCPUUsage": 0.058776293549213515,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 259636,
+            "peakWorkingSetSize": 259836,
+            "privateBytes": 12032
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 1.039286,
+            "percentCPUUsage": 0.5379118161834519,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 326760,
+            "peakWorkingSetSize": 326760,
+            "privateBytes": 86092
+          }
+        }
+      ],
+      "settleMs": 2000,
+      "pdfReady": false,
+      "compileDispatched": true
+    },
+    {
+      "launch": 2,
+      "shellObservedMs": 16639.0447,
+      "editorObservedMs": 17449.1817,
+      "compileEnabledObservedMs": 17458.956899999997,
+      "compileClickObservedMs": 234.72359999999753,
+      "launchEpochMs": 1792759436823,
+      "rendererTimeOriginEpochMs": 1792759442212.4,
+      "rendererMarkLaunchElapsedMs": [
+        {
+          "name": "textra:shell-visible",
+          "elapsedMs": 16400.7998046875
+        },
+        {
+          "name": "textra:editor-ready",
+          "elapsedMs": 17298.099853515625
+        },
+        {
+          "name": "textra:compile-dispatch",
+          "elapsedMs": 19629.39990234375
+        }
+      ],
+      "rendererMarks": [
+        {
+          "name": "textra:shell-visible",
+          "startTime": 11011.399999976158
+        },
+        {
+          "name": "textra:editor-ready",
+          "startTime": 11908.699999928474
+        },
+        {
+          "name": "textra:compile-dispatch",
+          "startTime": 14240
+        }
+      ],
+      "rendererLongTasks": [
+        {
+          "startTime": 11484.600000023842,
+          "duration": 160
+        },
+        {
+          "startTime": 11679.399999976158,
+          "duration": 191
+        }
+      ],
+      "rendererLoading": {
+        "navigation": {
+          "type": "navigate",
+          "duration": 10964.199999928474,
+          "fetchStart": 510.2999999523163,
+          "requestStart": 510.2999999523163,
+          "responseStart": 510.2999999523163,
+          "responseEnd": 514.6000000238419,
+          "domInteractive": 10914.399999976158,
+          "domContentLoadedEventStart": 10964,
+          "domContentLoadedEventEnd": 10964.100000023842,
+          "loadEventStart": 10964.100000023842,
+          "loadEventEnd": 10964.199999928474,
+          "transferSize": 4380,
+          "encodedBodySize": 4080,
+          "decodedBodySize": 4080
+        },
+        "resources": [],
+        "paintEntries": [
+          {
+            "name": "first-paint",
+            "startTime": 11268
+          },
+          {
+            "name": "first-contentful-paint",
+            "startTime": 11268
+          }
+        ],
+        "visibilityAtObservation": "visible"
+      },
+      "processMetricsAfterSettle": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 7.518654,
+            "percentCPUUsage": 1.0594806947102808,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 127124,
+            "peakWorkingSetSize": 144680,
+            "privateBytes": 91716
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 0.375079,
+            "percentCPUUsage": 0.4299971836325992,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 368700,
+            "peakWorkingSetSize": 368700,
+            "privateBytes": 138472
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.086114,
+            "percentCPUUsage": 0.06090634381272227,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 259616,
+            "peakWorkingSetSize": 259696,
+            "privateBytes": 12080
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 1.248904,
+            "percentCPUUsage": 0.578291000273223,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 328416,
+            "peakWorkingSetSize": 328416,
+            "privateBytes": 87424
+          }
+        }
+      ],
+      "settleMs": 2000,
+      "pdfReady": false,
+      "compileDispatched": true
+    },
+    {
+      "launch": 3,
+      "shellObservedMs": 15021.378800000006,
+      "editorObservedMs": 15664.461200000005,
+      "compileEnabledObservedMs": 15672.025000000009,
+      "compileClickObservedMs": 618.6581999999908,
+      "launchEpochMs": 1792759458924,
+      "rendererTimeOriginEpochMs": 1792759464337.3,
+      "rendererMarkLaunchElapsedMs": [
+        {
+          "name": "textra:shell-visible",
+          "elapsedMs": 15030
+        },
+        {
+          "name": "textra:editor-ready",
+          "elapsedMs": 15555.199951171875
+        },
+        {
+          "name": "textra:compile-dispatch",
+          "elapsedMs": 18214.900146484375
+        }
+      ],
+      "rendererMarks": [
+        {
+          "name": "textra:shell-visible",
+          "startTime": 9616.700000047684
+        },
+        {
+          "name": "textra:editor-ready",
+          "startTime": 10141.899999976158
+        },
+        {
+          "name": "textra:compile-dispatch",
+          "startTime": 12801.600000023842
+        }
+      ],
+      "rendererLongTasks": [
+        {
+          "startTime": 9547.200000047684,
+          "duration": 51
+        },
+        {
+          "startTime": 9765.399999976158,
+          "duration": 122
+        },
+        {
+          "startTime": 9993.399999976158,
+          "duration": 127
+        }
+      ],
+      "rendererLoading": {
+        "navigation": {
+          "type": "navigate",
+          "duration": 9547,
+          "fetchStart": 11.600000023841858,
+          "requestStart": 11.600000023841858,
+          "responseStart": 11.600000023841858,
+          "responseEnd": 15.299999952316284,
+          "domInteractive": 9499.5,
+          "domContentLoadedEventStart": 9546.799999952316,
+          "domContentLoadedEventEnd": 9546.899999976158,
+          "loadEventStart": 9547,
+          "loadEventEnd": 9547,
+          "transferSize": 4380,
+          "encodedBodySize": 4080,
+          "decodedBodySize": 4080
+        },
+        "resources": [],
+        "paintEntries": [
+          {
+            "name": "first-paint",
+            "startTime": 9628
+          },
+          {
+            "name": "first-contentful-paint",
+            "startTime": 9628
+          }
+        ],
+        "visibilityAtObservation": "visible"
+      },
+      "processMetricsAfterSettle": [
+        {
+          "type": "Browser",
+          "cpu": {
+            "cumulativeCPUUsage": 7.126339,
+            "percentCPUUsage": 1.0235401351378128,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 132052,
+            "peakWorkingSetSize": 139460,
+            "privateBytes": 96508
+          }
+        },
+        {
+          "type": "GPU",
+          "cpu": {
+            "cumulativeCPUUsage": 0.273965,
+            "percentCPUUsage": 0.32056172266769967,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 365796,
+            "peakWorkingSetSize": 366152,
+            "privateBytes": 136844
+          }
+        },
+        {
+          "type": "Utility",
+          "cpu": {
+            "cumulativeCPUUsage": 0.072951,
+            "percentCPUUsage": 0,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 259600,
+            "peakWorkingSetSize": 259600,
+            "privateBytes": 12016
+          }
+        },
+        {
+          "type": "Tab",
+          "cpu": {
+            "cumulativeCPUUsage": 0.980682,
+            "percentCPUUsage": 0.5658816920497913,
+            "idleWakeupsPerSecond": 0
+          },
+          "memory": {
+            "workingSetSize": 330864,
+            "peakWorkingSetSize": 330864,
+            "privateBytes": 89860
+          }
+        }
+      ],
+      "settleMs": 2000,
+      "pdfReady": false,
+      "compileDispatched": true
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
@@ -55,7 +55,12 @@ test('real project editing preserves external changes, compiles, and renders a P
     ).toHaveCount(0);
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await expect(page.locator('.file-actions')).toHaveCount(0);
-    await expect(page.locator('.monaco-editor .codicon-folding-expanded').first()).toBeAttached();
+    await expect
+      .poll(async () => (await page.locator('.source-editor').boundingBox())?.height ?? 0)
+      .toBeGreaterThan(200);
+    await expect(page.locator('.monaco-editor .codicon-folding-expanded').first()).toBeAttached({
+      timeout: 30_000,
+    });
     const fileActions = page.getByRole('menu', { name: 'Actions for main.tex', exact: true });
     // Selecting a file must not open its menu; it opens on right click or the ... button.
     await expect(fileActions).toHaveCount(0);
@@ -103,34 +108,35 @@ test('real project editing preserves external changes, compiles, and renders a P
     const externalContent =
       (await readFile(join(projectRoot, 'main.tex'), 'utf8')) + '% External writer content.\n';
     await writeFile(join(projectRoot, 'main.tex'), externalContent, 'utf8');
+    const conflict = page.getByRole('dialog', { name: 'External change detected', exact: true });
+    await expect(conflict).toBeVisible({ timeout: 10000 });
     await expect(
-      page.getByText('This file changed on disk. Your open text is preserved.', { exact: true }),
-    ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
+      page.getByRole('button', { name: 'Save file', exact: true, includeHidden: true }),
+    ).toBeDisabled();
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
-
-    await page.getByRole('button', { name: 'Save file as', exact: true }).first().click();
-    const saveCopy = page.getByRole('dialog', { name: 'Save file as', exact: true });
-    await saveCopy.getByRole('textbox', { name: 'Path' }).fill('preserved-copy.tex');
-    await saveCopy.getByRole('button', { name: 'Save copy', exact: true }).click();
+    await expect(conflict.getByRole('status')).toContainText('external file appears stable', {
+      timeout: 10000,
+    });
+    await conflict.getByRole('button', { name: 'Save conflicted copy', exact: true }).click();
+    await expect(conflict).toBeHidden();
+    const isPreservedCopy = (name: string) => /^main\.CONFLICTED_.*\.tex$/.test(name);
     await expect
-      .poll(() =>
-        readFile(join(projectRoot, 'preserved-copy.tex'), 'utf8').catch((error: unknown) => {
-          if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
-            return '';
-          throw error;
-        }),
-      )
-      .toContain('Unsaved buffer must survive an external change.');
+      .poll(async () => (await readdir(projectRoot)).filter(isPreservedCopy))
+      .toHaveLength(1);
+    const preservedPath = (await readdir(projectRoot)).find(isPreservedCopy)!;
+    const preservedContent = await readFile(join(projectRoot, preservedPath), 'utf8');
+    expect(preservedContent).toContain('Unsaved buffer must survive an external change.');
+    expect(preservedContent).not.toContain('External writer content.');
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
 
+    // Resolving the original closes only its protected buffer; reopening reads the external version.
     await page.getByRole('tab', { name: 'Edit main.tex', exact: true }).click();
-    await page.getByRole('button', { name: 'Reload from disk', exact: true }).click();
-    const reload = page.getByRole('dialog', { name: 'Reload from disk', exact: true });
-    await reload.getByRole('button', { name: 'Discard edits and reload', exact: true }).click();
-    await expect(
-      page.getByText('This file changed on disk. Your open text is preserved.', { exact: true }),
-    ).toBeHidden();
+    await page.getByRole('button', { name: 'Resolve conflict', exact: true }).click();
+    await conflict.getByRole('button', { name: 'Discard and close tab', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Edit main.tex', exact: true })).toHaveCount(0);
+    expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
+    await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
+    await expect(page.locator('.conflict-banner')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
 
     const tools = await page.evaluate(() => window.textra.detectTools());
@@ -180,7 +186,10 @@ test('real project editing preserves external changes, compiles, and renders a P
         }),
       )
       .toBe(true);
+    const pdfControls = page.getByRole('button', { name: 'PDF controls', exact: true });
+    if (await pdfControls.isVisible()) await pdfControls.click();
     await page.getByRole('button', { name: 'Next PDF page', exact: true }).click();
+    if (await pdfControls.isVisible()) await page.keyboard.press('Escape');
     await expect(page.locator('canvas[aria-label="PDF page 2"]')).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Preview', exact: true })).toHaveAttribute(
       'aria-selected',
@@ -194,7 +203,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await expect(page.locator('.pdf-search [role="status"]')).toContainText('Pages:');
     await page.keyboard.press('Escape');
     await expect(page.getByRole('textbox', { name: 'Search PDF', exact: true })).toBeHidden();
-    await page.locator('.pdf-scroll canvas').focus();
+    await page.locator('canvas[aria-label="PDF page 2"]').focus();
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+h' : 'Control+h');
     await expect(page.locator('.monaco-editor .find-widget.visible')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -230,13 +239,14 @@ test('real project editing preserves external changes, compiles, and renders a P
     }, exportFile);
     await settings.getByRole('button', { name: 'Import & export', exact: true }).click();
     await settings.getByRole('button', { name: 'Export settings', exact: true }).click();
-    await expect(settings.getByRole('status')).toContainText('Settings exported');
+    await expect(settings.locator('.setup-message')).toContainText('Settings exported');
     expect(JSON.parse(await readFile(exportFile, 'utf8'))).toMatchObject({
       schemaVersion: 1,
       preferences: { theme: 'dark', defaultRecipe: 'xelatex' },
     });
     await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+    await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
     await settings.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
     await application.evaluate(({ dialog }, path) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
@@ -244,14 +254,14 @@ test('real project editing preserves external changes, compiles, and renders a P
     }, exportFile);
     await settings.getByRole('button', { name: 'Import & export', exact: true }).click();
     await settings.getByRole('button', { name: 'Import settings', exact: true }).click();
-    await expect(settings.getByRole('status')).toContainText('Theme and layout imported');
+    await expect(settings.locator('.setup-message')).toContainText('Theme and layout imported');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await application.evaluate(({ dialog }, path) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
     }, projectRoot);
     await settings.getByRole('button', { name: 'LaTeX tools', exact: true }).click();
     await settings.getByRole('button', { name: 'Test TeX installation', exact: true }).click();
-    await expect(settings.getByRole('status')).toContainText(
+    await expect(settings.locator('.setup-message')).toContainText(
       'Test document compiled successfully',
       { timeout: 40000 },
     );
@@ -273,7 +283,7 @@ test('real project editing preserves external changes, compiles, and renders a P
       page.getByRole('button', { name: 'pdfLaTeX + BibTeX', exact: true }),
     ).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Open preserved-copy.tex', exact: true }).click();
+    await page.getByRole('button', { name: 'Open ' + preservedPath, exact: true }).click();
     await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
     await expect(page.getByRole('button', { name: 'XeLaTeX', exact: true })).toHaveAttribute(
       'aria-pressed',
@@ -289,15 +299,15 @@ test('real project editing preserves external changes, compiles, and renders a P
         },
         { timeout: 60000 },
       )
-      .toBe('preserved-copy.tex');
+      .toBe(preservedPath);
     expect(
       JSON.parse(await readFile(join(projectRoot, '.textra', 'settings.json'), 'utf8')).recipes,
     ).toEqual({
       'main.tex': 'bibtex-pipeline',
-      'preserved-copy.tex': 'pdflatex',
+      [preservedPath]: 'pdflatex',
     });
     await page.getByRole('tab', { name: 'Output', exact: true }).click();
-    // Recipe persistence is optional: a settings failure must not prevent a build.
+    // A rejected recipe change keeps the previous saved recipe usable for compilation.
     await application.evaluate(({ ipcMain }) => {
       ipcMain.removeHandler('textra:config:set');
       ipcMain.handle('textra:config:set', () => ({ ok: false, error: 'Settings are read-only.' }));
@@ -305,13 +315,11 @@ test('real project editing preserves external changes, compiles, and renders a P
     await page.getByRole('tab', { name: 'Edit main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
     await page.getByRole('button', { name: 'pdfLaTeX', exact: true }).click();
+    await expect(page.locator('.workspace-error')).toContainText('Settings are read-only.');
     await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
     await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute(
       'aria-selected',
       'true',
-    );
-    await expect(page.locator('.workspace-error')).toContainText(
-      'The recipe could not be remembered',
     );
     await expect
       .poll(

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useStartup } from './startup';
 import type {
   BuildEngine,
   BuildState,
@@ -8,6 +9,7 @@ import type {
   RecentProject,
   SourceLocation,
   ToolInfo,
+  Result,
 } from '../../../shared/api';
 
 export interface OpenDocument extends FileSnapshot {
@@ -36,6 +38,7 @@ interface WorkspaceState {
   engine: BuildEngine;
   recipes: Record<string, string>;
   projectConfig: ProjectConfig | null;
+  configReady: boolean;
   rootFile: string;
   error: string | null;
   busy: boolean;
@@ -53,6 +56,7 @@ export const useWorkspace = create<WorkspaceState>(() => ({
   engine: 'pdflatex',
   recipes: {},
   projectConfig: null,
+  configReady: false,
   rootFile: '',
   error: null,
   busy: false,
@@ -63,29 +67,59 @@ export const dirty = (document: OpenDocument) => document.content !== document.s
 export function showError(error: unknown): void {
   useWorkspace.setState({ error: error instanceof Error ? error.message : String(error) });
 }
-export async function initializeWorkspace(): Promise<void> {
-  const results = await Promise.allSettled([
-    window.textra.getRecentProjects(),
-    window.textra.detectTools(),
-    window.textra.getBuildState(),
-  ]);
-  const [recents, tools, build] = results;
-  if (recents.status === 'fulfilled' && recents.value.ok)
-    useWorkspace.setState({ recents: recents.value.value });
-  if (tools.status === 'fulfilled' && tools.value.ok)
-    useWorkspace.setState({ tools: tools.value.value });
-  else if (tools.status === 'rejected') showError(tools.reason);
-  else if (!tools.value.ok) showError(tools.value.error);
-  if (build.status === 'fulfilled' && build.value.ok)
-    useWorkspace.setState({ build: build.value.value });
-  useWorkspace.setState({ toolsReady: true });
+let restorationGeneration = 0;
+let selectionGeneration = 0;
+const documentReads = new Map<string, Promise<Result<FileSnapshot>>>();
+export function beginRestoration(): number {
+  return ++restorationGeneration;
 }
-export async function setProject(project: ProjectInfo): Promise<void> {
+export function restorationIsCurrent(generation: number): boolean {
+  return generation === restorationGeneration;
+}
+export function cancelWorkspaceRestoration(): void {
+  restorationGeneration++;
+  useStartup.setState({ restoration: 'settled' });
+}
+let initialization: Promise<void> | undefined;
+export async function initializeWorkspace(): Promise<void> {
+  initialization ??= Promise.allSettled([
+    window.textra.getRecentProjects().then((result) => {
+      if (result.ok) useWorkspace.setState({ recents: result.value });
+    }),
+    window.textra.getBuildState().then((result) => {
+      if (result.ok) useWorkspace.setState({ build: result.value });
+    }),
+  ]).then(() => undefined);
+  return initialization;
+}
+let detection: Promise<void> | undefined;
+export function discoverWorkspaceTools(): Promise<void> {
+  detection ??= window.textra
+    .detectTools()
+    .then((result) => {
+      if (result.ok) useWorkspace.setState({ tools: result.value });
+      else showError(result.error);
+    })
+    .catch(showError)
+    .finally(() => {
+      useWorkspace.setState({ toolsReady: true });
+      detection = undefined;
+    });
+  return detection;
+}
+export async function setProject(
+  project: ProjectInfo,
+  options: { restoring?: boolean } = {},
+): Promise<void> {
+  if (!options.restoring) cancelWorkspaceRestoration();
+  selectionGeneration++;
+  useStartup.setState({ editorReady: false });
   useWorkspace.setState({
     project,
     documents: [],
     recipes: {},
     projectConfig: null,
+    configReady: false,
     activePath: null,
     rootFile:
       project.mainFile ?? project.files.find((file) => file.path.endsWith('.tex'))?.path ?? '',
@@ -93,14 +127,22 @@ export async function setProject(project: ProjectInfo): Promise<void> {
     navigation: null,
     source: null,
   });
-  const recents = await window.textra.getRecentProjects();
-  if (recents.ok) useWorkspace.setState({ recents: recents.value });
+  void window.textra
+    .getRecentProjects()
+    .then((recents) => {
+      if (recents.ok && useWorkspace.getState().project?.id === project.id)
+        useWorkspace.setState({ recents: recents.value });
+    })
+    .catch(() => undefined);
   const config = await window.textra.getProjectConfig(project.id);
   if (useWorkspace.getState().project?.id !== project.id) return;
+  useWorkspace.setState({ configReady: true });
   if (!config.ok) showError(config.error);
   else {
     const rootExists =
-      !config.value.rootFile || project.files.some((file) => file.path === config.value.rootFile);
+      project.treeState === 'loading' ||
+      !config.value.rootFile ||
+      project.files.some((file) => file.path === config.value.rootFile);
     useWorkspace.setState({
       engine: config.value.engine,
       projectConfig: config.value,
@@ -111,11 +153,19 @@ export async function setProject(project: ProjectInfo): Promise<void> {
     });
   }
 }
-export async function openDocument(path: string, location?: SourceLocation): Promise<void> {
+export async function openDocument(
+  path: string,
+  location?: SourceLocation,
+  options: { restoring?: boolean; background?: boolean; quiet?: boolean } = {},
+): Promise<void> {
+  if (!options.restoring) cancelWorkspaceRestoration();
+  const restoration = restorationGeneration;
+  const selection = options.background ? selectionGeneration : ++selectionGeneration;
   const { project, documents } = useWorkspace.getState();
   if (!project) return;
   if (documents.some((document) => document.path === path)) {
-    useWorkspace.setState({ activePath: path, navigation: location ?? null });
+    if (!options.background)
+      useWorkspace.setState({ activePath: path, navigation: location ?? null });
     return;
   }
   if (documents.length >= 50) {
@@ -123,7 +173,16 @@ export async function openDocument(path: string, location?: SourceLocation): Pro
     return;
   }
   try {
-    const result = await window.textra.readFile({ projectId: project.id, path });
+    const readKey = `${project.id}\0${path}`;
+    let pendingRead = documentReads.get(readKey);
+    if (!pendingRead) {
+      pendingRead = window.textra
+        .readFile({ projectId: project.id, path })
+        .finally(() => documentReads.delete(readKey));
+      documentReads.set(readKey, pendingRead);
+    }
+    const result = await pendingRead;
+    if (options.restoring && restoration !== restorationGeneration) return;
     if (!result.ok) throw new Error(result.error);
     if (useWorkspace.getState().project?.id !== project.id) return;
     useWorkspace.setState((state) => {
@@ -142,13 +201,16 @@ export async function openDocument(path: string, location?: SourceLocation): Pro
                 externalState: null,
               },
             ],
-        activePath: path,
-        navigation: location ?? null,
-        error: null,
+        ...(!options.background &&
+        (selection === selectionGeneration ||
+          !state.documents.some((document) => document.path === state.activePath))
+          ? { activePath: path, navigation: location ?? null }
+          : {}),
+        ...(!options.quiet ? { error: null } : {}),
       };
     });
   } catch (error) {
-    showError(error);
+    if (!options.quiet) showError(error);
   }
 }
 export function editDocument(path: string, content: string): void {
@@ -159,6 +221,8 @@ export function editDocument(path: string, content: string): void {
   }));
 }
 export function closeDocument(path: string): void {
+  cancelWorkspaceRestoration();
+  selectionGeneration++;
   useWorkspace.setState((state) => {
     const documents = state.documents.filter((document) => document.path !== path);
     return {
@@ -166,6 +230,13 @@ export function closeDocument(path: string): void {
       activePath: state.activePath === path ? (documents.at(-1)?.path ?? null) : state.activePath,
     };
   });
+}
+/** Every explicit tab selection supersedes pending reads as well as saved-session focus. */
+export function selectDocument(path: string): void {
+  cancelWorkspaceRestoration();
+  selectionGeneration++;
+  if (useWorkspace.getState().documents.some((document) => document.path === path))
+    useWorkspace.setState({ activePath: path, navigation: null });
 }
 export function reorderDocuments(fromIndex: number, toIndex: number): void {
   useWorkspace.setState((state) => {

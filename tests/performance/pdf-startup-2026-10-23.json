@@ -1,0 +1,93 @@
+{
+  "shellObservedMs": 18727.60100000001,
+  "editorObservedMs": 19963.613100000002,
+  "compileEnabledObservedMs": 19972.02500000001,
+  "compileClickObservedMs": null,
+  "rendererMarks": [
+    {
+      "name": "textra:shell-visible",
+      "startTime": 12057.200000047684
+    },
+    {
+      "name": "textra:editor-ready",
+      "startTime": 13121
+    },
+    {
+      "name": "textra:pdf-ready",
+      "startTime": 13618.399999976158
+    }
+  ],
+  "rendererLongTasks": [
+    {
+      "startTime": 11937.300000071526,
+      "duration": 96
+    },
+    {
+      "startTime": 12358.200000047684,
+      "duration": 234
+    },
+    {
+      "startTime": 12913.300000071526,
+      "duration": 185
+    }
+  ],
+  "processMetricsAfterSettle": [
+    {
+      "type": "Browser",
+      "cpu": {
+        "cumulativeCPUUsage": 7.409596,
+        "percentCPUUsage": 16.022404544020194,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 122656,
+        "peakWorkingSetSize": 153752,
+        "privateBytes": 84948
+      }
+    },
+    {
+      "type": "GPU",
+      "cpu": {
+        "cumulativeCPUUsage": 0.914971,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 375376,
+        "peakWorkingSetSize": 375376,
+        "privateBytes": 144924
+      }
+    },
+    {
+      "type": "Utility",
+      "cpu": {
+        "cumulativeCPUUsage": 0.122402,
+        "percentCPUUsage": 0,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 244168,
+        "peakWorkingSetSize": 259636,
+        "privateBytes": 12140
+      }
+    },
+    {
+      "type": "Tab",
+      "cpu": {
+        "cumulativeCPUUsage": 1.479082,
+        "percentCPUUsage": 10.474261201143946,
+        "idleWakeupsPerSecond": 0
+      },
+      "memory": {
+        "workingSetSize": 333448,
+        "peakWorkingSetSize": 335444,
+        "privateBytes": 94288
+      }
+    }
+  ],
+  "settleMs": 0,
+  "pdfReady": true,
+  "compileDispatched": false,
+  "pdfObservedMs": 20369.522100000002,
+  "fixture": "Synthetic cached PDF, real main validation and PDF.js rendering; no TeX execution."
+}

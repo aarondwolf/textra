@@ -1,6 +1,19 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { access, lstat, mkdir, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
+import {
+  access,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
@@ -12,6 +25,7 @@ import type {
   SyncForwardRequest,
   SyncInverseRequest,
   ToolInfo,
+  RestoredPdf,
 } from '../../shared/api';
 import { parseDiagnostics } from './diagnostics';
 import { getToolPath } from './tool-paths';
@@ -38,6 +52,27 @@ const names = [
 ] as const;
 const MAX_LOG = 2_000_000;
 const MAX_PDF = 64 * 1024 * 1024;
+
+async function readBoundedFile(path: string, limit: number): Promise<Buffer> {
+  const file = await open(path, 'r');
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.nlink > 1 || info.size > limit)
+      throw new BuildError('Cached artifact is unsafe or exceeds its size limit.');
+    // Bound reads even if another process grows the output after stat.
+    const buffer = Buffer.alloc(info.size + 1);
+    let size = 0;
+    while (size < buffer.length) {
+      const chunk = await file.read(buffer, size, buffer.length - size, null);
+      if (!chunk.bytesRead) break;
+      size += chunk.bytesRead;
+    }
+    if (size > limit) throw new BuildError('Cached artifact exceeds its size limit.');
+    return buffer.subarray(0, size);
+  } finally {
+    await file.close();
+  }
+}
 
 export async function findExecutable(name: string): Promise<string | null> {
   if (!(names as readonly string[]).includes(name)) throw new BuildError('Unsupported tool.');
@@ -101,17 +136,24 @@ function probe(executable: string, timeoutMs = 4000): Promise<string | null> {
 }
 
 export async function detectTools(): Promise<ToolInfo[]> {
-  return Promise.all(
-    names.map(async (name) => {
-      const path = await findExecutable(name);
-      return {
-        name,
-        path,
-        version: path ? await probe(path) : null,
-        custom: getToolPath(name) !== undefined,
-      };
+  const results: ToolInfo[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: 3 }, async () => {
+      while (next < names.length) {
+        const index = next++;
+        const name = names[index]!;
+        const path = await findExecutable(name);
+        results[index] = {
+          name,
+          path,
+          version: path ? await probe(path) : null,
+          custom: getToolPath(name) !== undefined,
+        };
+      }
     }),
   );
+  return results;
 }
 
 function relativePath(value: unknown): string {
@@ -195,7 +237,115 @@ export class BuildService {
   constructor(
     private readonly getRoot: (id: string) => string,
     private readonly timeoutMs = 120_000,
+    private readonly metadataDirectory?: string,
   ) {}
+
+  private async metadataPath(root: string): Promise<string | null> {
+    if (!this.metadataDirectory) return null;
+    const directory = join(this.metadataDirectory, 'last-pdfs');
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const info = await lstat(directory);
+    if (!info.isDirectory() || info.isSymbolicLink())
+      throw new BuildError('Unsafe PDF cache directory.');
+    return join(directory, `${createHash('sha256').update(root).digest('hex')}.json`);
+  }
+
+  private async rememberPdf(request: BuildRequest): Promise<void> {
+    const pdf = this.successful;
+    if (!pdf || pdf.projectId !== request.projectId) return;
+    const root = this.getRoot(request.projectId);
+    const target = await this.metadataPath(root);
+    if (!target) return;
+    const fingerprint = await this.pdfFingerprint(await checkedPath(root, pdf.path));
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(
+        temporary,
+        JSON.stringify({
+          schemaVersion: 1,
+          root,
+          rootFile: pdf.rootFile,
+          path: pdf.path,
+          recipeId: request.recipe ?? null,
+          compiledAt: new Date().toISOString(),
+          fingerprint,
+          digest: createHash('sha256').update(pdf.bytes).digest('hex'),
+        }),
+        { flag: 'wx', mode: 0o600 },
+      );
+      await rename(temporary, target);
+    } finally {
+      await unlink(temporary).catch(() => undefined);
+    }
+  }
+
+  /** Restored bytes are preview-only; current-build SyncTeX stays unavailable. */
+  async restoreLastPdf(projectId: string): Promise<RestoredPdf | null> {
+    const root = this.getRoot(projectId);
+    if (this.state.running || this.successful?.projectId === projectId) return null;
+    try {
+      const target = await this.metadataPath(root);
+      if (!target) return null;
+      const info = await lstat(target);
+      if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1 || info.size > 8192)
+        return null;
+      const raw: unknown = JSON.parse((await readBoundedFile(target, 8192)).toString('utf8'));
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      const value = raw as Record<string, unknown>;
+      if (
+        value.schemaVersion !== 1 ||
+        value.root !== root ||
+        typeof value.rootFile !== 'string' ||
+        !/\.tex$/i.test(value.rootFile) ||
+        typeof value.path !== 'string' ||
+        !/\.pdf$/i.test(value.path) ||
+        typeof value.compiledAt !== 'string' ||
+        !Number.isFinite(Date.parse(value.compiledAt)) ||
+        !(
+          value.recipeId === null ||
+          (typeof value.recipeId === 'string' && value.recipeId.length <= 1024)
+        ) ||
+        typeof value.fingerprint !== 'string' ||
+        typeof value.digest !== 'string'
+      )
+        return null;
+      await checkedPath(root, relativePath(value.rootFile));
+      const path = relativePath(value.path);
+      const absolute = await checkedPath(root, path);
+      const output = await lstat(absolute);
+      if (output.size > MAX_PDF || (await this.pdfFingerprint(absolute)) !== value.fingerprint)
+        return null;
+      const bytes = await readBoundedFile(absolute, MAX_PDF);
+      if (
+        bytes.length > MAX_PDF ||
+        bytes.subarray(0, 5).toString() !== '%PDF-' ||
+        createHash('sha256').update(bytes).digest('hex') !== value.digest
+      )
+        return null;
+      this.getRoot(projectId);
+      // An explicit compile may have completed while cache validation was in flight.
+      if (this.state.running || this.successful?.projectId === projectId) return null;
+      this.successful = {
+        projectId,
+        rootFile: value.rootFile,
+        path,
+        absolute,
+        bytes: new Uint8Array(bytes),
+        version: ++this.pdfVersion,
+        syncValid: false,
+      };
+      return {
+        projectId,
+        rootFile: value.rootFile,
+        path,
+        recipeId: value.recipeId,
+        compiledAt: value.compiledAt,
+        pdfVersion: this.successful.version,
+      };
+    } catch {
+      return null;
+    }
+  }
 
   getState(): BuildState {
     return structuredClone(this.state);
@@ -453,6 +603,7 @@ export class BuildService {
       }
       this.state.running = false;
     }
+    if (this.state.outcome === 'success') await this.rememberPdf(request).catch(() => undefined);
     return this.getState();
   }
 

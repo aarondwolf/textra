@@ -211,3 +211,10 @@
     opacity: 0;
   }
 }
+.pdf-restored-status {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}

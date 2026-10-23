@@ -1,5 +1,16 @@
 # Architecture memory
 
+2026-10-23 startup refactor: project APIs expose initial `treeState: loading` listings; known
+files read before `refreshProject` completes the tree. `prepareProject` runs initialization
+after core readiness. Renderer startup/session lifecycle handles versioned legacy-compatible
+metadata, active-first single-flight restore and background tab reads without replacing buffers.
+Independent per-feature lazy/error boundaries keep optional panes from suspending the editor.
+`restoreLastPdf` reads bounded main-owned metadata under userData/last-pdfs, validates paths,
+fingerprint/hash and PDF header, and registers preview bytes without SyncTeX authorization.
+`prepareAI` imports code for eligible selected defaults only; services no longer eagerly load
+the AI core. `useAISettings` shares an offline cache with writes superseding stale reads.
+Writing's analysis cache and four-read background index replace per-render project scans.
+
 Current redesign (2026-10-21; verification in progress): provider configuration v4
 owns enabled state, validated base URL, manual models and per-role exact ID filters.
 SDKs load lazily for real requests. Ctrl+I uses a separate scoped inline-edit service

@@ -268,7 +268,7 @@ export class ProjectService {
     });
   }
 
-  private async scan(projectId: string): Promise<ProjectInfo> {
+  private async scan(projectId: string, initialTree = false): Promise<ProjectInfo> {
     const root = this.getRoot(projectId);
     const files: FileEntry[] = [];
     let truncated = false;
@@ -304,7 +304,7 @@ export class ProjectService {
           name: entry.name,
           kind: entry.isDirectory() ? 'directory' : 'file',
         });
-        if (entry.isDirectory() && !unexpandedNames.has(entry.name.toLowerCase()))
+        if (!initialTree && entry.isDirectory() && !unexpandedNames.has(entry.name.toLowerCase()))
           await walk(child, depth + 1);
       }
     };
@@ -312,7 +312,7 @@ export class ProjectService {
     this.getRoot(projectId);
     const tex = files.filter((entry) => entry.kind === 'file' && /\.tex$/i.test(entry.path));
     let mainFile = tex.find((entry) => entry.path === 'main.tex')?.path ?? null;
-    if (!mainFile) {
+    if (!mainFile && !initialTree) {
       const candidates = [...tex].sort(
         (a, b) => a.path.split('/').length - b.path.split('/').length,
       );
@@ -338,14 +338,22 @@ export class ProjectService {
       }
     }
     mainFile ??= tex[0]?.path ?? null;
-    return { id: projectId, name: basename(root), rootPath: root, files, mainFile, truncated };
+    return {
+      id: projectId,
+      name: basename(root),
+      rootPath: root,
+      files,
+      mainFile,
+      truncated,
+      treeState: initialTree ? 'loading' : 'complete',
+    };
   }
 
   async refreshProject(projectId: string): Promise<ProjectInfo> {
     return this.scan(projectId);
   }
 
-  openRoot(root: string): Promise<ProjectInfo> {
+  openRoot(root: string, options: { initialTree?: boolean } = {}): Promise<ProjectInfo> {
     return this.serialize(async () => {
       if (typeof root !== 'string' || !isAbsolute(root))
         throw new ProjectError('INVALID_PATH', 'Select an absolute project folder.');
@@ -359,18 +367,23 @@ export class ProjectService {
       const previous = this.active;
       this.active = { id: randomUUID(), root: canonical };
       try {
-        const project = await this.scan(this.active.id);
-        const recent = await this.loadRecent();
-        const existing = recent.find((item) => item.rootPath === canonical);
-        const item: RecentProject = {
-          id: existing?.id ?? randomUUID(),
-          name: basename(canonical),
-          rootPath: canonical,
-          pinned: existing?.pinned ?? false,
+        const project = await this.scan(this.active.id, options.initialTree);
+        const updateRecent = async () => {
+          const recent = await this.loadRecent();
+          const existing = recent.find((item) => item.rootPath === canonical);
+          const item: RecentProject = {
+            id: existing?.id ?? randomUUID(),
+            name: basename(canonical),
+            rootPath: canonical,
+            pinned: existing?.pinned ?? false,
+          };
+          await this.writeRecent(
+            [item, ...recent.filter((entry) => entry.rootPath !== canonical)].slice(0, 100),
+          );
         };
-        await this.writeRecent(
-          [item, ...recent.filter((entry) => entry.rootPath !== canonical)].slice(0, 100),
-        );
+        // Keep recents ordered and flushable, without gating known-file reads on fsync.
+        if (options.initialTree) void this.serialize(updateRecent).catch(() => undefined);
+        else await updateRecent();
         return project;
       } catch (error) {
         this.active = previous;
@@ -524,12 +537,15 @@ export class ProjectService {
     return this.loadRecent();
   }
 
-  async openRecentProject(id: string): Promise<ProjectInfo> {
+  async openRecentProject(
+    id: string,
+    options: { initialTree?: boolean } = {},
+  ): Promise<ProjectInfo> {
     if (typeof id !== 'string')
       throw new ProjectError('INVALID_ARGUMENT', 'Invalid recent project.');
     const entry = (await this.getRecentProjects()).find((item) => item.id === id);
     if (!entry) throw new ProjectError('NOT_FOUND', 'This recent project is no longer available.');
-    return this.openRoot(entry.rootPath);
+    return this.openRoot(entry.rootPath, options);
   }
 
   setProjectPinned(value: { id: string; pinned: boolean }): Promise<RecentProject[]> {

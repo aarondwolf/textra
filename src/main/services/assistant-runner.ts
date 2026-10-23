@@ -1,13 +1,4 @@
-import {
-  jsonSchema,
-  stepCountIs,
-  streamText,
-  tool,
-  ToolLoopAgent,
-  type LanguageModel,
-  type ModelMessage,
-  type ToolSet,
-} from 'ai';
+import type { LanguageModel, ModelMessage, ToolSet } from 'ai';
 import { AIError } from './ai-service';
 import { agentLimit, invalidOperation, StagingBuffer } from './agent-staging';
 import { SDK_MAX_RETRIES, sanitizedSDKError, type SDKProviderOptions } from './ai-sdk-runtime';
@@ -136,6 +127,7 @@ class OutputCollector {
 function documentTools(
   staging: StagingBuffer,
   guard: (name: AssistantToolName, action: () => Record<string, unknown>) => unknown,
+  { tool, jsonSchema }: Pick<typeof import('ai'), 'tool' | 'jsonSchema'>,
 ): ToolSet {
   const define = (name: AssistantToolName, action: (input: unknown) => Record<string, unknown>) =>
     tool({
@@ -202,12 +194,14 @@ export async function runAssistant(run: AssistantRun): Promise<AssistantRunResul
   let lastStepReason = 'unknown';
   let steps = 0;
   try {
+    const sdk = await import('ai');
+    const { ToolLoopAgent, stepCountIs, streamText } = sdk;
     if (run.staging) {
       const staging = run.staging;
       const agent = new ToolLoopAgent({
         ...common,
         instructions: run.system,
-        tools: documentTools(staging, guard),
+        tools: documentTools(staging, guard, sdk),
         stopWhen: stepCountIs(AGENT_MAX_TURNS),
         // Keep the model aware of its remaining budget, as the bounded agent did.
         prepareStep: ({ stepNumber }) => ({

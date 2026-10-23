@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { lazyFeature } from './features/startup/LazyFeature';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   AIChat,
@@ -26,9 +27,10 @@ import { DEFAULT_PREFERENCES, type Theme } from '../../shared/api';
 import { DEFAULT_SHORTCUTS, matchesShortcut } from '../../shared/shortcuts';
 import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
-import SetupDialog, { type SectionId } from './features/onboarding/SetupDialog';
-import RecipeDialog from './features/onboarding/RecipeDialog';
+import type { SectionId } from './features/onboarding/SetupDialog';
 import { ToastViewport } from './features/notifications/ToastViewport';
+
+const SetupDialog = lazyFeature(() => import('./features/onboarding/SetupDialog'), 'Settings');
 
 const SHORTCUT_REFERENCE = [
   ['Command palette', 'Ctrl/Cmd K'],
@@ -373,7 +375,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
   const { preferences, hydrated, error } = useUI();
-  const { recipeEditorOpen, setRecipeEditorOpen } = useUI();
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  useEffect(() => {
+    if (settingsOpen) setSettingsLoaded(true);
+  }, [settingsOpen]);
   useEffect(() => {
     void hydratePreferences();
   }, []);
@@ -601,12 +606,13 @@ export function App() {
       />
       <CommandPalette />
       <ToastViewport />
-      <SetupDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        initialSection={settingsSection}
-      />
-      <RecipeDialog open={recipeEditorOpen} onOpenChange={setRecipeEditorOpen} />
+      {(settingsOpen || settingsLoaded) && (
+        <SetupDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          initialSection={settingsSection}
+        />
+      )}
     </div>
   );
 }

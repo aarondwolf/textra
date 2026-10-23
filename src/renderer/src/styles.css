@@ -217,11 +217,8 @@
   color: var(--text);
 }
 .document-tab.tab-saved-pulse {
-  background: var(--accent-bg) !important;
   border-color: var(--accent) !important;
-  color: var(--accent-strong, var(--accent)) !important;
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent);
-  transition: all 0.25s ease;
+  transition: border-color 0.35s ease;
 }
 .document-tab.preview-tab > button[role='tab'] > span:first-of-type::after {
   content: 'preview';
@@ -1065,9 +1062,10 @@ kbd {
 .project-heading {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  padding: 9px 14px;
-  background: var(--surface);
+  padding: 6px 14px;
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
@@ -1885,6 +1883,8 @@ h1 > span {
   gap: 4px;
 }
 .build-sidebar-title .compile-button {
+  width: auto;
+  min-width: 0;
   height: 24px;
   padding: 0 8px;
   font-size: 11px;
@@ -1942,9 +1942,17 @@ h1 > span {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 9px 3px;
+  padding: 0 3px 9px 3px;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
+}
+.activity-rail-header {
+  height: var(--bar-height);
+  min-height: var(--bar-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 .rail-bottom {
   margin-top: auto;
@@ -2587,4 +2595,62 @@ select option {
   flex-direction: column;
   gap: 10px;
   margin-top: 12px;
+}
+
+/* Borderless compact theme color swatches */
+.theme-color-input {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  outline: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  flex-shrink: 0;
+}
+.theme-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.theme-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* Dismissible assistant notice */
+.ai-chat-privacy {
+  position: relative;
+  padding: 8px 30px 8px 12px;
+  margin: 8px 12px 0;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.ai-chat-privacy p {
+  margin: 0;
+}
+.ai-chat-privacy-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.ai-chat-privacy-dismiss:hover {
+  color: var(--text);
+  background: var(--hover);
 }

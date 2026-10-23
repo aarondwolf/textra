@@ -545,7 +545,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await chat.getByRole('button', { name: 'New chat', exact: true }).click();
     await expect(composer).toHaveValue('An unsent draft');
     await expect(history.locator('article')).toHaveCount(0);
-    await expect(history).toContainText('Let’s untangle that LaTeX.');
+    await expect(history).toContainText('Ask a question or describe a change to the open file.');
     await expect(chat.getByRole('alert')).toHaveCount(0);
 
     await composer.fill('A fresh conversation question');

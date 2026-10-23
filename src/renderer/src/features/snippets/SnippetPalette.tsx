@@ -259,18 +259,6 @@ export default function SnippetPalette({
             <div className="palette-header-actions">
               <button
                 type="button"
-                className="palette-add-btn"
-                title="Add custom snippet"
-                aria-label="Add custom snippet"
-                onClick={() => {
-                  setIsAdding(!isAdding);
-                  if (!snippetsOpen) setSnippetsOpen(true);
-                }}
-              >
-                <Plus size={13} />
-              </button>
-              <button
-                type="button"
                 className={`palette-lock-btn ${preferences.snippetsTemplatesOpenDefault ? 'locked' : ''}`}
                 title={
                   preferences.snippetsTemplatesOpenDefault
@@ -413,6 +401,20 @@ export default function SnippetPalette({
                   <p className="palette-empty-note">No snippets match.</p>
                 )}
               </ul>
+              {!isAdding && (
+                <button
+                  type="button"
+                  className="recipe-add-step-faded"
+                  style={{ marginTop: '8px', width: '100%' }}
+                  onClick={() => {
+                    setIsAdding(true);
+                    if (!snippetsOpen) setSnippetsOpen(true);
+                  }}
+                >
+                  <Plus size={13} />
+                  <span>Add snippet</span>
+                </button>
+              )}
             </div>
           )}
         </section>

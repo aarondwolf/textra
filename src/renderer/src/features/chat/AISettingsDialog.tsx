@@ -18,7 +18,7 @@ import {
   type AIProviderLink,
   type AIRole,
 } from '../../../../shared/ai';
-import { AIChat, Pencil, Play, Plus, RefreshCw, Trash2, X } from '../../icons';
+import { Pencil, Play, Plus, RefreshCw, Trash2, X } from '../../icons';
 import { ModelPicker } from './ModelPicker';
 import {
   aiSavesSettled,
@@ -681,23 +681,7 @@ export function AISettingsDialog({
     settings?.providers.filter((item) => item.id !== 'codestral' && item.configured) ?? [];
   return (
     <div className="ai-settings-dialog ai-settings-inline">
-      <div className="ai-settings-heading">
-        <h2>
-          <AIChat size={18} aria-hidden="true" />
-          AI Settings
-        </h2>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Close AI settings"
-          onClick={() => {
-            onClose?.();
-            onOpenChange?.(false);
-          }}
-        >
-          <X size={18} />
-        </button>
-      </div>
+      <h3>AI Settings</h3>
       <p>Choose models and manage your connections.</p>
       <div className="ai-settings-scroll">
         {error && (

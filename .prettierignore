@@ -10,3 +10,4 @@ playwright-report
 package-lock.json
 docs/FEATURE_SPEC.md
 **/build
+sandbox

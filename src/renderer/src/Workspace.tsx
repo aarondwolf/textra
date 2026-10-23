@@ -18,11 +18,13 @@ import { AGENT_SOURCE_LIMIT, type AIAgentContext, type AIEditProposal } from '..
 import {
   AIChat,
   ArrowRight,
+  ArrowSquareOut,
   ArrowsInSimple,
   ArrowsOutSimple,
   BracketsCurly,
   Check,
   ChevronRight,
+  Code,
   Copy,
   Columns2,
   ChevronDown,
@@ -41,14 +43,12 @@ import {
   Hammer,
   FolderOpen,
   FolderPlus,
-  LocateFixed,
   Pin,
   FilePdf,
   Play,
   Scroll,
   Warning,
   Pencil,
-  RefreshCw,
   Save,
   Square,
   X,
@@ -484,7 +484,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   useEffect(() => {
     setChatDraft(null);
   }, [project?.id]);
-  const [focusMode, setFocusMode] = useState(false);
   const [fileFilter, setFileFilter] = useState('');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [pdfPreviewPath, setPdfPreviewPath] = useState<string | null>(null);
@@ -719,21 +718,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
   }, [editorOptionsOpen]);
-  function revealActive() {
-    if (!activePath) return;
-    setFileMenu(null);
-    updatePreferences({ sidebarVisible: true });
-    setSidebarView('explorer');
-    setExpandedFolders((previous) =>
-      expandPath(previous, activePath.split('/').slice(0, -1).join('/')),
-    );
-    setSelected(activePath);
-    window.requestAnimationFrame(() => {
-      document
-        .querySelector(`.file-entry[data-path="${CSS.escape(activePath)}"]`)
-        ?.scrollIntoView({ block: 'nearest' });
-    });
-  }
   function toggleFolder(path: string) {
     setFileMenu(null);
     setSelected(path);
@@ -745,6 +729,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     });
   }
   function openExplorerFile(path: string) {
+    if (path.toLowerCase().endsWith('.pdf')) {
+      setRequestedPdfPreviewPath(path);
+      return;
+    }
     if (preferences.previewTabs && previewPath && previewPath !== path) {
       const previous = documents.find((document) => document.path === previewPath);
       if (previous && !dirty(previous)) closeDocument(previous.path);
@@ -1088,8 +1076,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     const labels: Array<SourceOccurrence & { file: string }> = [];
     const references: Array<SourceOccurrence & { file: string }> = [];
     const graphics: Array<SourceOccurrence & { file: string }> = [];
-    for (const [path, content] of Object.entries(analysisSources)) {
-      if (!/\.tex$/i.test(path)) continue;
+    const targetPaths = activePath
+      ? [activePath]
+      : Object.keys(analysisSources).filter((path) => /\.tex$/i.test(path));
+    for (const path of targetPaths) {
+      const content = analysisSources[path];
+      if (!content || !/\.tex$/i.test(path)) continue;
       const analysis = analyzeLatexDocument(content);
       labels.push(...analysis.labels.map((item) => ({ ...item, file: path })));
       references.push(...analysis.references.map((item) => ({ ...item, file: path })));
@@ -1130,16 +1122,33 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         });
     }
     return issues;
-  }, [analysisSources, project?.files]);
-  const problemDiagnostics = useMemo<ProblemDiagnostic[]>(
-    () => [
+  }, [activePath, analysisSources, project?.files]);
+  const problemDiagnostics = useMemo<ProblemDiagnostic[]>(() => {
+    const all = [
       ...(currentBuild?.diagnostics ?? []),
       ...lintDiagnostics,
       ...referenceDiagnostics,
       ...[...texlabProblemDiagnostics.values()].flat(),
-    ],
-    [currentBuild?.diagnostics, lintDiagnostics, referenceDiagnostics, texlabProblemDiagnostics],
-  );
+    ];
+    if (!activePath) return all;
+    return all.filter((diagnostic) => {
+      if (!diagnostic.file) return true;
+      const diagFile = diagnostic.file.replace(/^[./\\]+/, '').toLowerCase();
+      const activeNormalized = activePath.replace(/^[./\\]+/, '').toLowerCase();
+      return (
+        diagFile === activeNormalized ||
+        diagFile.endsWith(`/${activeNormalized}`) ||
+        activeNormalized.endsWith(`/${diagFile}`) ||
+        diagFile.split(/[/\\]/).pop() === activeNormalized.split(/[/\\]/).pop()
+      );
+    });
+  }, [
+    activePath,
+    currentBuild?.diagnostics,
+    lintDiagnostics,
+    referenceDiagnostics,
+    texlabProblemDiagnostics,
+  ]);
   const errorCount = problemDiagnostics.filter((d) => d.severity === 'error').length;
   const warningCount = problemDiagnostics.filter((d) => d.severity === 'warning').length;
   const issueCount = errorCount + warningCount;
@@ -1759,6 +1768,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       });
     };
     const handleToggleWrap = () => setWrap(!wrap);
+    const handleOpenPdfPreview = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (path) {
+        setPdfPreviewPath(path);
+        setPanel('preview');
+        useUI.getState().setExpandedPane(null);
+        updatePreferences({ previewVisible: true });
+      }
+    };
 
     window.addEventListener('textra:compile', handleCompile);
     window.addEventListener('textra:save-active', handleSaveActive);
@@ -1769,6 +1787,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     window.addEventListener('textra:format-document', handleFormatDoc);
     window.addEventListener('textra:clean-artifacts', handleCleanArtifacts);
     window.addEventListener('textra:toggle-wrap', handleToggleWrap);
+    window.addEventListener('textra:open-pdf-preview', handleOpenPdfPreview);
 
     return () => {
       window.removeEventListener('textra:compile', handleCompile);
@@ -1780,6 +1799,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       window.removeEventListener('textra:format-document', handleFormatDoc);
       window.removeEventListener('textra:clean-artifacts', handleCleanArtifacts);
       window.removeEventListener('textra:toggle-wrap', handleToggleWrap);
+      window.removeEventListener('textra:open-pdf-preview', handleOpenPdfPreview);
     };
   });
   const selectedSteps = availableRecipes.find((recipe) => recipe.name === engine)!.tools;
@@ -1805,23 +1825,25 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       )}
       <div className="workspace-body">
         <nav className="activity-rail" aria-label="Workspace controls">
-          <button
-            className="icon-button"
-            aria-label="Toggle sidebar"
-            title={
-              preferences.sidebarVisible
-                ? 'Collapse sidebar (Ctrl/Cmd+B)'
-                : 'Expand sidebar (Ctrl/Cmd+B)'
-            }
-            aria-pressed={preferences.sidebarVisible}
-            onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
-          >
-            {preferences.sidebarVisible ? (
-              <PanelLeftClose size={19} />
-            ) : (
-              <PanelLeftOpen size={19} />
-            )}
-          </button>
+          <div className="activity-rail-header">
+            <button
+              className="icon-button"
+              aria-label="Toggle sidebar"
+              title={
+                preferences.sidebarVisible
+                  ? 'Collapse sidebar (Ctrl/Cmd+B)'
+                  : 'Expand sidebar (Ctrl/Cmd+B)'
+              }
+              aria-pressed={preferences.sidebarVisible}
+              onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+            >
+              {preferences.sidebarVisible ? (
+                <PanelLeftClose size={19} />
+              ) : (
+                <PanelLeftOpen size={19} />
+              )}
+            </button>
+          </div>
           <button
             className="icon-button activity-view"
             aria-label="File Explorer"
@@ -1892,14 +1914,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             />
           </button>
           <button
-            className="icon-button"
-            aria-label="Command palette"
-            title="Search commands (Ctrl/Cmd+K)"
-            onClick={() => useUI.getState().setPaletteOpen(true)}
-          >
-            <Search size={18} />
-          </button>
-          <button
             className="icon-button activity-view"
             aria-label="AI Chat"
             title="AI Chat"
@@ -1913,7 +1927,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             />
           </button>
           <button
-            className="icon-button activity-view rail-bottom"
+            className="icon-button rail-bottom"
+            aria-label="Command palette"
+            title="Search commands (Ctrl/Cmd+K)"
+            onClick={() => useUI.getState().setPaletteOpen(true)}
+          >
+            <Search size={18} />
+          </button>
+          <button
+            className="icon-button activity-view"
             aria-label="Recent Projects"
             title="Recent Projects"
             aria-pressed={preferences.sidebarVisible && sidebarView === 'recents'}
@@ -2002,12 +2024,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   })),
                 }}
                 activeLine={source?.path === active?.path ? (source?.line ?? null) : null}
-                focusMode={focusMode}
                 onJumpToLine={(line) => {
                   if (active)
                     void openDocument(active.path, { path: active.path, line, column: 1 });
                 }}
-                onToggleFocusMode={() => setFocusMode((value) => !value)}
                 onFormatDocument={() => void run(formatActive)}
                 formatAvailable={tools.some((tool) => tool.name === 'latexindent' && !!tool.path)}
               />
@@ -2162,22 +2182,27 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   </div>
                 </div>
                 {project && (
-                  <CompileRecipeEditor
-                    activePath={activePath}
-                    config={projectConfig}
-                    disabled={!canCompile || busy || build.running}
-                    projectId={project.id}
-                    recipeName={engine}
-                    onSelectRecipe={(recipe) => void selectRecipe(recipe)}
-                    onSaved={(config, savedRecipeName) => {
-                      useWorkspace.setState((state) => ({
-                        projectConfig: config,
-                        recipes: activePath
-                          ? { ...state.recipes, [activePath]: savedRecipeName }
-                          : state.recipes,
-                      }));
-                    }}
-                  />
+                  <div
+                    className="build-recipe-editor-wrap"
+                    style={{ padding: '0 12px', flex: 1, overflowY: 'auto' }}
+                  >
+                    <CompileRecipeEditor
+                      activePath={activePath}
+                      config={projectConfig}
+                      disabled={!canCompile || busy || build.running}
+                      projectId={project.id}
+                      recipeName={engine}
+                      onSelectRecipe={(recipe) => void selectRecipe(recipe)}
+                      onSaved={(config, savedRecipeName) => {
+                        useWorkspace.setState((state) => ({
+                          projectConfig: config,
+                          recipes: activePath
+                            ? { ...state.recipes, [activePath]: savedRecipeName }
+                            : state.recipes,
+                        }));
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             ) : (
@@ -2193,6 +2218,54 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   >
                     <FolderOpen size={15} />
                   </button>
+                  {project && (
+                    <div className="inline-actions">
+                      <button
+                        className="icon-button small"
+                        aria-label="Reveal folder in explorer"
+                        title="Reveal folder in explorer"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            unwrap(
+                              await window.textra.revealEntry({ projectId: project.id, path: '' }),
+                            );
+                          })
+                        }
+                      >
+                        <ArrowSquareOut size={15} />
+                      </button>
+                      <button
+                        className="icon-button small"
+                        aria-label="Open folder in VS Code"
+                        title="Open folder in VS Code"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            unwrap(
+                              await window.textra.openInCode({ projectId: project.id, path: '' }),
+                            );
+                          })
+                        }
+                      >
+                        <Code size={15} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {project && (
+                  <label className="file-filter">
+                    <span className="sr-only">Filter project files</span>
+                    <input
+                      aria-label="Filter project files"
+                      placeholder="Filter files"
+                      value={fileFilter}
+                      onChange={(event) => setFileFilter(event.target.value)}
+                    />
+                  </label>
+                )}
+                <div className="project-heading" title={project?.rootPath}>
+                  <span>{project?.name ?? 'No project open'}</span>
                   {project && (
                     <div className="inline-actions">
                       <button
@@ -2213,41 +2286,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       >
                         <FolderPlus size={15} />
                       </button>
-                      <button
-                        className="icon-button small"
-                        aria-label="Reveal active file in explorer"
-                        title="Reveal active file in explorer"
-                        disabled={!activePath}
-                        onClick={revealActive}
-                      >
-                        <LocateFixed size={14} />
-                      </button>
-                      <button
-                        className="icon-button small"
-                        aria-label="Refresh project"
-                        title="Refresh project"
-                        disabled={busy}
-                        onClick={() => void run(refresh)}
-                      >
-                        <RefreshCw size={14} />
-                      </button>
                     </div>
                   )}
                 </div>
-                <div className="project-heading" title={project?.rootPath}>
-                  <span>{project?.name ?? 'No project open'}</span>
-                </div>
                 {project ? (
                   <>
-                    <label className="file-filter">
-                      <span className="sr-only">Filter project files</span>
-                      <input
-                        aria-label="Filter project files"
-                        placeholder="Filter files"
-                        value={fileFilter}
-                        onChange={(event) => setFileFilter(event.target.value)}
-                      />
-                    </label>
                     <div className="file-tree" aria-label="Project files">
                       {creating?.parent === '' && (
                         <NewEntryRow
@@ -2453,11 +2496,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           }}
                         >
                           <FileText size={13} />
-                          <span>
-                            {savedTabPath === document.path
-                              ? 'Saved'
-                              : document.path.split('/').at(-1)}
-                          </span>
+                          <span>{document.path.split('/').at(-1)}</span>
                           {dirty(document) && (
                             <span className="dirty-dot" aria-label="Unsaved changes" />
                           )}
@@ -3570,7 +3609,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       >
         <Dialog.Portal>
           <Dialog.Overlay className="dialog-overlay" />
-          <Dialog.Content className="dialog-content" aria-describedby="pdf-preview-description">
+          <Dialog.Content className="action-dialog" aria-describedby="pdf-preview-description">
             <Dialog.Title>Open PDF in Preview?</Dialog.Title>
             <Dialog.Description id="pdf-preview-description">
               Open <code>{requestedPdfPreviewPath}</code> read-only in TeXtra's Preview pane. This
@@ -3585,6 +3624,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   setPdfPreviewPath(requestedPdfPreviewPath);
                   setRequestedPdfPreviewPath(null);
                   setPanel('preview');
+                  useUI.getState().setExpandedPane(null);
                   updatePreferences({ previewVisible: true });
                 }}
               >

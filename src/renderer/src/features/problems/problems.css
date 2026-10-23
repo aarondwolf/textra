@@ -12,7 +12,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 14px;
+  min-height: 29px;
+  padding: 2px 8px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--preview) 94%, transparent);
 }

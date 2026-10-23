@@ -446,11 +446,37 @@ interface EditorFormatRequest {
   level?: 1 | 2 | 3 | 4 | 5;
 }
 
-function EditorFormattingToolbar({ disabled }: { disabled: boolean }) {
+function EditorFormattingToolbar({
+  disabled,
+  activePath,
+}: {
+  disabled: boolean;
+  activePath: string;
+}) {
   const updatePreferences = useUI((state) => state.updatePreferences);
+  const setPanel = useUI((state) => state.setPanel);
+  const { build, project } = useWorkspace();
+  const pdfMatch = activePath.replace(/\.tex$/i, '.pdf').toLowerCase();
+  const projectPdf = project?.files.find((f) => f.path.toLowerCase() === pdfMatch)?.path;
+  const targetPdf = build.pdfPath || projectPdf;
+  const hasPdf = Boolean(targetPdf);
+
+  const handleOpenPdf = () => {
+    if (!targetPdf) return;
+    setPanel('preview');
+    updatePreferences({ previewVisible: true });
+    window.dispatchEvent(
+      new CustomEvent('textra:open-pdf-preview', {
+        detail: { path: targetPdf },
+      }),
+    );
+  };
+
   return (
     <FormattingToolbar
       disabled={disabled}
+      hasPdf={hasPdf}
+      onOpenPdf={handleOpenPdf}
       onHide={() => updatePreferences({ formatToolbarVisible: false })}
     />
   );
@@ -1302,6 +1328,7 @@ export function SourceEditor({
       editor.current?.setPosition({ lineNumber: navigation.line, column: navigation.column });
       editor.current?.revealLineInCenter(navigation.line);
       editor.current?.focus();
+      useWorkspace.setState({ navigation: null });
     }
   }, [navigation, activePath]);
 
@@ -1329,7 +1356,10 @@ export function SourceEditor({
   return (
     <div className="source-editor-shell">
       {formatToolbarVisible && (
-        <EditorFormattingToolbar disabled={readOnly || !isTexPath(activePath)} />
+        <EditorFormattingToolbar
+          disabled={readOnly || !isTexPath(activePath)}
+          activePath={activePath}
+        />
       )}
       <div ref={container} className="source-editor" data-testid="source-editor" />
       <div className="editor-status-bar" role="status" aria-label="Editor status">

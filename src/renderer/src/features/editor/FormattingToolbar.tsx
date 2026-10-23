@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import {
   CaretDown,
   EyeSlash,
+  FilePdf,
   ImageSquare,
   ListBullets,
   ListNumbers,
@@ -23,9 +24,13 @@ function dispatch(request: FormatRequest): void {
 
 export default function FormattingToolbar({
   disabled,
+  hasPdf = false,
+  onOpenPdf,
   onHide,
 }: {
   disabled: boolean;
+  hasPdf?: boolean;
+  onOpenPdf?: () => void;
   onHide: () => void;
 }) {
   const [headingMenuOpen, setHeadingMenuOpen] = useState(false);
@@ -149,6 +154,17 @@ export default function FormattingToolbar({
         )}
       </div>
       <span className="editor-format-spacer" />
+      <button
+        type="button"
+        className="editor-format-pdf"
+        aria-label="View PDF in preview"
+        title={hasPdf ? 'View compiled PDF in Preview' : 'No compiled PDF found'}
+        disabled={disabled || !hasPdf}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onOpenPdf}
+      >
+        <FilePdf size={15} />
+      </button>
       <button
         type="button"
         className="editor-format-hide"

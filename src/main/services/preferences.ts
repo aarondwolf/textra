@@ -121,10 +121,14 @@ function validateThemeCustomizations(value: unknown): Preferences['themeCustomiz
     throw new Error('Unsupported or invalid preferences.');
   const candidate = value as Record<string, unknown>;
   if (
-    Object.keys(candidate).length !== 3 ||
     !['accent', 'accentStrong', 'accentBackground'].every((key) => Object.hasOwn(candidate, key)) ||
-    !Object.values(candidate).every(
-      (color) => typeof color === 'string' && colorPattern.test(color),
+    !Object.entries(candidate).every(
+      ([k, color]) =>
+        ['accent', 'accentStrong', 'accentBackground', 'background', 'surface', 'text'].includes(
+          k,
+        ) &&
+        typeof color === 'string' &&
+        colorPattern.test(color),
     )
   )
     throw new Error('Unsupported or invalid preferences.');
@@ -132,6 +136,15 @@ function validateThemeCustomizations(value: unknown): Preferences['themeCustomiz
     accent: candidate.accent as string,
     accentStrong: candidate.accentStrong as string,
     accentBackground: candidate.accentBackground as string,
+    ...(typeof candidate.background === 'string' && colorPattern.test(candidate.background)
+      ? { background: candidate.background }
+      : {}),
+    ...(typeof candidate.surface === 'string' && colorPattern.test(candidate.surface)
+      ? { surface: candidate.surface }
+      : {}),
+    ...(typeof candidate.text === 'string' && colorPattern.test(candidate.text)
+      ? { text: candidate.text }
+      : {}),
   };
 }
 

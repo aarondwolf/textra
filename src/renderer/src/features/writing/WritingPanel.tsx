@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 import {
-  Check,
   ChevronDown,
   ChevronRight,
-  LocateFixed,
+  ListChecks,
+  NotePencil,
   Scroll,
   TextIndent,
   WarningCircle,
@@ -43,9 +43,7 @@ export interface WritingPanelProps {
   summary: WritingSummary;
   /** The active source line, used to highlight the containing outline heading. */
   activeLine: number | null;
-  focusMode: boolean;
   onJumpToLine: (line: number) => void;
-  onToggleFocusMode: () => void;
   /** Opens a safe latexindent preview; the workspace owns formatting and applying changes. */
   onFormatDocument?: () => void;
   formatAvailable?: boolean;
@@ -68,9 +66,7 @@ function activeOutlineId(outline: WritingOutlineItem[], line: number | null): st
 export function WritingPanel({
   summary,
   activeLine,
-  focusMode,
   onJumpToLine,
-  onToggleFocusMode,
   onFormatDocument,
   formatAvailable = false,
 }: WritingPanelProps) {
@@ -131,16 +127,6 @@ export function WritingPanel({
           >
             <TextIndent size={14} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            className={'icon-button small writing-header-button' + (focusMode ? ' active' : '')}
-            aria-label={focusMode ? 'Leave focus mode' : 'Enter focus mode'}
-            title={focusMode ? 'Leave focus mode' : 'Enter focus mode'}
-            aria-pressed={focusMode}
-            onClick={onToggleFocusMode}
-          >
-            <LocateFixed size={14} aria-hidden="true" />
-          </button>
         </div>
       </div>
 
@@ -150,7 +136,9 @@ export function WritingPanel({
           className={`writing-section writing-outline-section ${outlineOpen ? 'expanded' : 'collapsed'}`}
           aria-labelledby="writing-outline-heading"
           style={{
-            flex: outlineOpen ? (notesOpen ? '1 1 auto' : '1 0 100%') : '0 0 auto',
+            flex: outlineOpen ? '1 1 0' : '0 0 32px',
+            height: outlineOpen ? undefined : '32px',
+            minHeight: outlineOpen ? '60px' : '32px',
           }}
         >
           <button
@@ -213,8 +201,9 @@ export function WritingPanel({
           className={`writing-section writing-todos-section ${notesOpen ? 'expanded' : 'collapsed'}`}
           aria-labelledby="writing-todos-heading"
           style={{
-            height: notesOpen ? (outlineOpen ? `${notesHeight}px` : '100%') : 'auto',
-            flex: notesOpen ? (outlineOpen ? `0 0 ${notesHeight}px` : '1 0 100%') : '0 0 auto',
+            height: notesOpen ? (outlineOpen ? `${notesHeight}px` : undefined) : '32px',
+            flex: notesOpen ? (outlineOpen ? `0 0 ${notesHeight}px` : '1 1 0') : '0 0 32px',
+            minHeight: notesOpen ? '60px' : '32px',
           }}
         >
           <button
@@ -225,7 +214,7 @@ export function WritingPanel({
           >
             {notesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             <span id="writing-todos-heading" className="writing-section-title-text">
-              <Check size={13} aria-hidden="true" />
+              <NotePencil size={13} aria-hidden="true" />
               Notes
             </span>
             <span className="writing-count">{summary.todos.length}</span>
@@ -245,6 +234,7 @@ export function WritingPanel({
                         title={`Go to ${item.kind} on line ${item.line}`}
                         onClick={() => onJumpToLine(item.line)}
                       >
+                        {item.kind === 'TODO' && <ListChecks size={13} aria-hidden="true" />}
                         {item.kind === 'FIXME' && <WarningCircle size={13} aria-hidden="true" />}
                         <span className={'writing-tag ' + item.kind.toLowerCase()}>
                           {item.kind}

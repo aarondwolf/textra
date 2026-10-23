@@ -31,24 +31,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--raised);
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .writing-header-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: var(--hover);
-  color: var(--accent-strong);
-}
-
-.writing-header-button.active {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-  color: var(--accent-strong);
+  color: var(--text);
 }
 
 .writing-header-button:disabled {

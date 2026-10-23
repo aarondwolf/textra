@@ -226,19 +226,13 @@ function Block({ block, copyCode }: { block: MarkdownBlock; copyCode: boolean })
 }
 
 /** A dependency-free, read-only Markdown preview intended for project documentation. */
-export function MarkdownPreview({
-  source,
-  path,
-  className,
-  copyCode = false,
-}: MarkdownPreviewProps) {
+export function MarkdownPreview({ source, className, copyCode = false }: MarkdownPreviewProps) {
   const blocks = parseMarkdownBlocks(source);
   return (
     <section
       className={`markdown-preview${className ? ` ${className}` : ''}`}
       aria-label="Markdown preview"
     >
-      {path && <div className="markdown-preview-path">Previewing {path}</div>}
       <div className="markdown-preview-body">
         {blocks.length ? (
           blocks.map((block, index) => (

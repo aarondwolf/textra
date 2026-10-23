@@ -1,6 +1,22 @@
 # Current state
 
+2026-10-22 UI/UX refinement & visual hierarchy polish:
+
+- File tab save animation: tab titles remain steady while a subtle accent border flare animates on save alongside unsaved dot clearing. Removed distracting "Saved" text swap and heavy box-shadows.
+- Editor word selection: fixed Monaco Ctrl+Shift+Left/Back selection behavior by immediately clearing navigation intent state on jump triggers, allowing uninterrupted multi-word selections.
+- Navigation rail & layout: standardized sidebar collapse row to 40px centered without a bottom border; relocated the Search tab to the bottom rail section directly above Recent Projects.
+- Appearance & Theme Colors: theme color pickers (Accent, Strong Accent, Accent Background, Background, Surface, Text) are now compact, borderless filled color swatches that automatically sync with built-in theme presets and custom theme definitions. Expanded Settings dialog to 940px width and nav to 195px to prevent line wrapping.
+- Files Tab: redesigned top section into three distinct rows: (1) title, Open Folder button, and right-aligned Reveal in Explorer / Open in VS Code icon buttons, (2) file search input, (3) transparent root directory path with New File / New Folder actions. Removed dead "Refresh project" button and wiring.
+- Writing Tab: removed pill containers around collapsible Outline and Notes sections; fixed section collapsing layout bug so neither section is clipped when both are collapsed; updated Notes icon to notepad & pen (`NotePencil`) and added `ListChecks` for `% TODO` items; removed circular borders on header action buttons; removed dead focus mode stub.
+- Build Tab & Compilation: fixed Compile button and Problems button flex overlap in header; wrapped Recipe Editor with proper horizontal padding; populated "Default recipe for new documents" with all available presets and project-specific custom recipes.
+- Snippets Tab: moved "+" action inside the Templates & Snippets card as a faded full-width "+ Add snippet" button at the bottom.
+- Assistant Tab: simplified empty state prompt to a single concise line; configured composer textarea to auto-grow up to 180px with input lines; added dismissible provider notice that stays hidden until the active model is switched.
+- Formatting & Editor toolbar: added direct output PDF button next to Hide in formatting toolbar, enabled when a compiled PDF exists; matched Problems toolbar height to the formatting toolbar for visual symmetry.
+- Markdown Preview: removed the "Previewing <filename>.md" top bar for clean, unobstructed rendering.
+- Verification: 556/556 vitest unit and integration tests pass, typecheck passes with 0 errors, ESLint passes with 0 errors and 0 warnings, Prettier format check passes.
+
 2026-10-22 Settings integration & dialog consolidation:
+
 - AI Settings: eliminated duplicate `AISettingsDialog` modal dialog and DOM portal container injection hack. Converted AI settings into an integrated inline panel (`AISettingsDialog` / `AISettingsPanel`) embedded directly in `SetupDialog` under the `ai` section. Header gear icon, unconfigured card action, and provider warning triggers in `ChatPanel` directly open `SetupDialog` at `section: 'ai'`.
 - Recipe Management: embedded `CompileRecipeEditor` directly inside `SetupDialog`'s Compilation tab (`section: 'compilation'`). The "Manage recipes…" compile dropdown button and Command Palette item now route to Settings -> Compilation instead of opening an external standalone recipe dialog.
 - Open Settings Routing: `textra:open-settings` custom events and Command Palette entries ("AI settings", "Manage compile recipes", "Configure keyboard shortcuts") now reliably navigate to specific sections (`ai`, `compilation`, `shortcuts`, `appearance`, etc.).

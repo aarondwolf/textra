@@ -432,6 +432,9 @@ export function App() {
       if (value === defaultValue && !activeCustom?.accent) root.style.removeProperty(name);
       else root.style.setProperty(name, value);
     }
+    if (custom.background) root.style.setProperty('--bg', custom.background);
+    if (custom.surface) root.style.setProperty('--surface', custom.surface);
+    if (custom.text) root.style.setProperty('--text', custom.text);
 
     const uiFont = preferences.uiFont || activeCustom?.uiFont;
     if (uiFont) {

@@ -115,6 +115,9 @@ export interface ThemeCustomizations {
   accent: string;
   accentStrong: string;
   accentBackground: string;
+  background?: string;
+  surface?: string;
+  text?: string;
 }
 export const CONFIGURABLE_TOOLS = [
   'pdflatex',

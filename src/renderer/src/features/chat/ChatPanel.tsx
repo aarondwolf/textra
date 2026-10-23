@@ -33,6 +33,7 @@ import {
   Settings,
   Square,
   Trash2,
+  X,
 } from '../../icons';
 import {
   AssistantRequestError,
@@ -262,11 +263,30 @@ export function ChatPanel({
     window.dispatchEvent(new CustomEvent('textra:open-settings', { detail: { section: 'ai' } }));
   const [partialResponse, setPartialResponse] = useState('');
   const [lastAccess, setLastAccess] = useState<AIDocumentAccess | null>(null);
+  const [privacyDismissed, setPrivacyDismissed] = useState(false);
+  const lastModelKey = useRef<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     model,
     available: modelAvailable,
     selectModel: setModel,
   } = useAIRoleSelection(resetKey, 'assistant', settings);
+
+  const currentModelKey = model ? `${model.provider}:${model.model}` : null;
+  useEffect(() => {
+    if (lastModelKey.current && lastModelKey.current !== currentModelKey) {
+      setPrivacyDismissed(false);
+    }
+    lastModelKey.current = currentModelKey;
+  }, [currentModelKey]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const nextHeight = Math.min(el.scrollHeight, 180);
+    el.style.height = `${Math.max(nextHeight, 44)}px`;
+  }, [input]);
 
   const assistantModels = useMemo<AIModelRef[]>(() => {
     return modelGroups(settings, undefined, 'assistant').flatMap((group) =>
@@ -964,11 +984,23 @@ export function ChatPanel({
         </div>
       ) : hasConnections ? (
         <>
-          {messages.length === 0 && (
-            <p className="ai-chat-privacy">
-              Messages go to {destination}. Chat sends only your conversation. Agent includes the
-              active .tex file when you press Send, and proposed edits always wait for your review.
-            </p>
+          {messages.length === 0 && !privacyDismissed && (
+            <div className="ai-chat-privacy">
+              <p>
+                Messages go to {destination}. Chat sends only your conversation. Agent includes the
+                active .tex file when you press Send, and proposed edits always wait for your
+                review.
+              </p>
+              <button
+                type="button"
+                className="ai-chat-privacy-dismiss"
+                aria-label="Dismiss notice"
+                title="Dismiss notice"
+                onClick={() => setPrivacyDismissed(true)}
+              >
+                <X size={12} />
+              </button>
+            </div>
           )}
           <div
             ref={history}
@@ -985,11 +1017,7 @@ export function ChatPanel({
           >
             {messages.length === 0 && (
               <div className="ai-chat-empty">
-                <strong>Let’s untangle that LaTeX.</strong>
-                <p>
-                  Ask a question, choose Ask in Chat from Problems, or describe a change to the open
-                  file. Proposed changes open for review before anything is applied.
-                </p>
+                <p>Ask a question or describe a change to the open file.</p>
               </div>
             )}
             {messages.map((message, index) => (
@@ -1138,6 +1166,7 @@ export function ChatPanel({
             }}
           >
             <textarea
+              ref={textareaRef}
               id="ai-chat-message"
               aria-label="Message the assistant"
               aria-describedby={mode === 'agent' ? 'ai-chat-context' : undefined}

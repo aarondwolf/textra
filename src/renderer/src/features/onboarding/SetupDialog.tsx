@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   AIChat,
@@ -30,6 +30,7 @@ import { TexLabSettings } from './TexLabSettings';
 import { AISettingsDialog } from '../chat/AISettingsDialog';
 import { CompileRecipeEditor } from '../compile/CompileRecipeEditor';
 import { SaveFooter } from '../save-status/SaveFooter';
+import { validateRecipeSettings } from '../../../../shared/recipes';
 import './setup.css';
 
 export type SectionId =
@@ -71,6 +72,75 @@ function parseChktexSeverities(value: string): Record<string, DiagnosticSeverity
   return result;
 }
 
+export const THEME_DEFAULTS: Record<
+  string,
+  {
+    accent: string;
+    accentStrong: string;
+    accentBackground: string;
+    background: string;
+    surface: string;
+    text: string;
+  }
+> = {
+  dark: {
+    accent: '#9bc9bb',
+    accentStrong: '#b0ddcf',
+    accentBackground: '#293e37',
+    background: '#1c1e20',
+    surface: '#222426',
+    text: '#e4e5e2',
+  },
+  light: {
+    accent: '#326958',
+    accentStrong: '#245442',
+    accentBackground: '#e1eee6',
+    background: '#faf9f6',
+    surface: '#f4f3ef',
+    text: '#292f2c',
+  },
+  midnight: {
+    accent: '#b2c8ff',
+    accentStrong: '#d2ddff',
+    accentBackground: '#29385e',
+    background: '#141725',
+    surface: '#1b2032',
+    text: '#e8ebf5',
+  },
+  forest: {
+    accent: '#a8d7a9',
+    accentStrong: '#c8ecc9',
+    accentBackground: '#2d4833',
+    background: '#18221e',
+    surface: '#202d26',
+    text: '#e3ece4',
+  },
+  ocean: {
+    accent: '#8ed3db',
+    accentStrong: '#b9edf1',
+    accentBackground: '#28505a',
+    background: '#142329',
+    surface: '#1b3038',
+    text: '#e1eff1',
+  },
+  rose: {
+    accent: '#efacc8',
+    accentStrong: '#ffd0e1',
+    accentBackground: '#60384f',
+    background: '#261a23',
+    surface: '#33212e',
+    text: '#f1e4eb',
+  },
+  sand: {
+    accent: '#9a6443',
+    accentStrong: '#76482f',
+    accentBackground: '#f0dcca',
+    background: '#f5f0e4',
+    surface: '#ede5d4',
+    text: '#3b342a',
+  },
+};
+
 export default function SetupDialog({
   open,
   onOpenChange,
@@ -102,8 +172,27 @@ export default function SetupDialog({
   const [newThemeSurface, setNewThemeSurface] = useState('#222426');
   const [newThemeText, setNewThemeText] = useState('#e4e5e2');
   const [newThemeAccent, setNewThemeAccent] = useState('#9bc9bb');
+  const [newThemeAccentStrong, setNewThemeAccentStrong] = useState('#b0ddcf');
+  const [newThemeAccentBg, setNewThemeAccentBg] = useState('#293e37');
   const [newShortcutLabel, setNewShortcutLabel] = useState('');
   const [newShortcutKeys, setNewShortcutKeys] = useState('');
+  const projectConfig = useWorkspace((state) => state.projectConfig);
+  const allAvailableRecipes = useMemo(() => {
+    const list: Array<{ value: string; label: string }> = [...BUILD_RECIPES];
+    if (projectConfig) {
+      try {
+        const validated = validateRecipeSettings(projectConfig);
+        for (const recipe of validated['latex-workshop.latex.recipes']) {
+          if (!list.some((item) => item.value === recipe.name)) {
+            list.push({ value: recipe.name, label: recipe.name });
+          }
+        }
+      } catch {
+        /* ignore invalid project recipe config */
+      }
+    }
+    return list;
+  }, [projectConfig]);
   useEffect(() => {
     if (open) {
       void window.textra.getAppInfo().then((result) => {
@@ -208,9 +297,21 @@ export default function SetupDialog({
                     <select
                       aria-label="Theme"
                       value={preferences.theme}
-                      onChange={(event) =>
-                        updatePreferences({ theme: event.target.value as Theme })
-                      }
+                      onChange={(event) => {
+                        const newTheme = event.target.value as Theme;
+                        const def = THEME_DEFAULTS[newTheme] ?? THEME_DEFAULTS.dark;
+                        updatePreferences({
+                          theme: newTheme,
+                          themeCustomizations: {
+                            accent: def.accent,
+                            accentStrong: def.accentStrong,
+                            accentBackground: def.accentBackground,
+                            background: def.background,
+                            surface: def.surface,
+                            text: def.text,
+                          },
+                        });
+                      }}
                     >
                       <option value="dark">Dark (default)</option>
                       <option value="light">Light</option>
@@ -275,36 +376,62 @@ export default function SetupDialog({
                     </label>
                   </div>
 
-                  <h3>Accent colors</h3>
+                  <h3>Theme colors</h3>
                   <p className="setup-hint">
-                    Personalize the accent used by the selected color scheme. Your choices stay
+                    Personalize the colors used by the selected color scheme. Your choices stay
                     local and are included in exported settings.
                   </p>
-                  <div className="setup-actions">
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                      gap: '8px 12px',
+                      marginTop: '6px',
+                    }}
+                  >
                     {(
                       [
                         ['accent', 'Accent'],
                         ['accentStrong', 'Strong accent'],
                         ['accentBackground', 'Accent background'],
+                        ['background', 'Background'],
+                        ['surface', 'Surface'],
+                        ['text', 'Text'],
                       ] as const
-                    ).map(([key, label]) => (
-                      <label className="field-label" key={key}>
-                        {label}
-                        <input
-                          aria-label={label}
-                          type="color"
-                          value={preferences.themeCustomizations[key]}
-                          onChange={(event) =>
-                            updatePreferences({
-                              themeCustomizations: {
-                                ...preferences.themeCustomizations,
-                                [key]: event.target.value,
-                              },
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
+                    ).map(([key, label]) => {
+                      const curVal =
+                        preferences.themeCustomizations[key] ??
+                        (THEME_DEFAULTS[preferences.theme] ?? THEME_DEFAULTS.dark)[key];
+                      return (
+                        <label
+                          key={key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '11px',
+                            color: 'var(--muted)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            aria-label={label}
+                            type="color"
+                            className="theme-color-input"
+                            value={curVal}
+                            onChange={(event) =>
+                              updatePreferences({
+                                themeCustomizations: {
+                                  ...preferences.themeCustomizations,
+                                  [key]: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                          <span>{label}</span>
+                        </label>
+                      );
+                    })}
                   </div>
 
                   <details
@@ -341,18 +468,18 @@ export default function SetupDialog({
                         <select
                           aria-label="New theme base"
                           value={newThemeBase}
-                          onChange={(e) =>
-                            setNewThemeBase(
-                              e.target.value as
-                                | 'dark'
-                                | 'light'
-                                | 'midnight'
-                                | 'forest'
-                                | 'ocean'
-                                | 'rose'
-                                | 'sand',
-                            )
-                          }
+                          onChange={(e) => {
+                            const base = e.target.value as
+                              'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand';
+                            const def = THEME_DEFAULTS[base] ?? THEME_DEFAULTS.dark;
+                            setNewThemeBase(base);
+                            setNewThemeBg(def.background);
+                            setNewThemeSurface(def.surface);
+                            setNewThemeText(def.text);
+                            setNewThemeAccent(def.accent);
+                            setNewThemeAccentStrong(def.accentStrong);
+                            setNewThemeAccentBg(def.accentBackground);
+                          }}
                         >
                           <option value="dark">Dark</option>
                           <option value="light">Light</option>
@@ -366,41 +493,87 @@ export default function SetupDialog({
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
                           gap: '8px',
                         }}
                       >
-                        <label className="field-label">
-                          Background
+                        <label
+                          className="field-label"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
                           <input
                             type="color"
+                            className="theme-color-input"
+                            aria-label="New theme background"
                             value={newThemeBg}
                             onChange={(e) => setNewThemeBg(e.target.value)}
                           />
+                          <span>Background</span>
                         </label>
-                        <label className="field-label">
-                          Surface
+                        <label
+                          className="field-label"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
                           <input
                             type="color"
+                            className="theme-color-input"
+                            aria-label="New theme surface"
                             value={newThemeSurface}
                             onChange={(e) => setNewThemeSurface(e.target.value)}
                           />
+                          <span>Surface</span>
                         </label>
-                        <label className="field-label">
-                          Text
+                        <label
+                          className="field-label"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
                           <input
                             type="color"
+                            className="theme-color-input"
+                            aria-label="New theme text"
                             value={newThemeText}
                             onChange={(e) => setNewThemeText(e.target.value)}
                           />
+                          <span>Text</span>
                         </label>
-                        <label className="field-label">
-                          Accent
+                        <label
+                          className="field-label"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
                           <input
                             type="color"
+                            className="theme-color-input"
+                            aria-label="New theme accent"
                             value={newThemeAccent}
                             onChange={(e) => setNewThemeAccent(e.target.value)}
                           />
+                          <span>Accent</span>
+                        </label>
+                        <label
+                          className="field-label"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                          <input
+                            type="color"
+                            className="theme-color-input"
+                            aria-label="New theme strong accent"
+                            value={newThemeAccentStrong}
+                            onChange={(e) => setNewThemeAccentStrong(e.target.value)}
+                          />
+                          <span>Strong accent</span>
+                        </label>
+                        <label
+                          className="field-label"
+                          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                          <input
+                            type="color"
+                            className="theme-color-input"
+                            aria-label="New theme accent background"
+                            value={newThemeAccentBg}
+                            onChange={(e) => setNewThemeAccentBg(e.target.value)}
+                          />
+                          <span>Accent bg</span>
                         </label>
                       </div>
                       <button
@@ -418,6 +591,8 @@ export default function SetupDialog({
                             surface: newThemeSurface,
                             text: newThemeText,
                             accent: newThemeAccent,
+                            accentStrong: newThemeAccentStrong,
+                            accentBackground: newThemeAccentBg,
                             uiFont: preferences.uiFont,
                             editorFont: preferences.editorFont,
                           };
@@ -655,6 +830,12 @@ export default function SetupDialog({
                     <button
                       type="button"
                       className="text-button"
+                      style={{
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
                       onClick={() =>
                         updatePreferences({
                           keyboardShortcuts: {},
@@ -1134,7 +1315,7 @@ export default function SetupDialog({
                         updatePreferences({ defaultRecipe: event.target.value as BuildEngine })
                       }
                     >
-                      {BUILD_RECIPES.map((recipe) => (
+                      {allAvailableRecipes.map((recipe) => (
                         <option key={recipe.value} value={recipe.value}>
                           {recipe.label}
                         </option>

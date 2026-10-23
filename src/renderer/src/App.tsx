@@ -19,6 +19,7 @@ import {
   Scroll,
   Search,
   Settings,
+  TextraLogo,
   Trash2,
 } from './icons';
 import { DEFAULT_PREFERENCES, type Theme } from '../../shared/api';
@@ -542,6 +543,8 @@ export function App() {
   useEffect(() => {
     const handleKey = (event: globalThis.KeyboardEvent) => {
       if (event.defaultPrevented || !hydrated) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-shortcut-recorder]')) return;
 
       const activeShortcuts = useUI.getState().preferences.keyboardShortcuts ?? {};
 
@@ -579,6 +582,12 @@ export function App() {
   }, [hydrated]);
   return (
     <div className="app-shell">
+      <header className="window-titlebar" aria-label="Application title bar">
+        <div className="window-titlebar-brand">
+          <TextraLogo size={18} />
+          <span>TeXtra</span>
+        </div>
+      </header>
       {error && (
         <div className="error-banner" role="alert">
           {error}

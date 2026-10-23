@@ -104,6 +104,39 @@
   border-radius: var(--radius-pill);
   cursor: pointer;
 }
+.setup-dialog .editor-format-heading-trigger:not(.icon-button) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+}
+.setup-dialog .editor-format-heading-trigger:not(.icon-button):hover:not(:disabled),
+.setup-dialog .editor-format-heading-trigger:not(.icon-button):focus-visible {
+  background: var(--hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+.setup-dialog .editor-format-heading-menu button:not(.icon-button) {
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+}
+.setup-dialog .editor-format-heading-menu button:not(.icon-button):hover,
+.setup-dialog .editor-format-heading-menu button:not(.icon-button):focus-visible {
+  background: var(--hover);
+}
 .setup-dialog button:disabled {
   opacity: 0.45;
   cursor: default;
@@ -371,4 +404,75 @@
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 11px;
   text-align: right;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.shortcut-row-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.setup-dialog .shortcut-capture-box:not(.icon-button) {
+  width: 180px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text);
+  font:
+    11px 'Cascadia Code',
+    Consolas,
+    monospace;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.setup-dialog .shortcut-capture-box:not(.icon-button):hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.setup-dialog .shortcut-capture-box.is-recording:not(.icon-button),
+.setup-dialog .shortcut-capture-box:not(.icon-button):focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.shortcut-add-card {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shortcut-add-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shortcut-add-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }

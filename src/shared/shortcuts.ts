@@ -236,3 +236,93 @@ export function matchesShortcut(event: ShortcutKeyboardEvent, shortcutPattern: s
       (eventCode === `key${keyToken}` || eventCode === `digit${keyToken}`))
   );
 }
+
+/**
+ * Formats a keyboard event into a normalized TeXtra shortcut pattern string
+ * (e.g. "Ctrl/Cmd + Shift + F", "Alt + Z", "Escape").
+ * Returns null if the pressed key is only a modifier key.
+ */
+export function formatShortcutFromEvent(event: ShortcutKeyboardEvent): string | null {
+  const rawKey = event.key;
+  if (!rawKey) return null;
+
+  const lowerKey = rawKey.toLowerCase();
+  if (
+    lowerKey === 'control' ||
+    lowerKey === 'shift' ||
+    lowerKey === 'alt' ||
+    lowerKey === 'meta' ||
+    lowerKey === 'os' ||
+    lowerKey === 'capslock'
+  ) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (event.ctrlKey || event.metaKey) {
+    parts.push('Ctrl/Cmd');
+  }
+  if (event.altKey) {
+    parts.push('Alt');
+  }
+  if (event.shiftKey) {
+    parts.push('Shift');
+  }
+
+  let keyName: string;
+  const code = event.code ?? '';
+  if (/^Key([A-Z])$/.test(code)) {
+    keyName = code.slice(3).toUpperCase();
+  } else if (/^Digit([0-9])$/.test(code)) {
+    keyName = code.slice(5);
+  } else if (lowerKey === ' ' || code === 'Space') {
+    keyName = 'Space';
+  } else if (lowerKey === 'enter' || lowerKey === 'return') {
+    keyName = 'Enter';
+  } else if (lowerKey === 'escape' || lowerKey === 'esc') {
+    keyName = 'Escape';
+  } else if (lowerKey === 'backspace') {
+    keyName = 'Backspace';
+  } else if (lowerKey === 'delete' || lowerKey === 'del') {
+    keyName = 'Delete';
+  } else if (lowerKey === 'tab') {
+    keyName = 'Tab';
+  } else if (lowerKey === 'arrowup') {
+    keyName = 'ArrowUp';
+  } else if (lowerKey === 'arrowdown') {
+    keyName = 'ArrowDown';
+  } else if (lowerKey === 'arrowleft') {
+    keyName = 'ArrowLeft';
+  } else if (lowerKey === 'arrowright') {
+    keyName = 'ArrowRight';
+  } else if (code === 'Slash') {
+    keyName = '/';
+  } else if (code === 'Comma') {
+    keyName = ',';
+  } else if (code === 'Period') {
+    keyName = '.';
+  } else if (code === 'Semicolon') {
+    keyName = ';';
+  } else if (code === 'Quote') {
+    keyName = "'";
+  } else if (code === 'BracketLeft') {
+    keyName = '[';
+  } else if (code === 'BracketRight') {
+    keyName = ']';
+  } else if (code === 'Backslash') {
+    keyName = '\\';
+  } else if (code === 'Minus') {
+    keyName = '-';
+  } else if (code === 'Equal') {
+    keyName = '=';
+  } else if (code === 'Backquote') {
+    keyName = '`';
+  } else if (rawKey.length === 1) {
+    keyName = rawKey.toUpperCase();
+  } else {
+    keyName = rawKey;
+  }
+
+  parts.push(keyName);
+  return parts.join(' + ');
+}

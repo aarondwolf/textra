@@ -943,6 +943,30 @@ kbd {
   font-size: 13px;
 }
 
+.window-titlebar {
+  height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 140px 0 12px;
+  background: var(--sidebar);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.window-titlebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+  color: var(--text);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -1050,7 +1074,6 @@ kbd {
   min-height: var(--bar-height);
   padding: 0 10px;
   gap: 4px;
-  border-bottom: 1px solid var(--border);
 }
 .sidebar-title button,
 .sidebar-title .icon-button.small {
@@ -1145,7 +1168,7 @@ kbd {
   flex-direction: column;
   min-width: 0;
   flex: 1;
-  background: var(--preview);
+  background: var(--bg);
 }
 .pane-header {
   height: 43px;
@@ -1154,7 +1177,6 @@ kbd {
   align-items: center;
   justify-content: space-between;
   padding: 0 17px;
-  border-bottom: 1px solid var(--border);
   color: var(--muted);
 }
 .welcome-tab {
@@ -1203,6 +1225,9 @@ kbd {
   margin: auto;
   padding: 40px clamp(24px, 3.4vw, 58px);
   overflow: auto;
+}
+.welcome-logo {
+  margin-bottom: 14px;
 }
 .welcome-content h1 {
   font-family: inherit;
@@ -1430,7 +1455,7 @@ h1 > span {
   border-bottom: 1px solid var(--border);
   border-left: 1px solid var(--border);
   border-bottom-left-radius: 5px;
-  background: var(--preview);
+  background: var(--bg);
   clip-path: polygon(0 0, 100% 100%, 0 100%);
 }
 .paper-symbol {
@@ -1980,8 +2005,7 @@ h1 > span {
   min-height: var(--bar-height);
   padding: 0 8px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg);
   container-type: inline-size;
 }
 /* Narrow pane: drop the secondary buttons first so Compile and Collapse always fit. */
@@ -2081,7 +2105,7 @@ h1 > span {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px;
+  padding: 0;
 }
 .preview-diagnostics .build-log {
   font-size: 12px;
@@ -2204,7 +2228,6 @@ h1 > span {
   height: var(--bar-height);
   min-height: var(--bar-height);
   padding-right: 7px;
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .editor-tab-actions {

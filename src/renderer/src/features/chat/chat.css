@@ -22,7 +22,6 @@
   min-height: var(--bar-height);
   flex-shrink: 0;
   padding: 0 8px;
-  border-bottom: 1px solid var(--border);
 }
 .ai-chat-header > div:first-child {
   flex: 1 1 auto;

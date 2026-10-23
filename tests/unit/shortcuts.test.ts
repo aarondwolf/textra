@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { matchesShortcut, type ShortcutKeyboardEvent } from '../../src/shared/shortcuts';
+import {
+  formatShortcutFromEvent,
+  matchesShortcut,
+  type ShortcutKeyboardEvent,
+} from '../../src/shared/shortcuts';
 
 describe('keyboard shortcuts matcher', () => {
   it('matches simple key combinations', () => {
@@ -54,5 +58,33 @@ describe('keyboard shortcuts matcher', () => {
       code: 'Slash',
     };
     expect(matchesShortcut(slashEvent, 'Ctrl/Cmd + /')).toBe(true);
+  });
+
+  it('formats recorded keyboard events and round-trips with matchesShortcut', () => {
+    expect(
+      formatShortcutFromEvent({
+        ctrlKey: true,
+        key: 'Control',
+        code: 'ControlLeft',
+      }),
+    ).toBeNull();
+
+    const saveAllEvent: ShortcutKeyboardEvent = {
+      ctrlKey: true,
+      altKey: true,
+      key: 's',
+      code: 'KeyS',
+    };
+    const formatted = formatShortcutFromEvent(saveAllEvent);
+    expect(formatted).toBe('Ctrl/Cmd + Alt + S');
+    expect(matchesShortcut(saveAllEvent, formatted!)).toBe(true);
+
+    const shiftEvent: ShortcutKeyboardEvent = {
+      ctrlKey: true,
+      shiftKey: true,
+      key: 'F',
+      code: 'KeyF',
+    };
+    expect(formatShortcutFromEvent(shiftEvent)).toBe('Ctrl/Cmd + Shift + F');
   });
 });

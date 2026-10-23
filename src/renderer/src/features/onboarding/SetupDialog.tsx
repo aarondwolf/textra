@@ -32,7 +32,11 @@ import { AISettingsDialog } from '../chat/AISettingsDialog';
 import { CompileRecipeEditor } from '../compile/CompileRecipeEditor';
 import { SaveFooter } from '../save-status/SaveFooter';
 import { validateRecipeSettings } from '../../../../shared/recipes';
-import { DEFAULT_SHORTCUTS, AVAILABLE_ADD_ACTIONS } from '../../../../shared/shortcuts';
+import {
+  DEFAULT_SHORTCUTS,
+  AVAILABLE_ADD_ACTIONS,
+  formatShortcutFromEvent,
+} from '../../../../shared/shortcuts';
 import './setup.css';
 
 export type SectionId =
@@ -145,7 +149,7 @@ export const THEME_DEFAULTS: Record<
 
 interface ActionSelectMenuProps {
   selectedId: string;
-  onSelect: (actionId: string, defaultKeys?: string) => void;
+  onSelect: (actionId: string) => void;
   availableActions: typeof AVAILABLE_ADD_ACTIONS;
 }
 
@@ -165,18 +169,13 @@ function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSele
   }, [open]);
 
   const selectedAction = availableActions.find((a) => a.id === selectedId);
-  const displayLabel =
-    selectedId === '__custom__'
-      ? 'Custom action name…'
-      : selectedAction
-        ? selectedAction.label
-        : 'Select Action';
+  const displayLabel = selectedAction ? selectedAction.label : 'Select Action';
 
   return (
     <div
       ref={containerRef}
+      className="editor-format-heading"
       style={{
-        position: 'relative',
         flex: 1,
         minWidth: 0,
       }}
@@ -187,24 +186,11 @@ function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSele
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Select Action"
+        disabled={availableActions.length === 0}
         onClick={() => setOpen((prev) => !prev)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '100%',
-          height: '26px',
-          padding: '0 8px',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-pill)',
-          background: 'var(--surface)',
-          color: selectedId ? 'var(--text)' : 'var(--muted)',
-          fontSize: '11px',
-          cursor: 'pointer',
-        }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {displayLabel}
+          {availableActions.length === 0 ? 'All actions have shortcuts' : displayLabel}
         </span>
         <CaretDown size={11} aria-hidden="true" style={{ flexShrink: 0, marginLeft: '6px' }} />
       </button>
@@ -215,9 +201,8 @@ function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSele
           role="menu"
           aria-label="Actions list"
           style={{
-            position: 'absolute',
-            zIndex: 100,
-            top: 'calc(100% + 4px)',
+            top: 'auto',
+            bottom: 'calc(100% + 4px)',
             left: 0,
             right: 0,
             minWidth: '220px',
@@ -225,13 +210,25 @@ function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSele
             overflowY: 'auto',
           }}
         >
+          <div
+            style={{
+              padding: '4px 8px',
+              fontSize: '9px',
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--faint)',
+            }}
+          >
+            Select Action
+          </div>
           {availableActions.map((action) => (
             <button
               key={action.id}
               type="button"
               role="menuitem"
               onClick={() => {
-                onSelect(action.id, action.defaultKeys);
+                onSelect(action.id);
                 setOpen(false);
               }}
               style={{
@@ -242,32 +239,77 @@ function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSele
               }}
             >
               <span>{action.label}</span>
-              {action.defaultKeys && (
-                <span style={{ color: 'var(--faint)', fontSize: '10px', marginLeft: '8px' }}>
-                  {action.defaultKeys}
-                </span>
-              )}
             </button>
           ))}
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onSelect('__custom__', '');
-              setOpen(false);
-            }}
-            style={{
-              fontWeight: selectedId === '__custom__' ? 600 : 400,
-              borderTop: '1px solid var(--border)',
-              marginTop: '2px',
-              paddingTop: '6px',
-            }}
-          >
-            Custom action name…
-          </button>
         </div>
       )}
     </div>
+  );
+}
+
+interface ShortcutCaptureBoxProps {
+  value: string;
+  placeholder?: string;
+  ariaLabel: string;
+  disabled?: boolean;
+  recording?: boolean;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
+  onRecord: (shortcut: string) => void;
+}
+
+function ShortcutCaptureBox({
+  value,
+  placeholder = 'Click to record keys…',
+  ariaLabel,
+  disabled = false,
+  recording = false,
+  onStartRecording,
+  onStopRecording,
+  onRecord,
+}: ShortcutCaptureBoxProps) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (recording) {
+      buttonRef.current?.focus();
+    }
+  }, [recording]);
+
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      data-shortcut-recorder="true"
+      className={`shortcut-capture-box${recording ? ' is-recording' : ''}`}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled && !recording) {
+          onStartRecording();
+        }
+      }}
+      onBlur={() => {
+        if (recording) {
+          onStopRecording();
+        }
+      }}
+      onKeyDown={(e) => {
+        if (!recording) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          onStopRecording();
+          return;
+        }
+        const formatted = formatShortcutFromEvent(e);
+        if (formatted) {
+          onRecord(formatted);
+        }
+      }}
+    >
+      {recording ? 'Press keys…' : value || placeholder}
+    </button>
   );
 }
 
@@ -305,8 +347,7 @@ export default function SetupDialog({
   const [newThemeAccentStrong, setNewThemeAccentStrong] = useState('#b0ddcf');
   const [newThemeAccentBg, setNewThemeAccentBg] = useState('#293e37');
   const [selectedActionId, setSelectedActionId] = useState('');
-  const [newShortcutLabel, setNewShortcutLabel] = useState('');
-  const [newShortcutKeys, setNewShortcutKeys] = useState('');
+  const [recordingShortcutId, setRecordingShortcutId] = useState<string | null>(null);
   const projectConfig = useWorkspace((state) => state.projectConfig);
   const allAvailableRecipes = useMemo(() => {
     const list: Array<{ value: string; label: string }> = [...BUILD_RECIPES];
@@ -967,19 +1008,20 @@ export default function SetupDialog({
                         alignItems: 'center',
                         gap: '4px',
                       }}
-                      onClick={() =>
+                      onClick={() => {
+                        setRecordingShortcutId(null);
                         updatePreferences({
                           keyboardShortcuts: {},
-                        })
-                      }
+                        });
+                      }}
                       title="Reset all keyboard shortcuts to their default values"
                     >
                       <Undo2 size={13} /> Reset to defaults
                     </button>
                   </div>
                   <p className="setup-hint">
-                    These shortcuts use Ctrl on Windows and Linux, and Command on macOS. You can
-                    customize key combinations or add custom shortcuts.
+                    These shortcuts use Ctrl on Windows and Linux, and Command on macOS. Click the
+                    edit icon or a shortcut box to record a new key combination.
                   </p>
                   <div
                     className="shortcuts-editor"
@@ -988,57 +1030,60 @@ export default function SetupDialog({
                     {DEFAULT_SHORTCUTS.map((shortcut) => {
                       const currentKey =
                         preferences.keyboardShortcuts?.[shortcut.id] ?? shortcut.defaultKeys;
+                      const isRecording = recordingShortcutId === shortcut.id;
+                      const isOverridden = Boolean(preferences.keyboardShortcuts?.[shortcut.id]);
                       return (
-                        <div
-                          key={shortcut.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 8px',
-                            background: 'var(--surface)',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border)',
-                          }}
-                        >
-                          <span
-                            style={{ flex: 1, minWidth: 0, fontSize: '11px', color: 'var(--text)' }}
-                          >
-                            {shortcut.label}
-                          </span>
-                          <input
-                            aria-label={`Shortcut keys for ${shortcut.label}`}
+                        <div key={shortcut.id} className="shortcut-row">
+                          <span className="shortcut-row-label">{shortcut.label}</span>
+                          <ShortcutCaptureBox
+                            ariaLabel={`Shortcut keys for ${shortcut.label}`}
                             value={currentKey}
-                            onChange={(e) => {
+                            recording={isRecording}
+                            onStartRecording={() => setRecordingShortcutId(shortcut.id)}
+                            onStopRecording={() => {
+                              if (recordingShortcutId === shortcut.id) {
+                                setRecordingShortcutId(null);
+                              }
+                            }}
+                            onRecord={(recordedKeys) => {
                               updatePreferences({
                                 keyboardShortcuts: {
                                   ...preferences.keyboardShortcuts,
-                                  [shortcut.id]: e.target.value,
+                                  [shortcut.id]: recordedKeys,
                                 },
                               });
-                            }}
-                            style={{
-                              width: '180px',
-                              padding: '4px 6px',
-                              fontSize: '11px',
-                              fontFamily: 'monospace',
+                              setRecordingShortcutId(null);
                             }}
                           />
-                          {preferences.keyboardShortcuts?.[shortcut.id] && (
+                          <span className="tool-actions">
                             <button
                               type="button"
                               className="icon-button small"
-                              aria-label={`Reset ${shortcut.label} to default`}
-                              title="Reset to default"
-                              onClick={() => {
-                                const next = { ...preferences.keyboardShortcuts };
-                                delete next[shortcut.id];
-                                updatePreferences({ keyboardShortcuts: next });
-                              }}
+                              aria-label={`Edit shortcut for ${shortcut.label}`}
+                              title="Edit shortcut"
+                              onClick={() => setRecordingShortcutId(shortcut.id)}
                             >
-                              <Undo2 size={13} />
+                              <Pencil size={13} />
                             </button>
-                          )}
+                            {isOverridden && (
+                              <button
+                                type="button"
+                                className="icon-button small"
+                                aria-label={`Reset ${shortcut.label} to default`}
+                                title="Reset to default"
+                                onClick={() => {
+                                  const next = { ...preferences.keyboardShortcuts };
+                                  delete next[shortcut.id];
+                                  updatePreferences({ keyboardShortcuts: next });
+                                  if (recordingShortcutId === shortcut.id) {
+                                    setRecordingShortcutId(null);
+                                  }
+                                }}
+                              >
+                                <Undo2 size={13} />
+                              </button>
+                            )}
+                          </span>
                         </div>
                       );
                     })}
@@ -1047,147 +1092,105 @@ export default function SetupDialog({
                       .map(([customId, customKey]) => {
                         const knownAction = AVAILABLE_ADD_ACTIONS.find((a) => a.id === customId);
                         const label = knownAction ? knownAction.label : customId;
+                        const isRecording = recordingShortcutId === customId;
                         return (
-                          <div
-                            key={customId}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              padding: '6px 8px',
-                              background: 'var(--surface)',
-                              borderRadius: '6px',
-                              border: '1px solid var(--border)',
-                            }}
-                          >
-                            <span
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                fontSize: '11px',
-                                color: 'var(--text)',
-                              }}
-                            >
-                              {label}
-                            </span>
-                            <input
-                              aria-label={`Shortcut keys for ${label}`}
+                          <div key={customId} className="shortcut-row">
+                            <span className="shortcut-row-label">{label}</span>
+                            <ShortcutCaptureBox
+                              ariaLabel={`Shortcut keys for ${label}`}
                               value={customKey}
-                              onChange={(e) => {
+                              recording={isRecording}
+                              onStartRecording={() => setRecordingShortcutId(customId)}
+                              onStopRecording={() => {
+                                if (recordingShortcutId === customId) {
+                                  setRecordingShortcutId(null);
+                                }
+                              }}
+                              onRecord={(recordedKeys) => {
                                 updatePreferences({
                                   keyboardShortcuts: {
                                     ...preferences.keyboardShortcuts,
-                                    [customId]: e.target.value,
+                                    [customId]: recordedKeys,
                                   },
                                 });
-                              }}
-                              style={{
-                                width: '180px',
-                                padding: '4px 6px',
-                                fontSize: '11px',
-                                fontFamily: 'monospace',
+                                setRecordingShortcutId(null);
                               }}
                             />
-                            <button
-                              type="button"
-                              className="icon-button small"
-                              aria-label={`Remove shortcut ${label}`}
-                              title="Remove custom shortcut"
-                              onClick={() => {
-                                const next = { ...preferences.keyboardShortcuts };
-                                delete next[customId];
-                                updatePreferences({ keyboardShortcuts: next });
-                              }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <span className="tool-actions">
+                              <button
+                                type="button"
+                                className="icon-button small"
+                                aria-label={`Edit shortcut for ${label}`}
+                                title="Edit shortcut"
+                                onClick={() => setRecordingShortcutId(customId)}
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="icon-button small"
+                                aria-label={`Remove shortcut ${label}`}
+                                title="Remove shortcut"
+                                onClick={() => {
+                                  const next = { ...preferences.keyboardShortcuts };
+                                  delete next[customId];
+                                  updatePreferences({ keyboardShortcuts: next });
+                                  if (recordingShortcutId === customId) {
+                                    setRecordingShortcutId(null);
+                                  }
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </span>
                           </div>
                         );
                       })}
                   </div>
 
-                  <div
-                    style={{
-                      marginTop: '12px',
-                      padding: '10px',
-                      background: 'var(--surface)',
-                      borderRadius: '6px',
-                      border: '1px dashed var(--border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                    }}
-                  >
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                      Add a shortcut
-                    </span>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div className="shortcut-add-card">
+                    <span className="shortcut-add-title">Add a shortcut</span>
+                    <div className="shortcut-add-controls">
                       <ActionSelectMenu
                         selectedId={selectedActionId}
                         availableActions={AVAILABLE_ADD_ACTIONS.filter(
                           (a) => !preferences.keyboardShortcuts?.[a.id],
                         )}
-                        onSelect={(actionId, defaultKeys) => {
+                        onSelect={(actionId) => {
                           setSelectedActionId(actionId);
-                          if (defaultKeys !== undefined) {
-                            setNewShortcutKeys(defaultKeys);
+                          setRecordingShortcutId('__add__');
+                        }}
+                      />
+                      <ShortcutCaptureBox
+                        ariaLabel="Record new shortcut key combination"
+                        value=""
+                        placeholder={
+                          selectedActionId ? 'Click to record keys…' : 'Select an action first'
+                        }
+                        disabled={!selectedActionId}
+                        recording={recordingShortcutId === '__add__' && Boolean(selectedActionId)}
+                        onStartRecording={() => {
+                          if (selectedActionId) {
+                            setRecordingShortcutId('__add__');
                           }
                         }}
-                      />
-                      {selectedActionId === '__custom__' && (
-                        <input
-                          aria-label="New shortcut action name"
-                          placeholder="Action name (e.g. Export)"
-                          value={newShortcutLabel}
-                          onChange={(e) => setNewShortcutLabel(e.target.value)}
-                          style={{ flex: 1, minWidth: 0, padding: '4px 6px', fontSize: '11px' }}
-                        />
-                      )}
-                      <input
-                        aria-label="New shortcut key combination"
-                        placeholder="Keys (e.g. Ctrl/Cmd + Shift + F)"
-                        value={newShortcutKeys}
-                        onChange={(e) => setNewShortcutKeys(e.target.value)}
-                        style={{
-                          width: '160px',
-                          padding: '4px 6px',
-                          fontSize: '11px',
-                          fontFamily: 'monospace',
+                        onStopRecording={() => {
+                          if (recordingShortcutId === '__add__') {
+                            setRecordingShortcutId(null);
+                          }
                         }}
-                      />
-                      <button
-                        type="button"
-                        className="text-button primary-button"
-                        disabled={
-                          !selectedActionId ||
-                          (selectedActionId === '__custom__' && !newShortcutLabel.trim()) ||
-                          !newShortcutKeys.trim()
-                        }
-                        onClick={() => {
-                          const keyId =
-                            selectedActionId === '__custom__'
-                              ? newShortcutLabel.trim()
-                              : selectedActionId;
-                          if (!keyId || !newShortcutKeys.trim()) return;
+                        onRecord={(recordedKeys) => {
+                          if (!selectedActionId) return;
                           updatePreferences({
                             keyboardShortcuts: {
                               ...preferences.keyboardShortcuts,
-                              [keyId]: newShortcutKeys.trim(),
+                              [selectedActionId]: recordedKeys,
                             },
                           });
                           setSelectedActionId('');
-                          setNewShortcutLabel('');
-                          setNewShortcutKeys('');
+                          setRecordingShortcutId(null);
                         }}
-                        style={{
-                          whiteSpace: 'nowrap',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <Plus size={13} /> Add shortcut
-                      </button>
+                      />
                     </div>
                   </div>
                 </>

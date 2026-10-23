@@ -2,7 +2,7 @@
   min-width: 0;
   height: 100%;
   overflow: auto;
-  background: var(--surface);
+  background: var(--bg);
   color: var(--text);
 }
 .markdown-preview-path {

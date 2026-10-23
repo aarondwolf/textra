@@ -14,7 +14,6 @@
   min-height: var(--bar-height);
   box-sizing: border-box;
   padding: 0 10px;
-  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 

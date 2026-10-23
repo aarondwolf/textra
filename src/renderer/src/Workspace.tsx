@@ -52,6 +52,7 @@ import {
   Pencil,
   Save,
   Square,
+  TextraLogo,
   X,
 } from './icons';
 import { FileIcon } from './features/files/fileIcons';
@@ -1796,11 +1797,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       });
     };
     const handleCleanAux = () => {
-      if (!project || busy || build.running) return;
+      if (!project || !canCompile || !activePath || busy || build.running) return;
       void run(async () => {
         const res = await window.textra.cleanAuxiliaryFiles({
           projectId: project.id,
-          path: activePath ?? undefined,
+          path: activePath,
           recipe: engine,
         });
         if (res.ok) {
@@ -2263,14 +2264,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     <button
                       className="icon-button small"
                       aria-label="Clear auxiliary files"
-                      title="Clear auxiliary files (preserves PDF)"
-                      disabled={!project || busy || build.running}
+                      title={
+                        !canCompile
+                          ? 'Open a .tex document to clear auxiliary files.'
+                          : 'Clear auxiliary files (preserves PDF)'
+                      }
+                      disabled={!project || !canCompile || busy || build.running}
                       onClick={() => {
-                        if (!project || busy || build.running) return;
+                        if (!project || !canCompile || !activePath || busy || build.running) return;
                         void run(async () => {
                           const res = await window.textra.cleanAuxiliaryFiles({
                             projectId: project.id,
-                            path: activePath ?? undefined,
+                            path: activePath,
                             recipe: engine,
                           });
                           if (res.ok) {
@@ -2912,6 +2917,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 </>
               ) : (
                 <div className="welcome-content">
+                  <div className="welcome-logo" aria-hidden="true">
+                    <TextraLogo size={56} />
+                  </div>
                   <h1>{project ? 'Open a file' : 'Start writing'}</h1>
                   <p className="welcome-description">
                     {project

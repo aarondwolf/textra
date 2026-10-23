@@ -28,6 +28,7 @@ import {
   CONFIGURABLE_TOOLS,
   PRODUCT_NAME,
   type ConfigurableTool,
+  type Preferences,
   type Result,
   type TextraAPI,
 } from '../shared/api';
@@ -243,17 +244,57 @@ function handleRequest<K extends keyof TextraAPI>(
   handle(channel, 1, (value) => action(...([value] as Parameters<TextraAPI[K]>)));
 }
 
+const TITLEBAR_OVERLAY_HEIGHT = 31;
+const BUILT_IN_THEME_OVERLAY_COLORS: Record<string, { color: string; symbolColor: string }> = {
+  dark: { color: '#202224', symbolColor: '#979c9e' },
+  light: { color: '#efeee9', symbolColor: '#636c67' },
+  midnight: { color: '#181c2d', symbolColor: '#a5aec5' },
+  forest: { color: '#1c2821', symbolColor: '#a0b2a3' },
+  ocean: { color: '#182a31', symbolColor: '#9fbac0' },
+  rose: { color: '#2d1d29', symbolColor: '#c5a4b5' },
+  sand: { color: '#e8deca', symbolColor: '#716756' },
+};
+
+function syncTitleBarOverlay(saved: Preferences): void {
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    typeof mainWindow.setTitleBarOverlay !== 'function'
+  ) {
+    return;
+  }
+  const custom = saved.customThemes?.find((t) => t.id === saved.theme);
+  const baseKey = custom ? custom.baseTheme : saved.theme;
+  const base = BUILT_IN_THEME_OVERLAY_COLORS[baseKey] ?? BUILT_IN_THEME_OVERLAY_COLORS.dark;
+  const color = base.color;
+  const symbolColor = saved.themeCustomizations.text || custom?.text || base.symbolColor;
+  try {
+    mainWindow.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_OVERLAY_HEIGHT });
+  } catch {
+    // Ignore on platforms where titleBarOverlay is unsupported
+  }
+}
+
 function createWindow(): void {
   forceClose = false;
+  const resourcesRoot = app.isPackaged ? process.resourcesPath : join(process.cwd(), 'resources');
+  const windowIcon = join(resourcesRoot, process.platform === 'win32' ? 'icon.ico' : 'icon.png');
   const window = new BrowserWindow({
     title: PRODUCT_NAME,
+    icon: windowIcon,
     width: 1440,
     height: 940,
     minWidth: 900,
     minHeight: 640,
     show: false,
-    backgroundColor: '#141821',
+    backgroundColor: '#1c1e20',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#202224',
+      symbolColor: '#979c9e',
+      height: TITLEBAR_OVERLAY_HEIGHT,
+    },
     webPreferences: {
       preload: join(directory, '../preload/index.cjs'),
       contextIsolation: true,
@@ -265,6 +306,10 @@ function createWindow(): void {
     },
   });
   mainWindow = window;
+  void preferences
+    .get()
+    .then((saved) => syncTitleBarOverlay(saved))
+    .catch(() => undefined);
   window.removeMenu();
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => {
@@ -459,11 +504,15 @@ void app.whenReady().then(() => {
   handle('textra:preferences:get', 0, () => preferences.get());
   void preferences
     .get()
-    .then((saved) => setToolPaths(saved.toolPaths))
+    .then((saved) => {
+      setToolPaths(saved.toolPaths);
+      syncTitleBarOverlay(saved);
+    })
     .catch(() => undefined);
   handle('textra:preferences:set', 1, async (value) => {
     const saved = await preferences.set(value);
     setToolPaths(saved.toolPaths);
+    syncTitleBarOverlay(saved);
     if (!saved.texlabEnabled) await texlab.stop();
     return saved;
   });
@@ -619,6 +668,9 @@ void app.whenReady().then(() => {
     if (builds.getState().running || healthBuild)
       throw new ProjectError('BUILD_RUNNING', 'Wait for the current build to finish first.');
     const { projectId, path: docRelativePath, recipe: requestedRecipe } = request;
+    if (!docRelativePath || !/\.tex$/i.test(docRelativePath)) {
+      return { removedCount: 0 };
+    }
     const root = projects.getRoot(projectId);
 
     const AUX_EXTS = new Set([
@@ -653,47 +705,85 @@ void app.whenReady().then(() => {
       '.cut',
     ]);
 
-    let baseName: string | null = null;
-    let targetDir = root;
-    if (docRelativePath) {
-      const resolved = await projects.resolvePath({ projectId, path: docRelativePath });
-      baseName = basename(resolved, extname(resolved));
-      targetDir = dirname(resolved);
+    const resolved = await projects.resolvePath({ projectId, path: docRelativePath });
+    const baseName = basename(resolved, extname(resolved));
+    const lowerBase = baseName.toLowerCase();
+    const targetDir = dirname(resolved);
+    const relDoc = docRelativePath.replace(/\.tex$/i, '');
+    const docBuildDir = join(root, 'build', 'textra', ...relDoc.split(/[\\/]/));
+
+    const shallowDirs = new Set<string>([targetDir]);
+    const dedicatedBuildDirs = new Set<string>([docBuildDir]);
+
+    try {
+      const rawConfig = await config.getProjectConfig(projectId);
+      const settings = validateRecipeSettings(rawConfig);
+      const recipeName =
+        requestedRecipe ||
+        rawConfig?.recipes?.[docRelativePath] ||
+        settings['latex-workshop.latex.recipes']?.[0]?.name;
+      if (recipeName) {
+        const plan = await planRecipe(root, docRelativePath, recipeName, settings).catch(
+          () => null,
+        );
+        if (plan) {
+          for (const dir of [plan.auxiliary, plan.output]) {
+            if (dir === root || dir === targetDir || dir === join(root, 'build', 'textra')) {
+              shallowDirs.add(dir);
+            } else {
+              dedicatedBuildDirs.add(dir);
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall back to standard candidate directories
     }
 
-    const candidateDirs = new Set<string>();
-    candidateDirs.add(targetDir);
-    candidateDirs.add(join(root, 'build', 'textra'));
+    function isSafeAuxFile(fileName: string, requireBaseMatch: boolean): boolean {
+      const lowerName = fileName.toLowerCase();
+      if (
+        lowerName.endsWith('.pdf') ||
+        lowerName.endsWith('.tex') ||
+        lowerName.endsWith('.bib') ||
+        lowerName.endsWith('.cls') ||
+        lowerName.endsWith('.sty') ||
+        lowerName.endsWith('.dtx') ||
+        lowerName.endsWith('.ins')
+      )
+        return false;
 
-    let plannedAuxDir: string | null = null;
-    let plannedOutDir: string | null = null;
+      const ext = extname(lowerName);
+      const isSynctexGz = lowerName.endsWith('.synctex.gz');
+      const isAux = AUX_EXTS.has(ext) || isSynctexGz;
+      if (!isAux) return false;
 
-    if (docRelativePath && /\.tex$/i.test(docRelativePath)) {
+      if (requireBaseMatch) {
+        const matchesBase =
+          lowerName.startsWith(lowerBase + '.') || lowerName.startsWith(lowerBase + '-');
+        if (!matchesBase) return false;
+      }
+
+      return true;
+    }
+
+    async function collectShallowMatchingAuxFiles(dir: string): Promise<string[]> {
+      const collected: string[] = [];
       try {
-        const rawConfig = await config.getProjectConfig(projectId);
-        const settings = validateRecipeSettings(rawConfig);
-        const recipeName =
-          requestedRecipe ||
-          rawConfig?.recipes?.[docRelativePath] ||
-          settings['latex-workshop.latex.recipes']?.[0]?.name;
-        if (recipeName) {
-          const plan = await planRecipe(root, docRelativePath, recipeName, settings).catch(
-            () => null,
-          );
-          if (plan) {
-            plannedAuxDir = plan.auxiliary;
-            plannedOutDir = plan.output;
-            candidateDirs.add(plan.auxiliary);
-            candidateDirs.add(plan.output);
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && isSafeAuxFile(entry.name, true)) {
+            collected.push(join(dir, entry.name));
           }
         }
       } catch {
-        // Fall back to standard candidate directories
+        // Directory may not exist or not readable
       }
+      return collected;
     }
 
-    async function collectAuxFiles(dir: string, depth = 0): Promise<string[]> {
-      if (depth > 6) return [];
+    async function collectDedicatedDirAuxFiles(dir: string, depth = 0): Promise<string[]> {
+      if (depth > 4) return [];
       const collected: string[] = [];
       try {
         const entries = await readdir(dir, { withFileTypes: true });
@@ -703,37 +793,8 @@ void app.whenReady().then(() => {
             const lowerDir = entry.name.toLowerCase();
             if (['.git', 'node_modules', '.textra', '.agents', '.codex'].includes(lowerDir))
               continue;
-            collected.push(...(await collectAuxFiles(fullPath, depth + 1)));
-          } else if (entry.isFile()) {
-            const fileName = entry.name;
-            const lowerName = fileName.toLowerCase();
-            if (
-              lowerName.endsWith('.pdf') ||
-              lowerName.endsWith('.tex') ||
-              lowerName.endsWith('.bib') ||
-              lowerName.endsWith('.cls') ||
-              lowerName.endsWith('.sty') ||
-              lowerName.endsWith('.dtx') ||
-              lowerName.endsWith('.ins')
-            )
-              continue;
-
-            const ext = extname(lowerName);
-            const isSynctexGz = lowerName.endsWith('.synctex.gz');
-            const isAux = AUX_EXTS.has(ext) || isSynctexGz;
-            if (!isAux) continue;
-
-            const isBuildSubdir =
-              dir.toLowerCase().includes('build') ||
-              (plannedAuxDir && dir.startsWith(plannedAuxDir)) ||
-              (plannedOutDir && dir.startsWith(plannedOutDir));
-            if (baseName && !isBuildSubdir) {
-              const lowerBase = baseName.toLowerCase();
-              const matchesBase =
-                lowerName.startsWith(lowerBase + '.') || lowerName.startsWith(lowerBase + '-');
-              if (!matchesBase) continue;
-            }
-
+            collected.push(...(await collectDedicatedDirAuxFiles(fullPath, depth + 1)));
+          } else if (entry.isFile() && isSafeAuxFile(entry.name, true)) {
             collected.push(fullPath);
           }
         }
@@ -744,8 +805,12 @@ void app.whenReady().then(() => {
     }
 
     const filesToDelete = new Set<string>();
-    for (const dir of candidateDirs) {
-      const files = await collectAuxFiles(dir);
+    for (const dir of shallowDirs) {
+      const files = await collectShallowMatchingAuxFiles(dir);
+      for (const f of files) filesToDelete.add(f);
+    }
+    for (const dir of dedicatedBuildDirs) {
+      const files = await collectDedicatedDirAuxFiles(dir);
       for (const f of files) filesToDelete.add(f);
     }
 
@@ -890,6 +955,7 @@ void app.whenReady().then(() => {
     if (answer.response !== 1) return null;
     const saved = await preferences.set(next);
     setToolPaths(saved.toolPaths);
+    syncTitleBarOverlay(saved);
     return saved;
   });
   handle('textra:setup:link', 1, async (target) => {

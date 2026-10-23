@@ -6,21 +6,18 @@
     {
       "name": "pdflatex",
       "tools": [
-        "pdflatex-draft",
         "pdflatex"
       ]
     },
     {
       "name": "xelatex",
       "tools": [
-        "xelatex-draft",
         "xelatex"
       ]
     },
     {
       "name": "lualatex",
       "tools": [
-        "lualatex-draft",
         "lualatex"
       ]
     },
@@ -36,6 +33,12 @@
         "pdflatex-draft",
         "bibtex",
         "pdflatex-draft",
+        "pdflatex"
+      ]
+    },
+    {
+      "name": "pdflatex (quick)",
+      "tools": [
         "pdflatex"
       ]
     }
@@ -158,6 +161,6 @@
   "recipes": {
     "test.tex": "latexmk",
     "test2.tex": "pdflatex",
-    "demo.tex": "latexmk"
+    "demo.tex": "pdflatex"
   }
 }

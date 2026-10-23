@@ -17,3 +17,5 @@ Thumbs.db
 resources/texlab/**/*.zip
 .vitest/
 sandbox/test.pdf
+*.log
+*.CONFLICTED_*

@@ -1,5 +1,22 @@
 # Current state
 
+2026-10-22 Comprehensive UI polish, shortcut execution, and diagnostic intelligence:
+
+- Tab Pill Width Stability: file tab pills no longer jitter or resize when modified/saved; `.dirty-dot` occupies constant layout dimensions with opacity transitions.
+- Direct PDF Opening: clicking PDF files in the file explorer now directly opens them in the Preview pane without an extraneous confirmation dialog.
+- Editor Word Selection & Typing Stability: resolved Monaco selection reset where typing followed by `Ctrl+Shift+Back` or `Ctrl+Shift+Left/Right` truncated multi-word selections. Prevented unintended active Monaco model value resets and guarded AI completion inline listeners.
+- Settings Appearance & AI Typography: added a distinct border to Surface and Background color swatches under Appearance; harmonized AI Settings typography with system fonts and standard header styling.
+- Markdown Preview & Toolbar Integration: clicking a PDF no longer locks the Preview pane against subsequent Markdown previews; editor formatting toolbar renders a dedicated Markdown preview document icon (`FileText`) when editing Markdown files.
+- Files Tab Actions: "Reveal in Explorer" on folders uses `shell.openPath` to open inside the folder rather than selecting the folder in its parent directory; grouped Open Folder alongside Reveal in Explorer and Open in VS Code.
+- Writing Tab Styling: removed pill containers around collapsible Outline and Notes sections; matched `% TODO` icon color to the accent TODO pill.
+- Build Tab Compilation & Auxiliary Cleanup: synchronized header Compile button feedback ("Built", "Failed") with the preview compile button; added a "Clear Auxiliary Files" broom button (`Broom` / `cleanAuxiliaryFiles`) that safely cleans intermediate artifacts while preserving output PDFs.
+- Snippets & Symbols: single click expands snippet details (Name, Description, Code); double click inserts; custom snippets feature a flat 24px edit icon button (`Pencil`) with inline editing controls.
+- Assistant Tab Icon Refinement: removed circular borders from the privacy notice dismiss button and code block copy buttons.
+- Keyboard Shortcuts System: built action selector for custom bindings (`saveAll`, `formatDocument`, `cleanArtifacts`, `cleanAux`, `openFolder`, `newFile`, etc.), implemented global shortcut matching (`matchesShortcut`), and wired keyboard dispatcher to execute actions across the application.
+- Diagnostics AI Troubleshooting: appended external tool source notices to AI troubleshooting prompts (`"Note: This was flagged by [source], not the LaTeX compiler..."`) for issues originating from ChkTeX, TexLab, or reference checkers. Standardized Problems toolbar height to 29px.
+- Verification: 489/489 unit tests pass, typecheck passes with 0 errors, ESLint passes with 0 errors, Prettier format check passes.
+
+
 2026-10-22 UI/UX refinement & visual hierarchy polish:
 
 - File tab save animation: tab titles remain steady while a subtle accent border flare animates on save alongside unsaved dot clearing. Removed distracting "Saved" text swap and heavy box-shadows.

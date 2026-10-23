@@ -230,12 +230,16 @@ export function WritingPanel({
                     <li key={item.id}>
                       <button
                         type="button"
-                        className="writing-todo-item"
+                        className={`writing-todo-item is-${item.kind.toLowerCase()}`}
                         title={`Go to ${item.kind} on line ${item.line}`}
                         onClick={() => onJumpToLine(item.line)}
                       >
-                        {item.kind === 'TODO' && <ListChecks size={13} aria-hidden="true" />}
-                        {item.kind === 'FIXME' && <WarningCircle size={13} aria-hidden="true" />}
+                        {item.kind === 'TODO' && (
+                          <ListChecks className="todo-icon" size={13} aria-hidden="true" />
+                        )}
+                        {item.kind === 'FIXME' && (
+                          <WarningCircle className="fixme-icon" size={13} aria-hidden="true" />
+                        )}
                         <span className={'writing-tag ' + item.kind.toLowerCase()}>
                           {item.kind}
                         </span>

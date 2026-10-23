@@ -172,6 +172,15 @@
 
 .writing-todo-item svg {
   flex: 0 0 auto;
+}
+
+.writing-todo-item.is-todo svg,
+.writing-todo-item svg.todo-icon {
+  color: var(--accent);
+}
+
+.writing-todo-item.is-fixme svg,
+.writing-todo-item svg.fixme-icon {
   color: var(--warning, #c88719);
 }
 
@@ -184,6 +193,11 @@
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.03em;
+}
+
+.writing-tag.todo {
+  color: var(--accent);
+  background: var(--accent-background);
 }
 
 .writing-tag.fixme {

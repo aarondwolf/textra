@@ -320,6 +320,9 @@ export interface BuildArtifactCleanupResult {
   /** False means the TeXtra-managed build folder was already absent. */
   removed: boolean;
 }
+export interface CleanAuxiliaryResult {
+  removedCount: number;
+}
 export interface BuildState {
   running: boolean;
   log: string;
@@ -487,6 +490,11 @@ export interface TextraAPI {
   }): Promise<Result<ProjectConfig>>;
   /** Removes only the TeXtra-managed build/textra folder after native confirmation. */
   cleanProjectBuildArtifacts(projectId: string): Promise<Result<BuildArtifactCleanupResult>>;
+  /** Safely removes auxiliary build files (.aux, .log, etc.) preserving all PDFs and source files. */
+  cleanAuxiliaryFiles(request: {
+    projectId: string;
+    path?: string;
+  }): Promise<Result<CleanAuxiliaryResult>>;
   exportSettings(): Promise<Result<boolean>>;
   importSettings(): Promise<Result<Preferences | null>>;
   openSetupLink(target: SetupLink): Promise<Result<void>>;

@@ -71,6 +71,7 @@ export {
   FilePdf,
   ListChecks,
   NotePencil,
+  PaintBrushHousehold as Broom,
   Palette,
   Wrench,
   MagnifyingGlass as Search,

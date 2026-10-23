@@ -3,6 +3,7 @@ import {
   CaretDown,
   EyeSlash,
   FilePdf,
+  FileText,
   ImageSquare,
   ListBullets,
   ListNumbers,
@@ -25,12 +26,16 @@ function dispatch(request: FormatRequest): void {
 export default function FormattingToolbar({
   disabled,
   hasPdf = false,
+  isMarkdown = false,
   onOpenPdf,
+  onOpenMarkdown,
   onHide,
 }: {
   disabled: boolean;
   hasPdf?: boolean;
+  isMarkdown?: boolean;
   onOpenPdf?: () => void;
+  onOpenMarkdown?: () => void;
   onHide: () => void;
 }) {
   const [headingMenuOpen, setHeadingMenuOpen] = useState(false);
@@ -154,17 +159,31 @@ export default function FormattingToolbar({
         )}
       </div>
       <span className="editor-format-spacer" />
-      <button
-        type="button"
-        className="editor-format-pdf"
-        aria-label="View PDF in preview"
-        title={hasPdf ? 'View compiled PDF in Preview' : 'No compiled PDF found'}
-        disabled={disabled || !hasPdf}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={onOpenPdf}
-      >
-        <FilePdf size={15} />
-      </button>
+      {isMarkdown ? (
+        <button
+          type="button"
+          className="editor-format-pdf"
+          aria-label="View Markdown preview"
+          title="View Markdown preview"
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onOpenMarkdown}
+        >
+          <FileText size={15} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="editor-format-pdf"
+          aria-label="View PDF in preview"
+          title={hasPdf ? 'View compiled PDF in Preview' : 'No compiled PDF found'}
+          disabled={disabled || !hasPdf}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onOpenPdf}
+        >
+          <FilePdf size={15} />
+        </button>
+      )}
       <button
         type="button"
         className="editor-format-hide"

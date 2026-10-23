@@ -119,6 +119,7 @@ const api: TextraAPI = {
   setProjectConfig: (request) => ipcRenderer.invoke('textra:config:set', request),
   cleanProjectBuildArtifacts: (projectId) =>
     ipcRenderer.invoke('textra:build:clean-artifacts', projectId),
+  cleanAuxiliaryFiles: (request) => ipcRenderer.invoke('textra:build:clean-aux', request),
   exportSettings: () => ipcRenderer.invoke('textra:settings:export'),
   importSettings: () => ipcRenderer.invoke('textra:settings:import'),
   openSetupLink: (target) => ipcRenderer.invoke('textra:setup:link', target),

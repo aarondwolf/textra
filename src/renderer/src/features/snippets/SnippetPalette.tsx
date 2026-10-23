@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkle } from '@phosphor-icons/react';
-import { Check, ChevronDown, ChevronRight, Copy, Lock, LockOpen, Plus, Trash2 } from '../../icons';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Lock,
+  LockOpen,
+  Pencil,
+  Plus,
+  Trash2,
+} from '../../icons';
 import { insertIntoSource } from '../equations/EquationPalette';
 import { SYMBOL_GROUPS } from '../equations/symbols';
 import { DEFAULT_SNIPPETS, type Snippet } from './snippets';
@@ -51,6 +61,11 @@ export default function SnippetPalette({
   );
   const [customSnippets, setCustomSnippets] = useState<Snippet[]>(loadCustomSnippets);
   const [isAdding, setIsAdding] = useState(false);
+  const [expandedSnippetKey, setExpandedSnippetKey] = useState<string | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editTex, setEditTex] = useState('');
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newTex, setNewTex] = useState('');
@@ -61,6 +76,37 @@ export default function SnippetPalette({
   useEffect(() => {
     saveCustomSnippets(customSnippets);
   }, [customSnippets]);
+
+  function handleStartEdit(idx: number, snippet: Snippet) {
+    setEditingIndex(idx);
+    setEditName(snippet.name);
+    setEditDesc(snippet.description || '');
+    setEditTex(snippet.tex);
+  }
+
+  function handleSaveEdit(e: React.FormEvent, idx: number) {
+    e.preventDefault();
+    if (!editName.trim() || !editTex.trim()) return;
+    setCustomSnippets((prev) =>
+      prev.map((s, i) =>
+        i === idx
+          ? {
+              name: editName.trim(),
+              description: editDesc.trim() || 'Custom snippet',
+              tex: editTex,
+            }
+          : s,
+      ),
+    );
+    setEditingIndex(null);
+  }
+
+  async function copySnippetCode(tex: string) {
+    const result = await window.textra.copyText(tex.replace('$0', ''));
+    setStatus(result.ok ? 'Code copied.' : result.error);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setStatus(''), 2000);
+  }
 
   function notifyInsert(success: boolean) {
     setStatus(success ? 'Inserted.' : 'Could not insert. Click in a .tex file first.');
@@ -331,71 +377,251 @@ export default function SnippetPalette({
 
               <ul className="snippet-list">
                 {/* Custom Snippets */}
-                {filteredCustomSnippets.map((snippet, idx) => (
-                  <li key={`custom-${snippet.name}-${idx}`} className="custom-snippet-item">
-                    <button
-                      type="button"
-                      className="snippet"
-                      title={snippet.tex.replace('$0', '')}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setHint(`${snippet.name} (Custom)`)}
-                      onMouseLeave={() => setHint(null)}
-                      onClick={(event) => {
-                        if (event.detail === 2) insertSnippet(snippet);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          insertSnippet(snippet);
-                        }
-                      }}
-                    >
-                      <strong>{snippet.name}</strong>
-                      <span>{snippet.description}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="snippet-delete-btn"
-                      title="Delete custom snippet"
-                      aria-label={`Delete custom snippet ${snippet.name}`}
-                      onClick={() => handleDeleteCustomSnippet(idx)}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </li>
-                ))}
+                {filteredCustomSnippets.map((snippet, idx) => {
+                  const key = `custom-${snippet.name}-${idx}`;
+                  const isExpanded = expandedSnippetKey === key;
+                  const isEditing = editingIndex === idx;
+
+                  return (
+                    <li key={key} className="snippet-item-wrap">
+                      <div className="custom-snippet-item">
+                        <button
+                          type="button"
+                          className={`snippet ${isExpanded ? 'expanded' : ''}`}
+                          title={snippet.tex.replace('$0', '')}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setHint(`${snippet.name} (Custom)`)}
+                          onMouseLeave={() => setHint(null)}
+                          onClick={(event) => {
+                            if (event.detail === 2) {
+                              insertSnippet(snippet);
+                            } else {
+                              setExpandedSnippetKey((curr) => (curr === key ? null : key));
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              insertSnippet(snippet);
+                            }
+                          }}
+                        >
+                          <strong>{snippet.name}</strong>
+                          <span>{snippet.description}</span>
+                        </button>
+                        <div
+                          style={{
+                            position: 'absolute',
+                            right: 8,
+                            top: 12,
+                            display: 'flex',
+                            gap: 2,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="snippet-icon-btn"
+                            title="Edit snippet"
+                            aria-label={`Edit ${snippet.name}`}
+                            onClick={() => {
+                              setExpandedSnippetKey(key);
+                              handleStartEdit(idx, snippet);
+                            }}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="snippet-icon-btn danger"
+                            title="Delete custom snippet"
+                            aria-label={`Delete custom snippet ${snippet.name}`}
+                            onClick={() => handleDeleteCustomSnippet(idx)}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded &&
+                        (isEditing ? (
+                          <form
+                            className="palette-custom-form"
+                            onSubmit={(e) => handleSaveEdit(e, idx)}
+                          >
+                            <input
+                              placeholder="Snippet name"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              required
+                            />
+                            <input
+                              placeholder="Description (optional)"
+                              value={editDesc}
+                              onChange={(e) => setEditDesc(e.target.value)}
+                            />
+                            <textarea
+                              placeholder="LaTeX code (use $0 for cursor position)"
+                              value={editTex}
+                              onChange={(e) => setEditTex(e.target.value)}
+                              rows={4}
+                              required
+                            />
+                            <div className="palette-form-actions">
+                              <button type="button" onClick={() => setEditingIndex(null)}>
+                                Cancel
+                              </button>
+                              <button type="submit" className="primary-pill">
+                                Save
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="snippet-expanded-card">
+                            <div className="snippet-expanded-header">
+                              <span className="snippet-expanded-title">{snippet.name}</span>
+                              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="snippet-icon-btn"
+                                  title="Edit snippet"
+                                  aria-label={`Edit ${snippet.name}`}
+                                  onClick={() => handleStartEdit(idx, snippet)}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="snippet-icon-btn danger"
+                                  title="Delete custom snippet"
+                                  aria-label={`Delete ${snippet.name}`}
+                                  onClick={() => handleDeleteCustomSnippet(idx)}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                            {snippet.description && (
+                              <span className="snippet-expanded-desc">{snippet.description}</span>
+                            )}
+                            <pre className="snippet-expanded-code">{snippet.tex}</pre>
+                            <div className="snippet-expanded-actions">
+                              <button
+                                type="button"
+                                className="text-button"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                onClick={() => insertSnippet(snippet)}
+                              >
+                                <Plus size={12} /> Insert
+                              </button>
+                              <button
+                                type="button"
+                                className="text-button"
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                onClick={() => void copySnippetCode(snippet.tex)}
+                              >
+                                <Copy size={12} /> Copy code
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </li>
+                  );
+                })}
 
                 {/* Built-in Snippets */}
-                {filteredDefaultSnippets.map((snippet) => (
-                  <li key={snippet.name}>
-                    <button
-                      type="button"
-                      className="snippet"
-                      title={snippet.tex.replace('$0', '')}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() =>
-                        setHint(
-                          snippet.packages
-                            ? `Needs ${snippet.packages.map((name) => `\\usepackage{${name}}`).join(' ')}`
-                            : snippet.name,
-                        )
-                      }
-                      onMouseLeave={() => setHint(null)}
-                      onClick={(event) => {
-                        if (event.detail === 2) insertSnippet(snippet);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          insertSnippet(snippet);
+                {filteredDefaultSnippets.map((snippet) => {
+                  const key = `default-${snippet.name}`;
+                  const isExpanded = expandedSnippetKey === key;
+
+                  return (
+                    <li key={snippet.name} className="snippet-item-wrap">
+                      <button
+                        type="button"
+                        className={`snippet ${isExpanded ? 'expanded' : ''}`}
+                        title={snippet.tex.replace('$0', '')}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseEnter={() =>
+                          setHint(
+                            snippet.packages
+                              ? `Needs ${snippet.packages.map((name) => `\\usepackage{${name}}`).join(' ')}`
+                              : snippet.name,
+                          )
                         }
-                      }}
-                    >
-                      <strong>{snippet.name}</strong>
-                      <span>{snippet.description}</span>
-                    </button>
-                  </li>
-                ))}
+                        onMouseLeave={() => setHint(null)}
+                        onClick={(event) => {
+                          if (event.detail === 2) {
+                            insertSnippet(snippet);
+                          } else {
+                            setExpandedSnippetKey((curr) => (curr === key ? null : key));
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            insertSnippet(snippet);
+                          }
+                        }}
+                      >
+                        <strong>{snippet.name}</strong>
+                        <span>{snippet.description}</span>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="snippet-expanded-card">
+                          <div className="snippet-expanded-header">
+                            <span className="snippet-expanded-title">{snippet.name}</span>
+                          </div>
+                          {snippet.description && (
+                            <span className="snippet-expanded-desc">{snippet.description}</span>
+                          )}
+                          <pre className="snippet-expanded-code">{snippet.tex}</pre>
+                          <div className="snippet-expanded-actions">
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '11px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              onClick={() => insertSnippet(snippet)}
+                            >
+                              <Plus size={12} /> Insert
+                            </button>
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '11px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              onClick={() => void copySnippetCode(snippet.tex)}
+                            >
+                              <Copy size={12} /> Copy code
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
 
                 {!filteredDefaultSnippets.length && !filteredCustomSnippets.length && !isAdding && (
                   <p className="palette-empty-note">No snippets match.</p>

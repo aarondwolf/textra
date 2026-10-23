@@ -12,6 +12,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  height: 29px;
   min-height: 29px;
   padding: 2px 8px;
   box-sizing: border-box;
@@ -85,7 +86,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  padding: 6px 14px;
+  min-height: 29px;
+  box-sizing: border-box;
+  padding: 3px 8px;
   border-bottom: 1px solid var(--border);
 }
 .problems-severity-filters,

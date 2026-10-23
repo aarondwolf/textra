@@ -116,6 +116,10 @@ export function installAICompletion(
     );
   };
   function invalidate(dismiss = false) {
+    const hadPending = pending !== null;
+    const hadSuggestion = suggestion !== null;
+    const hadManual = manual;
+    const hadStatus = Boolean(status);
     generation++;
     clearTimeout(timer);
     clearTimeout(deadline);
@@ -130,8 +134,10 @@ export function installAICompletion(
     manual = false;
     status = '';
     errorCode = undefined;
-    editor.trigger('textra', 'editor.action.inlineSuggest.hide', {});
-    view();
+    if (hadSuggestion || hadPending || hadManual || hadStatus) {
+      editor.trigger('textra', 'editor.action.inlineSuggest.hide', {});
+      view();
+    }
   }
   async function request(role: AICompletionRole) {
     const isManual = role === 'inlineCompletion';

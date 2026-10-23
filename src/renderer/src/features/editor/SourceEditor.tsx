@@ -456,6 +456,7 @@ function EditorFormattingToolbar({
   const updatePreferences = useUI((state) => state.updatePreferences);
   const setPanel = useUI((state) => state.setPanel);
   const { build, project } = useWorkspace();
+  const isMarkdown = /\.md(?:own)?$/i.test(activePath);
   const pdfMatch = activePath.replace(/\.tex$/i, '.pdf').toLowerCase();
   const projectPdf = project?.files.find((f) => f.path.toLowerCase() === pdfMatch)?.path;
   const targetPdf = build.pdfPath || projectPdf;
@@ -472,11 +473,19 @@ function EditorFormattingToolbar({
     );
   };
 
+  const handleOpenMarkdown = () => {
+    setPanel('preview');
+    updatePreferences({ previewVisible: true });
+    window.dispatchEvent(new CustomEvent('textra:open-markdown-preview'));
+  };
+
   return (
     <FormattingToolbar
       disabled={disabled}
       hasPdf={hasPdf}
+      isMarkdown={isMarkdown}
       onOpenPdf={handleOpenPdf}
+      onOpenMarkdown={handleOpenMarkdown}
       onHide={() => updatePreferences({ formatToolbarVisible: false })}
     />
   );
@@ -1250,7 +1259,9 @@ export function SourceEditor({
         models.current.set(document.path, model);
         if (isTexPath(document.path) && texlabRef.current?.isReady)
           void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
-      } else if (model.getValue() !== document.content) model.setValue(document.content);
+      } else if (document.path !== current.current && model.getValue() !== document.content) {
+        model.setValue(document.content);
+      }
     }
     if (current.current !== activePath) {
       const previousView = instance.saveViewState();

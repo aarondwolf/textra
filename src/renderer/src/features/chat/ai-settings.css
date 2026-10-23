@@ -48,9 +48,9 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-family: var(--font-serif);
-  font-size: 20px;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
 }
 .ai-settings-dialog > p {
   margin: 6px 0 14px;
@@ -67,9 +67,9 @@
 }
 .ai-settings-dialog h3 {
   margin: 14px 0 9px;
-  font-family: var(--font-serif);
-  font-size: 15px;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
 }
 .ai-settings-dialog button {
   display: inline-flex;

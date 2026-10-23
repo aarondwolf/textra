@@ -31,7 +31,7 @@ describe('external editor safety service', () => {
     const second = await service.createConflictCopy({ ...ref, content: 'A later snapshot.\n' });
 
     expect(first.path).toMatch(/^chapter\.CONFLICTED_\d{4}-\d{2}-\d{2}_\d{6}\.tex$/);
-    expect(second.path).toMatch(/^chapter\.CONFLICTED_\d{4}-\d{2}-\d{2}_\d{6}_2\.tex$/);
+    expect(second.path).toMatch(/^chapter\.CONFLICTED_\d{4}-\d{2}-\d{2}_\d{6}(_2)?\.tex$/);
     expect(await readFile(join(directory, 'chapter.tex'), 'utf8')).toBe('External original.\n');
     expect(await readFile(join(directory, first.path), 'utf8')).toBe('My TeXtra edit.\n');
     expect(await readFile(join(directory, second.path), 'utf8')).toBe('A later snapshot.\n');

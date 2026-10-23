@@ -27,6 +27,7 @@ import {
   Code,
   Copy,
   Columns2,
+  Broom,
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
@@ -487,7 +488,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const [fileFilter, setFileFilter] = useState('');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [pdfPreviewPath, setPdfPreviewPath] = useState<string | null>(null);
-  const [requestedPdfPreviewPath, setRequestedPdfPreviewPath] = useState<string | null>(null);
   const [savedTabPath, setSavedTabPath] = useState<string | null>(null);
   const savedTabTimer = useRef<number | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{
@@ -730,7 +730,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }
   function openExplorerFile(path: string) {
     if (path.toLowerCase().endsWith('.pdf')) {
-      setRequestedPdfPreviewPath(path);
+      setPdfPreviewPath(path);
+      setPanel('preview');
+      useUI.getState().setExpandedPane(null);
+      if (!preferences.previewVisible) {
+        void updatePreferences({ previewVisible: true });
+      }
       return;
     }
     if (preferences.previewTabs && previewPath && previewPath !== path) {
@@ -1613,12 +1618,28 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       };
     }
     const location = diagnostic.file ? ` in \`${diagnostic.file}:${diagnostic.line ?? '?'}\`` : '';
+    const isExternalTool =
+      diagnostic.source &&
+      !['build', 'compiler', 'latex'].includes(diagnostic.source.toLowerCase());
+    const sourceLabel =
+      diagnostic.source?.toLowerCase() === 'chktex'
+        ? 'ChkTeX'
+        : diagnostic.source?.toLowerCase() === 'texlab'
+          ? 'TexLab'
+          : diagnostic.source?.toLowerCase() === 'reference'
+            ? 'reference analysis'
+            : diagnostic.source;
+    const sourceNote =
+      isExternalTool && sourceLabel
+        ? `Note: This was flagged by ${sourceLabel}, not the LaTeX compiler. If this is a false positive or stylistic preference, also explain how to configure, suppress, or ignore this warning.`
+        : null;
     const prompt = [
       '# LaTeX troubleshooting request',
       '',
       `I am working on a LaTeX document and received this ${diagnostic.severity}${location}:`,
       '',
       `> ${diagnostic.code ? `${diagnostic.code}: ` : ''}${bounded ? diagnostic.message.slice(0, 2000) : diagnostic.message}`,
+      ...(sourceNote ? ['', sourceNote] : []),
       ...(context
         ? [
             '',
@@ -1747,11 +1768,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   useEffect(() => {
     const handleCompile = () => void compile();
     const handleSaveActive = () => {
-      if (activePath)
+      if (!activePath) return;
+      if (
+        useWorkspace.getState().documents.find((document) => document.path === activePath)?.conflict
+      ) {
+        setConflictPath(activePath);
+      } else {
         void run(async () => {
           await saveAndLint(activePath);
         });
+      }
     };
+    const handleSaveCopy = () => saveAs();
     const handleSaveAll = () =>
       void run(async () => {
         await saveAll();
@@ -1767,6 +1795,29 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         if (!result.ok) throw new Error(result.error);
       });
     };
+    const handleCleanAux = () => {
+      if (!project || busy || build.running) return;
+      void run(async () => {
+        const res = await window.textra.cleanAuxiliaryFiles({
+          projectId: project.id,
+          path: activePath ?? undefined,
+        });
+        if (res.ok) {
+          window.dispatchEvent(
+            new CustomEvent('textra:notify', {
+              detail: {
+                message: res.value.removedCount
+                  ? `Cleaned ${res.value.removedCount} auxiliary file${res.value.removedCount === 1 ? '' : 's'}`
+                  : 'No auxiliary files to clean',
+                tone: 'success',
+              },
+            }),
+          );
+        } else {
+          showError(res.error);
+        }
+      });
+    };
     const handleToggleWrap = () => setWrap(!wrap);
     const handleOpenPdfPreview = (e: Event) => {
       const path = (e as CustomEvent<{ path: string }>).detail?.path;
@@ -1777,29 +1828,41 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         updatePreferences({ previewVisible: true });
       }
     };
+    const handleOpenMarkdownPreview = () => {
+      setPdfPreviewPath(null);
+      setPanel('preview');
+      useUI.getState().setExpandedPane(null);
+      updatePreferences({ previewVisible: true });
+    };
 
     window.addEventListener('textra:compile', handleCompile);
     window.addEventListener('textra:save-active', handleSaveActive);
+    window.addEventListener('textra:save-copy', handleSaveCopy);
     window.addEventListener('textra:save-all', handleSaveAll);
     window.addEventListener('textra:open-folder', handleOpenFolder);
     window.addEventListener('textra:new-file', handleNewFile);
     window.addEventListener('textra:new-folder', handleNewFolder);
     window.addEventListener('textra:format-document', handleFormatDoc);
     window.addEventListener('textra:clean-artifacts', handleCleanArtifacts);
+    window.addEventListener('textra:clean-aux', handleCleanAux);
     window.addEventListener('textra:toggle-wrap', handleToggleWrap);
     window.addEventListener('textra:open-pdf-preview', handleOpenPdfPreview);
+    window.addEventListener('textra:open-markdown-preview', handleOpenMarkdownPreview);
 
     return () => {
       window.removeEventListener('textra:compile', handleCompile);
       window.removeEventListener('textra:save-active', handleSaveActive);
+      window.removeEventListener('textra:save-copy', handleSaveCopy);
       window.removeEventListener('textra:save-all', handleSaveAll);
       window.removeEventListener('textra:open-folder', handleOpenFolder);
       window.removeEventListener('textra:new-file', handleNewFile);
       window.removeEventListener('textra:new-folder', handleNewFolder);
       window.removeEventListener('textra:format-document', handleFormatDoc);
       window.removeEventListener('textra:clean-artifacts', handleCleanArtifacts);
+      window.removeEventListener('textra:clean-aux', handleCleanAux);
       window.removeEventListener('textra:toggle-wrap', handleToggleWrap);
       window.removeEventListener('textra:open-pdf-preview', handleOpenPdfPreview);
+      window.removeEventListener('textra:open-markdown-preview', handleOpenMarkdownPreview);
     };
   });
   const selectedSteps = availableRecipes.find((recipe) => recipe.name === engine)!.tools;
@@ -2145,7 +2208,13 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       ) : (
                         <Play size={13} />
                       )}
-                      {build.running ? 'Cancel' : 'Compile'}
+                      {build.running
+                        ? 'Cancel'
+                        : buildFeedback === 'success'
+                          ? 'Built'
+                          : buildFeedback === 'failed'
+                            ? 'Failed'
+                            : 'Compile'}
                     </button>
                     <button
                       className="icon-button small collapsed-alert"
@@ -2179,6 +2248,37 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                         )}
                       </span>
                     </button>
+                    <button
+                      className="icon-button small"
+                      aria-label="Clear auxiliary files"
+                      title="Clear auxiliary files (preserves PDF)"
+                      disabled={!project || busy || build.running}
+                      onClick={() => {
+                        if (!project || busy || build.running) return;
+                        void run(async () => {
+                          const res = await window.textra.cleanAuxiliaryFiles({
+                            projectId: project.id,
+                            path: activePath ?? undefined,
+                          });
+                          if (res.ok) {
+                            window.dispatchEvent(
+                              new CustomEvent('textra:notify', {
+                                detail: {
+                                  message: res.value.removedCount
+                                    ? `Cleaned ${res.value.removedCount} auxiliary file${res.value.removedCount === 1 ? '' : 's'}`
+                                    : 'No auxiliary files to clean',
+                                  tone: 'success',
+                                },
+                              }),
+                            );
+                          } else {
+                            showError(res.error);
+                          }
+                        });
+                      }}
+                    >
+                      <Broom size={15} />
+                    </button>
                   </div>
                 </div>
                 {project && (
@@ -2209,49 +2309,54 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               <>
                 <div className="sidebar-title">
                   <span className="sidebar-heading">Files</span>
-                  <button
-                    className="icon-button small"
-                    aria-label="Open folder"
-                    title="Open folder"
-                    onClick={() => openFolder()}
-                    disabled={busy || build.running}
-                  >
-                    <FolderOpen size={15} />
-                  </button>
-                  {project && (
-                    <div className="inline-actions">
-                      <button
-                        className="icon-button small"
-                        aria-label="Reveal folder in explorer"
-                        title="Reveal folder in explorer"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            unwrap(
-                              await window.textra.revealEntry({ projectId: project.id, path: '' }),
-                            );
-                          })
-                        }
-                      >
-                        <ArrowSquareOut size={15} />
-                      </button>
-                      <button
-                        className="icon-button small"
-                        aria-label="Open folder in VS Code"
-                        title="Open folder in VS Code"
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            unwrap(
-                              await window.textra.openInCode({ projectId: project.id, path: '' }),
-                            );
-                          })
-                        }
-                      >
-                        <Code size={15} />
-                      </button>
-                    </div>
-                  )}
+                  <div className="inline-actions">
+                    <button
+                      className="icon-button small"
+                      aria-label="Open folder"
+                      title="Open folder"
+                      onClick={() => openFolder()}
+                      disabled={busy || build.running}
+                    >
+                      <FolderOpen size={15} />
+                    </button>
+                    {project && (
+                      <>
+                        <button
+                          className="icon-button small"
+                          aria-label="Reveal folder in explorer"
+                          title="Reveal folder in explorer"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              unwrap(
+                                await window.textra.revealEntry({
+                                  projectId: project.id,
+                                  path: '',
+                                }),
+                              );
+                            })
+                          }
+                        >
+                          <ArrowSquareOut size={15} />
+                        </button>
+                        <button
+                          className="icon-button small"
+                          aria-label="Open folder in VS Code"
+                          title="Open folder in VS Code"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              unwrap(
+                                await window.textra.openInCode({ projectId: project.id, path: '' }),
+                              );
+                            })
+                          }
+                        >
+                          <Code size={15} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 {project && (
                   <label className="file-filter">
@@ -2325,11 +2430,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                               }
                               onClick={() => {
                                 if (file.kind === 'directory') toggleFolder(file.path);
-                                else if (/\.pdf$/i.test(file.path)) {
-                                  setFileMenu(null);
-                                  setSelected(file.path);
-                                  setRequestedPdfPreviewPath(file.path);
-                                } else {
+                                else {
                                   setFileMenu(null);
                                   setSelected(file.path);
                                   openExplorerFile(file.path);
@@ -2492,14 +2593,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             setPreviewPath((current) =>
                               current === document.path ? null : current,
                             );
+                            if (/\.md(?:own)?$/i.test(document.path)) {
+                              setPdfPreviewPath(null);
+                            }
                             useWorkspace.setState({ activePath: document.path, navigation: null });
                           }}
                         >
                           <FileText size={13} />
                           <span>{document.path.split('/').at(-1)}</span>
-                          {dirty(document) && (
-                            <span className="dirty-dot" aria-label="Unsaved changes" />
-                          )}
+                          <span
+                            className={`dirty-dot ${dirty(document) ? 'is-dirty' : ''}`}
+                            aria-label={dirty(document) ? 'Unsaved changes' : undefined}
+                          />
                           {document.conflict && (
                             <Warning size={12} aria-label="External change conflict" />
                           )}
@@ -3177,7 +3282,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 aria-labelledby="preview-tab"
                 hidden={panel !== 'preview'}
               >
-                {!pdfPreviewPath && active && /\.md(?:own)?$/i.test(active.path) ? (
+                {active && /\.md(?:own)?$/i.test(active.path) ? (
                   <MarkdownPreview source={active.content} path={active.path} />
                 ) : (
                   <PdfViewer
@@ -3601,39 +3706,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         onDiscard={discardConflictBuffer}
       />
       <PromptDialog prompt={prompt} close={() => setPrompt(null)} />
-      <Dialog.Root
-        open={!!requestedPdfPreviewPath}
-        onOpenChange={(open) => {
-          if (!open) setRequestedPdfPreviewPath(null);
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay className="dialog-overlay" />
-          <Dialog.Content className="action-dialog" aria-describedby="pdf-preview-description">
-            <Dialog.Title>Open PDF in Preview?</Dialog.Title>
-            <Dialog.Description id="pdf-preview-description">
-              Open <code>{requestedPdfPreviewPath}</code> read-only in TeXtra's Preview pane. This
-              does not replace the current build output or modify the file.
-            </Dialog.Description>
-            <div className="dialog-actions">
-              <button onClick={() => setRequestedPdfPreviewPath(null)}>Cancel</button>
-              <button
-                className="primary-button"
-                onClick={() => {
-                  if (!requestedPdfPreviewPath) return;
-                  setPdfPreviewPath(requestedPdfPreviewPath);
-                  setRequestedPdfPreviewPath(null);
-                  setPanel('preview');
-                  useUI.getState().setExpandedPane(null);
-                  updatePreferences({ previewVisible: true });
-                }}
-              >
-                Open Preview
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
       <Dialog.Root
         open={!!pending}
         onOpenChange={(open) => {

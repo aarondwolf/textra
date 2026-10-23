@@ -309,8 +309,13 @@ export function ChatPanel({
         cycleModel();
       }
     };
+    const handleSwitchModel = () => cycleModel();
     window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener('textra:switch-model', handleSwitchModel);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('textra:switch-model', handleSwitchModel);
+    };
   }, [cycleModel]);
   const toolsSupported =
     !model ||

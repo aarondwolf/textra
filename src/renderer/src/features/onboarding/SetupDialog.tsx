@@ -31,6 +31,7 @@ import { AISettingsDialog } from '../chat/AISettingsDialog';
 import { CompileRecipeEditor } from '../compile/CompileRecipeEditor';
 import { SaveFooter } from '../save-status/SaveFooter';
 import { validateRecipeSettings } from '../../../../shared/recipes';
+import { DEFAULT_SHORTCUTS, AVAILABLE_ADD_ACTIONS } from '../../../../shared/shortcuts';
 import './setup.css';
 
 export type SectionId =
@@ -174,6 +175,7 @@ export default function SetupDialog({
   const [newThemeAccent, setNewThemeAccent] = useState('#9bc9bb');
   const [newThemeAccentStrong, setNewThemeAccentStrong] = useState('#b0ddcf');
   const [newThemeAccentBg, setNewThemeAccentBg] = useState('#293e37');
+  const [selectedActionId, setSelectedActionId] = useState('');
   const [newShortcutLabel, setNewShortcutLabel] = useState('');
   const [newShortcutKeys, setNewShortcutKeys] = useState('');
   const projectConfig = useWorkspace((state) => state.projectConfig);
@@ -417,7 +419,7 @@ export default function SetupDialog({
                           <input
                             aria-label={label}
                             type="color"
-                            className="theme-color-input"
+                            className={`theme-color-input${key === 'surface' || key === 'background' ? ' has-border' : ''}`}
                             value={curVal}
                             onChange={(event) =>
                               updatePreferences({
@@ -503,7 +505,7 @@ export default function SetupDialog({
                         >
                           <input
                             type="color"
-                            className="theme-color-input"
+                            className="theme-color-input has-border"
                             aria-label="New theme background"
                             value={newThemeBg}
                             onChange={(e) => setNewThemeBg(e.target.value)}
@@ -516,7 +518,7 @@ export default function SetupDialog({
                         >
                           <input
                             type="color"
-                            className="theme-color-input"
+                            className="theme-color-input has-border"
                             aria-label="New theme surface"
                             value={newThemeSurface}
                             onChange={(e) => setNewThemeSurface(e.target.value)}
@@ -854,38 +856,7 @@ export default function SetupDialog({
                     className="shortcuts-editor"
                     style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
                   >
-                    {[
-                      { id: 'save', label: 'Save', defaultKeys: 'Ctrl/Cmd + S' },
-                      { id: 'saveCopy', label: 'Save a copy', defaultKeys: 'Ctrl/Cmd + Shift + S' },
-                      {
-                        id: 'compile',
-                        label: 'Compile active document',
-                        defaultKeys: 'Ctrl/Cmd + Enter',
-                      },
-                      {
-                        id: 'commandPalette',
-                        label: 'Command palette',
-                        defaultKeys: 'Ctrl/Cmd + K',
-                      },
-                      { id: 'toggleSidebar', label: 'Toggle sidebar', defaultKeys: 'Ctrl/Cmd + B' },
-                      {
-                        id: 'togglePreview',
-                        label: 'Preview / Output',
-                        defaultKeys: 'Ctrl/Cmd + J',
-                      },
-                      {
-                        id: 'find',
-                        label: 'Find / replace',
-                        defaultKeys: 'Ctrl/Cmd + F / Ctrl/Cmd + H',
-                      },
-                      {
-                        id: 'switchModel',
-                        label: 'Switch chat model',
-                        defaultKeys: 'Ctrl/Cmd + /',
-                      },
-                      { id: 'inlineEdit', label: 'Inline AI edit', defaultKeys: 'Ctrl/Cmd + I' },
-                      { id: 'escape', label: 'Close a menu or search', defaultKeys: 'Escape' },
-                    ].map((shortcut) => {
+                    {DEFAULT_SHORTCUTS.map((shortcut) => {
                       const currentKey =
                         preferences.keyboardShortcuts?.[shortcut.id] ?? shortcut.defaultKeys;
                       return (
@@ -943,72 +914,67 @@ export default function SetupDialog({
                       );
                     })}
                     {Object.entries(preferences.keyboardShortcuts ?? {})
-                      .filter(
-                        ([key]) =>
-                          ![
-                            'save',
-                            'saveCopy',
-                            'compile',
-                            'commandPalette',
-                            'toggleSidebar',
-                            'togglePreview',
-                            'find',
-                            'switchModel',
-                            'inlineEdit',
-                            'escape',
-                          ].includes(key),
-                      )
-                      .map(([customId, customKey]) => (
-                        <div
-                          key={customId}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 8px',
-                            background: 'var(--surface)',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border)',
-                          }}
-                        >
-                          <span
-                            style={{ flex: 1, minWidth: 0, fontSize: '11px', color: 'var(--text)' }}
-                          >
-                            {customId}
-                          </span>
-                          <input
-                            aria-label={`Shortcut keys for ${customId}`}
-                            value={customKey}
-                            onChange={(e) => {
-                              updatePreferences({
-                                keyboardShortcuts: {
-                                  ...preferences.keyboardShortcuts,
-                                  [customId]: e.target.value,
-                                },
-                              });
-                            }}
+                      .filter(([key]) => !DEFAULT_SHORTCUTS.some((d) => d.id === key))
+                      .map(([customId, customKey]) => {
+                        const knownAction = AVAILABLE_ADD_ACTIONS.find((a) => a.id === customId);
+                        const label = knownAction ? knownAction.label : customId;
+                        return (
+                          <div
+                            key={customId}
                             style={{
-                              width: '180px',
-                              padding: '4px 6px',
-                              fontSize: '11px',
-                              fontFamily: 'monospace',
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="icon-button small"
-                            aria-label={`Remove shortcut ${customId}`}
-                            title="Remove custom shortcut"
-                            onClick={() => {
-                              const next = { ...preferences.keyboardShortcuts };
-                              delete next[customId];
-                              updatePreferences({ keyboardShortcuts: next });
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '6px 8px',
+                              background: 'var(--surface)',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border)',
                             }}
                           >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      ))}
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                fontSize: '11px',
+                                color: 'var(--text)',
+                              }}
+                            >
+                              {label}
+                            </span>
+                            <input
+                              aria-label={`Shortcut keys for ${label}`}
+                              value={customKey}
+                              onChange={(e) => {
+                                updatePreferences({
+                                  keyboardShortcuts: {
+                                    ...preferences.keyboardShortcuts,
+                                    [customId]: e.target.value,
+                                  },
+                                });
+                              }}
+                              style={{
+                                width: '180px',
+                                padding: '4px 6px',
+                                fontSize: '11px',
+                                fontFamily: 'monospace',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="icon-button small"
+                              aria-label={`Remove shortcut ${label}`}
+                              title="Remove custom shortcut"
+                              onClick={() => {
+                                const next = { ...preferences.keyboardShortcuts };
+                                delete next[customId];
+                                updatePreferences({ keyboardShortcuts: next });
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        );
+                      })}
                   </div>
 
                   <div
@@ -1019,46 +985,101 @@ export default function SetupDialog({
                       borderRadius: '6px',
                       border: '1px dashed var(--border)',
                       display: 'flex',
+                      flexDirection: 'column',
                       gap: '8px',
-                      alignItems: 'center',
                     }}
                   >
-                    <input
-                      aria-label="New shortcut action name"
-                      placeholder="Action name (e.g. Export PDF)"
-                      value={newShortcutLabel}
-                      onChange={(e) => setNewShortcutLabel(e.target.value)}
-                      style={{ flex: 1, minWidth: 0, padding: '4px 6px', fontSize: '11px' }}
-                    />
-                    <input
-                      aria-label="New shortcut key combination"
-                      placeholder="Keys (e.g. Ctrl/Cmd + E)"
-                      value={newShortcutKeys}
-                      onChange={(e) => setNewShortcutKeys(e.target.value)}
-                      style={{
-                        width: '150px',
-                        padding: '4px 6px',
-                        fontSize: '11px',
-                        fontFamily: 'monospace',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="text-button primary-button"
-                      disabled={!newShortcutLabel.trim() || !newShortcutKeys.trim()}
-                      onClick={() => {
-                        updatePreferences({
-                          keyboardShortcuts: {
-                            ...preferences.keyboardShortcuts,
-                            [newShortcutLabel.trim()]: newShortcutKeys.trim(),
-                          },
-                        });
-                        setNewShortcutLabel('');
-                        setNewShortcutKeys('');
-                      }}
-                    >
-                      <Plus size={13} /> Add shortcut
-                    </button>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                      Add a shortcut
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <select
+                        aria-label="Select action to add shortcut for"
+                        value={selectedActionId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedActionId(val);
+                          const action = AVAILABLE_ADD_ACTIONS.find((a) => a.id === val);
+                          if (action) {
+                            setNewShortcutKeys(action.defaultKeys);
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          padding: '4px 6px',
+                          fontSize: '11px',
+                          background: 'var(--surface)',
+                          color: 'var(--text)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        <option value="">Choose an action…</option>
+                        {AVAILABLE_ADD_ACTIONS.filter(
+                          (a) => !preferences.keyboardShortcuts?.[a.id],
+                        ).map((action) => (
+                          <option key={action.id} value={action.id}>
+                            {action.label}
+                          </option>
+                        ))}
+                        <option value="__custom__">Custom action name…</option>
+                      </select>
+                      {selectedActionId === '__custom__' && (
+                        <input
+                          aria-label="New shortcut action name"
+                          placeholder="Action name (e.g. Export)"
+                          value={newShortcutLabel}
+                          onChange={(e) => setNewShortcutLabel(e.target.value)}
+                          style={{ flex: 1, minWidth: 0, padding: '4px 6px', fontSize: '11px' }}
+                        />
+                      )}
+                      <input
+                        aria-label="New shortcut key combination"
+                        placeholder="Keys (e.g. Ctrl/Cmd + Shift + F)"
+                        value={newShortcutKeys}
+                        onChange={(e) => setNewShortcutKeys(e.target.value)}
+                        style={{
+                          width: '160px',
+                          padding: '4px 6px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="text-button primary-button"
+                        disabled={
+                          !selectedActionId ||
+                          (selectedActionId === '__custom__' && !newShortcutLabel.trim()) ||
+                          !newShortcutKeys.trim()
+                        }
+                        onClick={() => {
+                          const keyId =
+                            selectedActionId === '__custom__'
+                              ? newShortcutLabel.trim()
+                              : selectedActionId;
+                          if (!keyId || !newShortcutKeys.trim()) return;
+                          updatePreferences({
+                            keyboardShortcuts: {
+                              ...preferences.keyboardShortcuts,
+                              [keyId]: newShortcutKeys.trim(),
+                            },
+                          });
+                          setSelectedActionId('');
+                          setNewShortcutLabel('');
+                          setNewShortcutKeys('');
+                        }}
+                        style={{
+                          whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Plus size={13} /> Add shortcut
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

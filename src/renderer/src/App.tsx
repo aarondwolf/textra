@@ -22,6 +22,7 @@ import {
   Trash2,
 } from './icons';
 import { DEFAULT_PREFERENCES, type Theme } from '../../shared/api';
+import { DEFAULT_SHORTCUTS, matchesShortcut } from '../../shared/shortcuts';
 import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
 import SetupDialog, { type SectionId } from './features/onboarding/SetupDialog';
@@ -370,7 +371,7 @@ function CommandPalette() {
 export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
-  const { preferences, hydrated, error, updatePreferences, setPaletteOpen } = useUI();
+  const { preferences, hydrated, error } = useUI();
   const { recipeEditorOpen, setRecipeEditorOpen } = useUI();
   useEffect(() => {
     void hydratePreferences();
@@ -456,27 +457,126 @@ export function App() {
     preferences.uiFont,
     preferences.editorFont,
   ]);
+  function executeShortcutAction(id: string) {
+    const ui = useUI.getState();
+    switch (id) {
+      case 'save':
+        window.dispatchEvent(new Event('textra:save-active'));
+        break;
+      case 'saveCopy':
+        window.dispatchEvent(new Event('textra:save-copy'));
+        break;
+      case 'saveAll':
+        window.dispatchEvent(new Event('textra:save-all'));
+        break;
+      case 'compile':
+        window.dispatchEvent(new Event('textra:compile'));
+        break;
+      case 'commandPalette':
+        ui.setPaletteOpen(!ui.paletteOpen);
+        break;
+      case 'toggleSidebar':
+        ui.updatePreferences({ sidebarVisible: !ui.preferences.sidebarVisible });
+        break;
+      case 'togglePreview':
+        ui.updatePreferences({ previewVisible: true });
+        ui.setPanel(ui.panel === 'output' ? 'preview' : 'output');
+        break;
+      case 'find':
+      case 'findPdf':
+        window.dispatchEvent(new Event('textra:find-pdf'));
+        break;
+      case 'replace':
+        window.dispatchEvent(new Event('textra:replace-source'));
+        break;
+      case 'gotoLine':
+        window.dispatchEvent(new Event('textra:goto-line'));
+        break;
+      case 'formatDocument':
+        window.dispatchEvent(new Event('textra:format-document'));
+        break;
+      case 'cleanArtifacts':
+        window.dispatchEvent(new Event('textra:clean-artifacts'));
+        break;
+      case 'cleanAux':
+        window.dispatchEvent(new Event('textra:clean-aux'));
+        break;
+      case 'openFolder':
+        window.dispatchEvent(new Event('textra:open-folder'));
+        break;
+      case 'newFile':
+        window.dispatchEvent(new Event('textra:new-file'));
+        break;
+      case 'newFolder':
+        window.dispatchEvent(new Event('textra:new-folder'));
+        break;
+      case 'toggleWrap':
+        window.dispatchEvent(new Event('textra:toggle-wrap'));
+        break;
+      case 'toggleFormatToolbar':
+        ui.updatePreferences({ formatToolbarVisible: !ui.preferences.formatToolbarVisible });
+        break;
+      case 'switchModel':
+        window.dispatchEvent(new Event('textra:switch-model'));
+        break;
+      case 'inlineEdit':
+        window.dispatchEvent(new Event('textra:inline-edit'));
+        break;
+      case 'openSettings':
+        window.dispatchEvent(new Event('textra:open-settings'));
+        break;
+      case 'openAiSettings':
+        window.dispatchEvent(
+          new CustomEvent('textra:open-settings', { detail: { section: 'ai' } }),
+        );
+        break;
+      case 'escape':
+        if (ui.paletteOpen) ui.setPaletteOpen(false);
+        break;
+      default:
+        window.dispatchEvent(new CustomEvent('textra:custom-shortcut', { detail: { action: id } }));
+        break;
+    }
+  }
+
   useEffect(() => {
     const handleKey = (event: globalThis.KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || !hydrated) return;
-      const key = event.key.toLowerCase();
-      if (key === 'k') {
-        event.preventDefault();
-        setPaletteOpen(!useUI.getState().paletteOpen);
+      if (event.defaultPrevented || !hydrated) return;
+
+      const activeShortcuts = useUI.getState().preferences.keyboardShortcuts ?? {};
+
+      // Check overrides and custom added shortcuts first
+      for (const [actionId, pattern] of Object.entries(activeShortcuts)) {
+        if (pattern && matchesShortcut(event, pattern)) {
+          const target = event.target instanceof Element ? event.target : null;
+          const isInput = target?.closest('input, textarea, [data-inline-edit]');
+          if (isInput && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            continue;
+          }
+          event.preventDefault();
+          executeShortcutAction(actionId);
+          return;
+        }
       }
-      if (key === 'b') {
-        event.preventDefault();
-        updatePreferences({ sidebarVisible: !useUI.getState().preferences.sidebarVisible });
-      }
-      if (key === 'j') {
-        event.preventDefault();
-        updatePreferences({ previewVisible: true });
-        useUI.getState().setPanel(useUI.getState().panel === 'output' ? 'preview' : 'output');
+
+      // Check default shortcuts that have not been overridden
+      for (const def of DEFAULT_SHORTCUTS) {
+        if (activeShortcuts[def.id] !== undefined) continue;
+        if (def.defaultKeys && matchesShortcut(event, def.defaultKeys)) {
+          const target = event.target instanceof Element ? event.target : null;
+          const isInput = target?.closest('input, textarea, [data-inline-edit]');
+          if (isInput && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            continue;
+          }
+          event.preventDefault();
+          executeShortcutAction(def.id);
+          return;
+        }
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [hydrated, setPaletteOpen, updatePreferences]);
+  }, [hydrated]);
   return (
     <div className="app-shell">
       {error && (

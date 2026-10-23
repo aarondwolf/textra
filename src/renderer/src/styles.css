@@ -388,6 +388,12 @@
   height: 5px;
   border-radius: 50%;
   background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+.dirty-dot.is-dirty {
+  opacity: 1;
 }
 .editor-toolbar,
 .editor-format-toolbar {
@@ -2617,6 +2623,15 @@ select option {
 .theme-color-input::-webkit-color-swatch {
   border: none;
   border-radius: 4px;
+}
+.theme-color-input.has-border {
+  border: 1px solid var(--border);
+}
+.theme-color-input.has-border::-webkit-color-swatch {
+  border: 1px solid var(--border);
+}
+.theme-color-input.has-border::-moz-color-swatch {
+  border: 1px solid var(--border);
 }
 
 /* Dismissible assistant notice */

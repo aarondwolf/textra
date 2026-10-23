@@ -9,13 +9,14 @@ import {
   safeStorage,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   lstat,
   mkdtemp,
   open,
   readFile,
+  readdir,
   rename,
   rm,
   stat,
@@ -544,7 +545,13 @@ void app.whenReady().then(() => {
     externalEditor.createConflictCopy(request),
   );
   handleRequest<'revealEntry'>('textra:file:reveal', async (request) => {
-    shell.showItemInFolder(await projects.resolvePath(request, true));
+    const target = await projects.resolvePath(request, true);
+    const stats = await stat(target).catch(() => null);
+    if (stats?.isDirectory()) {
+      await shell.openPath(target);
+    } else {
+      shell.showItemInFolder(target);
+    }
   });
   handleRequest<'openInCode'>('textra:file:code', async (request) =>
     openInExternalEditor(await projects.resolvePath(request, true)),
@@ -606,6 +613,87 @@ void app.whenReady().then(() => {
       );
     await rm(managedBuild, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     return { removed: true };
+  });
+  handleRequest<'cleanAuxiliaryFiles'>('textra:build:clean-aux', async (request) => {
+    if (builds.getState().running || healthBuild)
+      throw new ProjectError('BUILD_RUNNING', 'Wait for the current build to finish first.');
+    const { projectId, path: docRelativePath } = request;
+    const root = projects.getRoot(projectId);
+
+    const AUX_EXTS = new Set([
+      '.aux',
+      '.bbl',
+      '.blg',
+      '.fls',
+      '.fdb_latexmk',
+      '.log',
+      '.out',
+      '.synctex',
+      '.synctex.gz',
+      '.toc',
+      '.lof',
+      '.lot',
+      '.nav',
+      '.snm',
+      '.vrb',
+      '.idx',
+      '.ind',
+      '.ilg',
+      '.bcf',
+      '.run.xml',
+      '.xdv',
+      '.dvi',
+    ]);
+
+    let baseName: string | null = null;
+    let targetDir = root;
+    if (docRelativePath) {
+      const resolved = await projects.resolvePath({ projectId, path: docRelativePath });
+      baseName = basename(resolved, extname(resolved));
+      targetDir = dirname(resolved);
+    }
+
+    const candidateDirs = new Set<string>();
+    candidateDirs.add(targetDir);
+    candidateDirs.add(join(root, 'build', 'textra'));
+
+    let removedCount = 0;
+    for (const dir of candidateDirs) {
+      try {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile()) continue;
+          const fileName = entry.name;
+          const lowerName = fileName.toLowerCase();
+          if (
+            lowerName.endsWith('.pdf') ||
+            lowerName.endsWith('.tex') ||
+            lowerName.endsWith('.bib')
+          )
+            continue;
+
+          const ext = extname(lowerName);
+          const isSynctexGz = lowerName.endsWith('.synctex.gz');
+          const isAux = AUX_EXTS.has(ext) || isSynctexGz;
+          if (!isAux) continue;
+
+          if (baseName) {
+            const matchesBase =
+              lowerName.startsWith(baseName.toLowerCase() + '.') ||
+              lowerName.startsWith(baseName.toLowerCase() + '-');
+            if (!matchesBase && dir !== join(root, 'build', 'textra')) continue;
+          }
+
+          const filePath = join(dir, fileName);
+          await unlink(filePath).catch(() => null);
+          removedCount++;
+        }
+      } catch {
+        // Directory may not exist
+      }
+    }
+
+    return { removedCount };
   });
   handle('textra:dirty', 1, (value) => {
     if (typeof value !== 'boolean')

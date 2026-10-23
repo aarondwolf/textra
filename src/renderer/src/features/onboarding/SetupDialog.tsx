@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   AIChat,
   Article,
+  CaretDown,
   Hammer,
   Palette,
   Pencil,
@@ -141,6 +142,134 @@ export const THEME_DEFAULTS: Record<
     text: '#3b342a',
   },
 };
+
+interface ActionSelectMenuProps {
+  selectedId: string;
+  onSelect: (actionId: string, defaultKeys?: string) => void;
+  availableActions: typeof AVAILABLE_ADD_ACTIONS;
+}
+
+function ActionSelectMenu({ selectedId, onSelect, availableActions }: ActionSelectMenuProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const selectedAction = availableActions.find((a) => a.id === selectedId);
+  const displayLabel =
+    selectedId === '__custom__'
+      ? 'Custom action name…'
+      : selectedAction
+        ? selectedAction.label
+        : 'Select Action';
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
+      <button
+        type="button"
+        className="editor-format-heading-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Select Action"
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          height: '26px',
+          padding: '0 8px',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-pill)',
+          background: 'var(--surface)',
+          color: selectedId ? 'var(--text)' : 'var(--muted)',
+          fontSize: '11px',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayLabel}
+        </span>
+        <CaretDown size={11} aria-hidden="true" style={{ flexShrink: 0, marginLeft: '6px' }} />
+      </button>
+
+      {open && (
+        <div
+          className="editor-format-heading-menu"
+          role="menu"
+          aria-label="Actions list"
+          style={{
+            position: 'absolute',
+            zIndex: 100,
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            minWidth: '220px',
+            maxHeight: '220px',
+            overflowY: 'auto',
+          }}
+        >
+          {availableActions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onSelect(action.id, action.defaultKeys);
+                setOpen(false);
+              }}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontWeight: selectedId === action.id ? 600 : 400,
+              }}
+            >
+              <span>{action.label}</span>
+              {action.defaultKeys && (
+                <span style={{ color: 'var(--faint)', fontSize: '10px', marginLeft: '8px' }}>
+                  {action.defaultKeys}
+                </span>
+              )}
+            </button>
+          ))}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onSelect('__custom__', '');
+              setOpen(false);
+            }}
+            style={{
+              fontWeight: selectedId === '__custom__' ? 600 : 400,
+              borderTop: '1px solid var(--border)',
+              marginTop: '2px',
+              paddingTop: '6px',
+            }}
+          >
+            Custom action name…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SetupDialog({
   open,
@@ -993,38 +1122,18 @@ export default function SetupDialog({
                       Add a shortcut
                     </span>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <select
-                        aria-label="Select action to add shortcut for"
-                        value={selectedActionId}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSelectedActionId(val);
-                          const action = AVAILABLE_ADD_ACTIONS.find((a) => a.id === val);
-                          if (action) {
-                            setNewShortcutKeys(action.defaultKeys);
+                      <ActionSelectMenu
+                        selectedId={selectedActionId}
+                        availableActions={AVAILABLE_ADD_ACTIONS.filter(
+                          (a) => !preferences.keyboardShortcuts?.[a.id],
+                        )}
+                        onSelect={(actionId, defaultKeys) => {
+                          setSelectedActionId(actionId);
+                          if (defaultKeys !== undefined) {
+                            setNewShortcutKeys(defaultKeys);
                           }
                         }}
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          padding: '4px 6px',
-                          fontSize: '11px',
-                          background: 'var(--surface)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                        }}
-                      >
-                        <option value="">Choose an action…</option>
-                        {AVAILABLE_ADD_ACTIONS.filter(
-                          (a) => !preferences.keyboardShortcuts?.[a.id],
-                        ).map((action) => (
-                          <option key={action.id} value={action.id}>
-                            {action.label}
-                          </option>
-                        ))}
-                        <option value="__custom__">Custom action name…</option>
-                      </select>
+                      />
                       {selectedActionId === '__custom__' && (
                         <input
                           aria-label="New shortcut action name"

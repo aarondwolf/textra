@@ -41,6 +41,7 @@ import {
   openInExternalEditor,
 } from './services/external-editor';
 import { BuildService, detectTools } from './services/latex';
+import { planRecipe } from './services/recipe-plan';
 import { setToolPaths, validateToolPath } from './services/tool-paths';
 import { ConfigService, exportSettings, importSettings } from './services/settings';
 import { validateRecipeSettings } from '../shared/recipes';
@@ -617,7 +618,7 @@ void app.whenReady().then(() => {
   handleRequest<'cleanAuxiliaryFiles'>('textra:build:clean-aux', async (request) => {
     if (builds.getState().running || healthBuild)
       throw new ProjectError('BUILD_RUNNING', 'Wait for the current build to finish first.');
-    const { projectId, path: docRelativePath } = request;
+    const { projectId, path: docRelativePath, recipe: requestedRecipe } = request;
     const root = projects.getRoot(projectId);
 
     const AUX_EXTS = new Set([
@@ -643,6 +644,13 @@ void app.whenReady().then(() => {
       '.run.xml',
       '.xdv',
       '.dvi',
+      '.upa',
+      '.upb',
+      '.auxlock',
+      '.dpth',
+      '.mw',
+      '.ent',
+      '.cut',
     ]);
 
     let baseName: string | null = null;
@@ -657,39 +665,97 @@ void app.whenReady().then(() => {
     candidateDirs.add(targetDir);
     candidateDirs.add(join(root, 'build', 'textra'));
 
-    let removedCount = 0;
-    for (const dir of candidateDirs) {
+    let plannedAuxDir: string | null = null;
+    let plannedOutDir: string | null = null;
+
+    if (docRelativePath && /\.tex$/i.test(docRelativePath)) {
+      try {
+        const rawConfig = await config.getProjectConfig(projectId);
+        const settings = validateRecipeSettings(rawConfig);
+        const recipeName =
+          requestedRecipe ||
+          rawConfig?.recipes?.[docRelativePath] ||
+          settings['latex-workshop.latex.recipes']?.[0]?.name;
+        if (recipeName) {
+          const plan = await planRecipe(root, docRelativePath, recipeName, settings).catch(
+            () => null,
+          );
+          if (plan) {
+            plannedAuxDir = plan.auxiliary;
+            plannedOutDir = plan.output;
+            candidateDirs.add(plan.auxiliary);
+            candidateDirs.add(plan.output);
+          }
+        }
+      } catch {
+        // Fall back to standard candidate directories
+      }
+    }
+
+    async function collectAuxFiles(dir: string, depth = 0): Promise<string[]> {
+      if (depth > 6) return [];
+      const collected: string[] = [];
       try {
         const entries = await readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          if (!entry.isFile()) continue;
-          const fileName = entry.name;
-          const lowerName = fileName.toLowerCase();
-          if (
-            lowerName.endsWith('.pdf') ||
-            lowerName.endsWith('.tex') ||
-            lowerName.endsWith('.bib')
-          )
-            continue;
+          const fullPath = join(dir, entry.name);
+          if (entry.isDirectory()) {
+            const lowerDir = entry.name.toLowerCase();
+            if (['.git', 'node_modules', '.textra', '.agents', '.codex'].includes(lowerDir))
+              continue;
+            collected.push(...(await collectAuxFiles(fullPath, depth + 1)));
+          } else if (entry.isFile()) {
+            const fileName = entry.name;
+            const lowerName = fileName.toLowerCase();
+            if (
+              lowerName.endsWith('.pdf') ||
+              lowerName.endsWith('.tex') ||
+              lowerName.endsWith('.bib') ||
+              lowerName.endsWith('.cls') ||
+              lowerName.endsWith('.sty') ||
+              lowerName.endsWith('.dtx') ||
+              lowerName.endsWith('.ins')
+            )
+              continue;
 
-          const ext = extname(lowerName);
-          const isSynctexGz = lowerName.endsWith('.synctex.gz');
-          const isAux = AUX_EXTS.has(ext) || isSynctexGz;
-          if (!isAux) continue;
+            const ext = extname(lowerName);
+            const isSynctexGz = lowerName.endsWith('.synctex.gz');
+            const isAux = AUX_EXTS.has(ext) || isSynctexGz;
+            if (!isAux) continue;
 
-          if (baseName) {
-            const matchesBase =
-              lowerName.startsWith(baseName.toLowerCase() + '.') ||
-              lowerName.startsWith(baseName.toLowerCase() + '-');
-            if (!matchesBase && dir !== join(root, 'build', 'textra')) continue;
+            const isBuildSubdir =
+              dir.toLowerCase().includes('build') ||
+              (plannedAuxDir && dir.startsWith(plannedAuxDir)) ||
+              (plannedOutDir && dir.startsWith(plannedOutDir));
+            if (baseName && !isBuildSubdir) {
+              const lowerBase = baseName.toLowerCase();
+              const matchesBase =
+                lowerName.startsWith(lowerBase + '.') || lowerName.startsWith(lowerBase + '-');
+              if (!matchesBase) continue;
+            }
+
+            collected.push(fullPath);
           }
-
-          const filePath = join(dir, fileName);
-          await unlink(filePath).catch(() => null);
-          removedCount++;
         }
       } catch {
-        // Directory may not exist
+        // Directory may not exist or not readable
+      }
+      return collected;
+    }
+
+    const filesToDelete = new Set<string>();
+    for (const dir of candidateDirs) {
+      const files = await collectAuxFiles(dir);
+      for (const f of files) filesToDelete.add(f);
+    }
+
+    let removedCount = 0;
+    for (const file of filesToDelete) {
+      try {
+        await unlink(file);
+        removedCount++;
+      } catch {
+        // Ignore unlinking errors
       }
     }
 

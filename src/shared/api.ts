@@ -494,6 +494,7 @@ export interface TextraAPI {
   cleanAuxiliaryFiles(request: {
     projectId: string;
     path?: string;
+    recipe?: string;
   }): Promise<Result<CleanAuxiliaryResult>>;
   exportSettings(): Promise<Result<boolean>>;
   importSettings(): Promise<Result<Preferences | null>>;

@@ -1,21 +1,14 @@
 # Current state
 
-2026-10-22 Comprehensive UI polish, shortcut execution, and diagnostic intelligence:
+2026-10-22 Comprehensive UI polish, Build tab synchronization, recursive auxiliary cleanup, and styled action popups:
 
-- Tab Pill Width Stability: file tab pills no longer jitter or resize when modified/saved; `.dirty-dot` occupies constant layout dimensions with opacity transitions.
-- Direct PDF Opening: clicking PDF files in the file explorer now directly opens them in the Preview pane without an extraneous confirmation dialog.
-- Editor Word Selection & Typing Stability: resolved Monaco selection reset where typing followed by `Ctrl+Shift+Back` or `Ctrl+Shift+Left/Right` truncated multi-word selections. Prevented unintended active Monaco model value resets and guarded AI completion inline listeners.
-- Settings Appearance & AI Typography: added a distinct border to Surface and Background color swatches under Appearance; harmonized AI Settings typography with system fonts and standard header styling.
-- Markdown Preview & Toolbar Integration: clicking a PDF no longer locks the Preview pane against subsequent Markdown previews; editor formatting toolbar renders a dedicated Markdown preview document icon (`FileText`) when editing Markdown files.
-- Files Tab Actions: "Reveal in Explorer" on folders uses `shell.openPath` to open inside the folder rather than selecting the folder in its parent directory; grouped Open Folder alongside Reveal in Explorer and Open in VS Code.
-- Writing Tab Styling: removed pill containers around collapsible Outline and Notes sections; matched `% TODO` icon color to the accent TODO pill.
-- Build Tab Compilation & Auxiliary Cleanup: synchronized header Compile button feedback ("Built", "Failed") with the preview compile button; added a "Clear Auxiliary Files" broom button (`Broom` / `cleanAuxiliaryFiles`) that safely cleans intermediate artifacts while preserving output PDFs.
-- Snippets & Symbols: single click expands snippet details (Name, Description, Code); double click inserts; custom snippets feature a flat 24px edit icon button (`Pencil`) with inline editing controls.
-- Assistant Tab Icon Refinement: removed circular borders from the privacy notice dismiss button and code block copy buttons.
-- Keyboard Shortcuts System: built action selector for custom bindings (`saveAll`, `formatDocument`, `cleanArtifacts`, `cleanAux`, `openFolder`, `newFile`, etc.), implemented global shortcut matching (`matchesShortcut`), and wired keyboard dispatcher to execute actions across the application.
-- Diagnostics AI Troubleshooting: appended external tool source notices to AI troubleshooting prompts (`"Note: This was flagged by [source], not the LaTeX compiler..."`) for issues originating from ChkTeX, TexLab, or reference checkers. Standardized Problems toolbar height to 29px.
-- Verification: 489/489 unit tests pass, typecheck passes with 0 errors, ESLint passes with 0 errors, Prettier format check passes.
-
+- Writing Tab Collapsible Sections: removed pill borders, backgrounds, and `border-radius: var(--radius-pill)` overrides on `.writing-section` and `.writing-section-toggle` with `border-radius: 0 !important`, producing flat, edge-to-edge section headers.
+- Build Tab Compile Button Clone: header Compile button is now an exact visual and behavioral clone of the Preview Compile button, matching status text ('Success!', 'Failed', 'Compile', 'Cancel'), `--progress` inline style, and `data-progress` attributes.
+- Recipe-Aware Auxiliary File Cleanup: `cleanAuxiliaryFiles` resolves document recipe plans (`planRecipe`) to discover exact auxiliary and output directories (`plan.auxiliary`, `plan.output`), recursively traverses build directories to delete all auxiliary artifacts (`.aux`, `.bbl`, `.fls`, `.fdb_latexmk`, `.log`, `.synctex.gz`, `.toc`, `.nav`, `.snm`, `.vrb`, etc.), while strictly preserving `.pdf` and source files.
+- Assistant Tab Code Block Copy: fenced code block copy button checkmark now smoothly fades back to the copy icon after 2.5 seconds via `useEffect` timeout and CSS transition.
+- Keyboard Shortcuts Dropdown: replaced native `<select>` with a custom dropdown popup matching the formatting bar Headers menu (`.editor-format-heading-trigger` / `.editor-format-heading-menu`), featuring a default "Select Action" prompt, caret down icon, keyboard/click outside dismissal, and formatted shortcut hints.
+- Problems Pane Height Symmetry: standardized `.problems-toolbar` and `.problems-filters` to exactly 29px (`height: 29px; min-height: 29px; max-height: 29px; box-sizing: border-box; padding: 2px 8px`), matching `.editor-format-toolbar` in the editor pane for symmetry.
+- Verification: 489/489 unit tests pass, integration tests pass, `npm run typecheck` passes with 0 errors, `npm run lint` passes with 0 errors, `npm run format:check` passes with 0 warnings.
 
 2026-10-22 UI/UX refinement & visual hierarchy polish:
 

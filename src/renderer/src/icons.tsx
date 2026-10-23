@@ -49,6 +49,7 @@ export {
   Check,
   ClockCounterClockwise as History,
   Code,
+  CaretDown,
   CaretDown as ChevronDown,
   CaretUp as ChevronUp,
   CaretLeft as ChevronLeft,

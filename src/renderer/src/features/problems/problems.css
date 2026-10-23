@@ -14,6 +14,7 @@
   gap: 10px;
   height: 29px;
   min-height: 29px;
+  max-height: 29px;
   padding: 2px 8px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
@@ -55,9 +56,13 @@
 }
 
 .problems-navigation button {
-  min-height: 22px;
-  padding: 2px 6px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
   font-size: 10px;
+  line-height: 1;
 }
 
 .problems-navigation button:not(:disabled),
@@ -83,26 +88,40 @@
 
 .problems-filters {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
+  height: 29px;
   min-height: 29px;
+  max-height: 29px;
   box-sizing: border-box;
-  padding: 3px 8px;
+  padding: 2px 8px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+.problems-filters::-webkit-scrollbar {
+  display: none;
+}
+
 .problems-severity-filters,
 .problems-source-filters {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .problems-severity-filter,
 .problems-source-filter {
-  min-height: 22px;
-  padding: 2px 7px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
   font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .problems-severity-filter[aria-pressed='false'],

@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Check, Copy } from '../../icons';
 import './markdown.css';
 
@@ -164,6 +164,13 @@ export function renderMarkdownInline(source: string): ReactNode[] {
 function CodeBlock({ block, copyCode }: { block: TextBlock; copyCode: boolean }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
   return (
     <div className="markdown-preview-code-wrap">
       <pre className="markdown-preview-code" data-language={block.language || undefined}>

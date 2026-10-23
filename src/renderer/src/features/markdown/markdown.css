@@ -101,6 +101,11 @@
   color: var(--muted);
   cursor: pointer;
 }
+.markdown-preview-code-copy svg {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
 .markdown-preview-code-copy:hover,
 .markdown-preview-code-copy:focus-visible {
   background: transparent;

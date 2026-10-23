@@ -1801,6 +1801,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         const res = await window.textra.cleanAuxiliaryFiles({
           projectId: project.id,
           path: activePath ?? undefined,
+          recipe: engine,
         });
         if (res.ok) {
           window.dispatchEvent(
@@ -2190,6 +2191,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                       engine +
                                       ' (Ctrl/Cmd+Enter)'
                       }
+                      style={
+                        build.running && build.stepCount
+                          ? ({
+                              '--progress': `${Math.min(
+                                95,
+                                (((build.stepsDone ?? 0) + 0.5) / build.stepCount) * 100,
+                              )}%`,
+                            } as CSSProperties)
+                          : undefined
+                      }
+                      data-progress={build.running && build.stepCount ? 'true' : undefined}
                       disabled={!build.running && (!canCompile || busy)}
                       onClick={() =>
                         build.running
@@ -2211,7 +2223,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       {build.running
                         ? 'Cancel'
                         : buildFeedback === 'success'
-                          ? 'Built'
+                          ? 'Success!'
                           : buildFeedback === 'failed'
                             ? 'Failed'
                             : 'Compile'}
@@ -2259,6 +2271,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           const res = await window.textra.cleanAuxiliaryFiles({
                             projectId: project.id,
                             path: activePath ?? undefined,
+                            recipe: engine,
                           });
                           if (res.ok) {
                             window.dispatchEvent(

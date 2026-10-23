@@ -63,6 +63,7 @@
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  border-radius: 0 !important;
 }
 
 .writing-section-toggle {
@@ -73,6 +74,7 @@
   height: 32px;
   padding: 0 10px;
   border: none;
+  border-radius: 0 !important;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted);
@@ -86,6 +88,12 @@
 .writing-section-toggle:hover {
   background: var(--hover);
   color: var(--text);
+}
+
+.writing-section-toggle:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-radius: 0 !important;
 }
 
 .writing-section-title-text {

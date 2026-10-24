@@ -73,8 +73,8 @@
 }
 .ai-settings-dialog
   button:not(.icon-button):not(.dropdown-menu-item):not(.dropdown-menu-trigger):not(
-    .dropdown-menu-popup button
-  ) {
+    .setting-switch-root
+  ):not(.setting-radio-item):not(.location-radio):not(.dropdown-menu-popup button) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -100,8 +100,10 @@
 }
 .ai-settings-dialog
   button:not(.icon-button):not(.dropdown-menu-item):not(.dropdown-menu-trigger):not(
-    .dropdown-menu-popup button
-  ):hover:not(:disabled) {
+    .setting-switch-root
+  ):not(.setting-radio-item):not(.location-radio):not(.dropdown-menu-popup button):hover:not(
+    :disabled
+  ) {
   border-color: var(--accent);
 }
 .ai-settings-dialog .dropdown-menu-trigger {
@@ -218,6 +220,14 @@
   gap: 8px;
   color: var(--text);
   line-height: 1.5;
+}
+.ai-switch-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.ai-switch-row > span {
+  min-width: 0;
 }
 .ai-check input {
   flex: none;

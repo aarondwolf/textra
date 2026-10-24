@@ -134,15 +134,12 @@
 }
 .conflict-checkbox {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 10px;
   font-size: 11px;
   line-height: 1.35;
-}
-.conflict-checkbox input {
-  margin: 1px 0 0;
-  accent-color: var(--accent);
 }
 .conflict-hint {
   color: var(--accent) !important;

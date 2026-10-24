@@ -24,7 +24,7 @@
   color: var(--muted);
   margin: 8px 0 14px;
 }
-.recipe-dialog button {
+.recipe-dialog button:not(.setting-switch-root):not(.setting-radio-item):not(.location-radio) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -168,10 +168,50 @@
   gap: 8px;
   font-size: 12px;
 }
-.location-option input,
-.recipe-checkbox input {
-  width: auto;
-  margin-top: 2px;
+.location-option {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+.location-option:has(.location-radio[data-state='checked']) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.location-radio {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 1px 0 0;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.location-radio[data-state='checked'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.location-radio:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 2px;
+}
+.location-radio-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.recipe-checkbox {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .location-option small,
 .recipe-checkbox small {
@@ -249,14 +289,6 @@
   margin: 0;
 }
 
-.location-option input[type='radio'],
-.recipe-checkbox input[type='checkbox'] {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  margin: 2px 0 0;
-  padding: 0;
-}
 .location-option > span,
 .recipe-checkbox > span {
   flex: 1;

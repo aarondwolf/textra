@@ -43,6 +43,8 @@ export default defineConfig({
         '@radix-ui/react-context-menu',
         '@radix-ui/react-dropdown-menu',
         '@radix-ui/react-popover',
+        '@radix-ui/react-radio-group',
+        '@radix-ui/react-switch',
         '@radix-ui/react-tooltip',
         '@radix-ui/react-toast',
         '@dnd-kit/core',

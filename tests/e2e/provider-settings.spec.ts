@@ -119,7 +119,7 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     await expect(key).toHaveAttribute('type', 'password');
     await expect(key).toHaveValue('');
     await expect(
-      editor.getByRole('checkbox', {
+      editor.getByRole('switch', {
         name: 'Supports tool calls (lets the assistant read and propose document edits)',
         exact: true,
       }),

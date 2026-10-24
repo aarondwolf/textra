@@ -217,7 +217,7 @@ test('native prompted inline edits, quiet automatic ghost text, and compile shor
     const aiSettings = settings.locator('.ai-settings-inline');
     await expect(aiSettings).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
-    const enabled = aiSettings.getByRole('checkbox', { name: /^Enable automatic completion/ });
+    const enabled = aiSettings.getByRole('switch', { name: /^Enable automatic completion/ });
     await expect(enabled).not.toBeChecked();
     await expect(
       aiSettings.getByRole('button', { name: /^Automatic completion.*model:/ }),

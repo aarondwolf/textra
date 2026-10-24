@@ -22,6 +22,7 @@ import {
   modelGroups,
 } from './useAISettings';
 import { SaveFooter } from '../save-status/SaveFooter';
+import { SettingSwitch } from '../../components/SettingsControls';
 import './ai-settings.css';
 import { StatusMessage } from '../../components/Layout';
 const ProviderEditor = lazy(() => import('./AIProviderEditor'));
@@ -210,41 +211,41 @@ export function AISettingsPanel({
             </section>
             <section className="ai-completion-settings" aria-label="Autocomplete (ghost text)">
               <h3>Autocomplete (ghost text)</h3>
-              <label className="ai-check">
-                <input
-                  type="checkbox"
+              <div className="ai-check ai-switch-row">
+                <span>Enable automatic completion</span>
+                <SettingSwitch
+                  label="Enable automatic completion"
                   checked={settings.completion.enabled}
                   disabled={updating}
-                  onChange={(event) =>
+                  onCheckedChange={(checked) =>
                     void apply(() =>
                       window.textra.setAICompletionSettings({
-                        enabled: event.target.checked,
+                        enabled: checked,
                         allowOutsideEnvironments: settings.completion.allowOutsideEnvironments,
                       }),
                     )
                   }
                 />
-                <span>Enable automatic completion</span>
-              </label>
+              </div>
               {settings.completion.enabled && (
                 <>
                   {roleSelector('completion')}
-                  <label className="ai-check">
-                    <input
-                      type="checkbox"
+                  <div className="ai-check ai-switch-row">
+                    <span>Allow automatic completion in ordinary prose</span>
+                    <SettingSwitch
+                      label="Allow automatic completion in ordinary prose"
                       checked={settings.completion.allowOutsideEnvironments}
                       disabled={updating}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         void apply(() =>
                           window.textra.setAICompletionSettings({
                             enabled: settings.completion.enabled,
-                            allowOutsideEnvironments: event.target.checked,
+                            allowOutsideEnvironments: checked,
                           }),
                         )
                       }
                     />
-                    Allow automatic completion in ordinary prose
-                  </label>
+                  </div>
                 </>
               )}
               <p className="ai-settings-note">
@@ -297,18 +298,17 @@ export function AISettingsPanel({
                     aria-label={providerLabel(connection)}
                   >
                     <div className="ai-connection-main">
-                      <label className="ai-check">
-                        <input
-                          type="checkbox"
-                          role="switch"
-                          aria-label={`${providerLabel(connection)} enabled`}
+                      <div className="ai-check ai-switch-row">
+                        <span>{providerLabel(connection)}</span>
+                        <SettingSwitch
+                          label={`${providerLabel(connection)} enabled`}
                           checked={connection.enabled !== false}
                           disabled={updating}
-                          onChange={(event) =>
+                          onCheckedChange={(checked) =>
                             void apply(() =>
                               window.textra.configureAIProvider({
                                 provider: connection.id,
-                                enabled: event.target.checked,
+                                enabled: checked,
                                 endpoint:
                                   connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id],
                                 displayName: connection.displayName,
@@ -323,8 +323,7 @@ export function AISettingsPanel({
                             )
                           }
                         />
-                        <span>{providerLabel(connection)}</span>
-                      </label>
+                      </div>
                       <div className="ai-connection-meta">
                         <small>
                           {connection.enabled === false
@@ -366,17 +365,7 @@ export function AISettingsPanel({
                 ))}
               </div>
             </section>
-            <label className="ai-check ai-auto-send">
-              <input
-                type="checkbox"
-                checked={settings.autoSendProblems}
-                disabled={updating}
-                onChange={(event) =>
-                  void apply(() =>
-                    window.textra.setAIAutoSend({ autoSendProblems: event.target.checked }),
-                  )
-                }
-              />
+            <div className="ai-check ai-auto-send ai-switch-row">
               <span>
                 Automatically send Problems prompts
                 <small>
@@ -384,7 +373,15 @@ export function AISettingsPanel({
                   review first.
                 </small>
               </span>
-            </label>
+              <SettingSwitch
+                label="Automatically send Problems prompts"
+                checked={settings.autoSendProblems}
+                disabled={updating}
+                onCheckedChange={(checked) =>
+                  void apply(() => window.textra.setAIAutoSend({ autoSendProblems: checked }))
+                }
+              />
+            </div>
             <p className="ai-settings-note">
               Keys are encrypted locally. Requests go to the selected connection; local-only models
               stay on this computer.

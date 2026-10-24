@@ -825,7 +825,7 @@
 .setting-radio-group {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 4px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -834,14 +834,95 @@
 .setting-radio-option {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
 }
-.setting-radio-option input {
-  accent-color: var(--accent);
+.setting-radio-option:has([data-state='checked']) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--text);
+}
+.setting-radio-option label {
+  cursor: pointer;
+}
+.setting-radio-item {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
   margin: 0;
+  padding: 0;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.setting-radio-item[data-state='checked'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.setting-radio-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 2px;
+}
+.setting-radio-indicator {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.setting-switch-root {
+  position: relative;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 17px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-strong, var(--surface));
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+.setting-switch-root[data-state='checked'] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.setting-switch-root:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 2px;
+}
+.setting-switch-root:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.setting-switch-thumb {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text);
+  transform: translateX(0);
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+}
+.setting-switch-root[data-state='checked'] .setting-switch-thumb {
+  background: var(--surface);
+  transform: translateX(13px);
 }
 @media (max-width: 680px) {
   .setting-pair {

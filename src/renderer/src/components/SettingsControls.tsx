@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import * as RadioGroup from '@radix-ui/react-radio-group';
+import * as Switch from '@radix-ui/react-switch';
+import { useId } from 'react';
 import { HelpTooltip } from './HelpTooltip';
 
 export function SettingPair({
@@ -35,21 +38,32 @@ export function RadioChoice({
   onChange: (value: string) => void;
   options?: Array<{ value: string; label: string }>;
 }) {
+  const id = useId();
   return (
-    <fieldset className="setting-radio-group" aria-label={label}>
-      {options.map((option) => (
-        <label className="setting-radio-option" key={option.value}>
-          <input
-            type="radio"
-            name={label}
-            value={option.value}
-            checked={value === option.value}
-            onChange={() => onChange(option.value)}
-          />
-          <span>{option.label}</span>
-        </label>
-      ))}
-    </fieldset>
+    <RadioGroup.Root
+      className="setting-radio-group"
+      aria-label={label}
+      value={value}
+      onValueChange={onChange}
+      orientation="horizontal"
+    >
+      {options.map((option, index) => {
+        const optionId = `${id}-${index}`;
+        return (
+          <div className="setting-radio-option" key={option.value}>
+            <RadioGroup.Item
+              className="setting-radio-item"
+              id={optionId}
+              value={option.value}
+              aria-label={option.label}
+            >
+              <RadioGroup.Indicator className="setting-radio-indicator" />
+            </RadioGroup.Item>
+            <label htmlFor={optionId}>{option.label}</label>
+          </div>
+        );
+      })}
+    </RadioGroup.Root>
   );
 }
 
@@ -57,20 +71,22 @@ export function SettingSwitch({
   label,
   checked,
   onCheckedChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <label className="texlab-toggle setting-switch">
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        checked={checked}
-        onChange={(event) => onCheckedChange(event.target.checked)}
-      />
-    </label>
+    <Switch.Root
+      className="setting-switch-root"
+      aria-label={label}
+      checked={checked}
+      onCheckedChange={onCheckedChange}
+      disabled={disabled}
+    >
+      <Switch.Thumb className="setting-switch-thumb" />
+    </Switch.Root>
   );
 }

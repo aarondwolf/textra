@@ -45,6 +45,12 @@ test('project recipes round-trip through builder, JSON and external settings edi
         .getByRole('button', { name: 'Advanced project settings…', exact: true })
         .click();
       await expect(page.getByRole('dialog', { name: 'Build recipes', exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('dialog', { name: 'Build recipes', exact: true }).getByRole('button', {
+          name: 'Save project settings',
+          exact: true,
+        }),
+      ).toBeEnabled();
     }
     const dialog = page.getByRole('dialog', { name: 'Build recipes', exact: true });
     async function closeSettings() {
@@ -74,6 +80,28 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await dialog
       .getByRole('textbox', { name: 'Build folder', exact: true })
       .fill('build/custom output');
+    const besideSource = dialog.getByRole('radio', {
+      name: 'PDF next to the .tex file, other files in the build folder',
+      exact: true,
+    });
+    const perDocument = dialog.getByRole('switch', {
+      name: 'Separate folder for each document',
+      exact: true,
+    });
+    const initialPerDocument = await perDocument.isChecked();
+    await perDocument.click();
+    await expect(perDocument).toHaveAttribute('aria-checked', String(!initialPerDocument));
+    await perDocument.click();
+    await expect(perDocument).toHaveAttribute('aria-checked', String(initialPerDocument));
+    await expect(besideSource).not.toBeChecked();
+    await besideSource.click();
+    await expect(besideSource).toBeChecked();
+    const buildOutput = dialog.getByRole('radio', {
+      name: 'Everything in the build folder',
+      exact: true,
+    });
+    await buildOutput.click();
+    await expect(buildOutput).toBeChecked();
     await dialog.getByRole('button', { name: 'Project default recipe', exact: true }).click();
     await page
       .getByRole('menu', { name: 'Project default recipe', exact: true })

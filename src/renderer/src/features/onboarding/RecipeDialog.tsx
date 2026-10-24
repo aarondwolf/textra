@@ -27,6 +27,8 @@ import {
 } from '../../../../shared/recipe-help';
 import { sortProjectTexFiles, useWorkspace } from '../../state/workspace';
 import { DropdownMenu } from '../../components/DropdownMenu';
+import * as RadioGroup from '@radix-ui/react-radio-group';
+import { SettingSwitch } from '../../components/SettingsControls';
 import './recipes.css';
 
 function initial(): ProjectConfig {
@@ -587,7 +589,23 @@ export default function RecipeDialog({
                   />
                 </label>
                 <h3>Output location</h3>
-                <div role="radiogroup" aria-label="Output location" className="location-options">
+                <RadioGroup.Root
+                  aria-label="Output location"
+                  className="location-options"
+                  value={location.mode}
+                  onValueChange={(value) => {
+                    const mode = value as OutputMode;
+                    applyLocation(
+                      mode === 'custom'
+                        ? { ...location, mode }
+                        : {
+                            mode,
+                            folder: location.folder || DEFAULT_BUILD_FOLDER,
+                            perDocument: location.perDocument,
+                          },
+                    );
+                  }}
+                >
                   {(
                     [
                       [
@@ -607,30 +625,17 @@ export default function RecipeDialog({
                       ],
                     ] as Array<[OutputMode, string, string]>
                   ).map(([mode, label, text]) => (
-                    <label key={mode} className="location-option">
-                      <input
-                        type="radio"
-                        name="output-mode"
-                        checked={location.mode === mode}
-                        onChange={() =>
-                          applyLocation(
-                            mode === 'custom'
-                              ? { ...location, mode }
-                              : {
-                                  mode,
-                                  folder: location.folder || DEFAULT_BUILD_FOLDER,
-                                  perDocument: location.perDocument,
-                                },
-                          )
-                        }
-                      />
+                    <div key={mode} className="location-option">
+                      <RadioGroup.Item className="location-radio" value={mode} aria-label={label}>
+                        <RadioGroup.Indicator className="location-radio-indicator" />
+                      </RadioGroup.Item>
                       <span>
                         {label}
                         <small>{text}</small>
                       </span>
-                    </label>
+                    </div>
                   ))}
-                </div>
+                </RadioGroup.Root>
                 {location.mode !== 'custom' ? (
                   <>
                     <label className="field-label">
@@ -643,15 +648,7 @@ export default function RecipeDialog({
                         }
                       />
                     </label>
-                    <label className="recipe-checkbox">
-                      <input
-                        type="checkbox"
-                        aria-label="Separate folder for each document"
-                        checked={location.perDocument}
-                        onChange={(event) =>
-                          applyLocation({ ...location, perDocument: event.target.checked })
-                        }
-                      />
+                    <div className="recipe-checkbox">
                       <span>
                         Separate folder for each document
                         <small>
@@ -661,7 +658,14 @@ export default function RecipeDialog({
                           if you only ever compile one document.
                         </small>
                       </span>
-                    </label>
+                      <SettingSwitch
+                        label="Separate folder for each document"
+                        checked={location.perDocument}
+                        onCheckedChange={(perDocument) =>
+                          applyLocation({ ...location, perDocument })
+                        }
+                      />
+                    </div>
                   </>
                 ) : (
                   <>

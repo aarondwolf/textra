@@ -1403,18 +1403,17 @@ export default function SetupDialog({
                           Local style diagnostics for LaTeX. It runs after saving by default.
                         </p>
                       </div>
-                      <label className="texlab-toggle">
+                      <div className="texlab-toggle">
                         <span>Enabled</span>
-                        <input
-                          type="checkbox"
-                          role="switch"
+                        <SettingSwitch
+                          label="ChkTeX enabled"
                           checked={preferences.chktexEnabled}
                           disabled={busy}
-                          onChange={(event) =>
-                            updatePreferences({ chktexEnabled: event.target.checked })
+                          onCheckedChange={(checked) =>
+                            updatePreferences({ chktexEnabled: checked })
                           }
                         />
-                      </label>
+                      </div>
                     </div>
                     <label className="field-label chktex-field">
                       Check timing

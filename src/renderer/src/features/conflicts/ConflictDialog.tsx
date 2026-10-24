@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
+import { SettingSwitch } from '../../components/SettingsControls';
 import type { ConflictDocument, ExternalChangeStatus, PreserveConflictOptions } from './types';
 import './conflicts.css';
 
@@ -109,15 +110,15 @@ export function ConflictDialog({
               Save the current in-editor buffer beside the original as a dated{' '}
               <code>CONFLICTED</code> copy. This never replaces either version.
             </p>
-            <label className="conflict-checkbox">
-              <input
-                type="checkbox"
+            <div className="conflict-checkbox">
+              <span>Compare with the external version when it is stable</span>
+              <SettingSwitch
+                label="Compare with the external version when it is stable"
                 checked={compareWhenStable}
-                onChange={(event) => setCompareWhenStable(event.target.checked)}
+                onCheckedChange={setCompareWhenStable}
                 disabled={busy !== null || unavailable}
               />
-              Compare with the external version when it is stable
-            </label>
+            </div>
             {!stable && compareWhenStable && !unavailable && (
               <p className="conflict-hint">
                 Comparison will wait until external writes have stopped.

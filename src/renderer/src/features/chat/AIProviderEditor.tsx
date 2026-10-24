@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { DropdownMenu } from '../../components/DropdownMenu';
+import { SettingSwitch } from '../../components/SettingsControls';
 import type { AIProviderSettings, OllamaLocalStatus } from '../../../../shared/api';
 import {
   AI_DEFAULT_ENDPOINTS,
@@ -265,14 +266,14 @@ export default function ProviderEditor({
             }}
           >
             <fieldset disabled={busy} className="ai-provider-fields">
-              <label className="ai-check">
-                <input
-                  type="checkbox"
+              <div className="ai-check ai-switch-row">
+                <span>Connection enabled</span>
+                <SettingSwitch
+                  label="Connection enabled"
                   checked={enabled}
-                  onChange={(event) => setEnabled(event.target.checked)}
+                  onCheckedChange={setEnabled}
                 />
-                Connection enabled
-              </label>
+              </div>
               {provider.id === 'custom' && (
                 <label className="field-label">
                   Connection name
@@ -465,14 +466,16 @@ export default function ProviderEditor({
                   </p>
                 )}
                 {provider.id === 'custom' && (
-                  <label className="ai-check">
-                    <input
-                      type="checkbox"
+                  <div className="ai-check ai-switch-row">
+                    <span>
+                      Supports tool calls (lets the assistant read and propose document edits)
+                    </span>
+                    <SettingSwitch
+                      label="Supports tool calls (lets the assistant read and propose document edits)"
                       checked={supportsTools}
-                      onChange={(event) => setSupportsTools(event.target.checked)}
+                      onCheckedChange={setSupportsTools}
                     />
-                    Supports tool calls (lets the assistant read and propose document edits)
-                  </label>
+                  </div>
                 )}
                 <label className="field-label">
                   Manual model IDs

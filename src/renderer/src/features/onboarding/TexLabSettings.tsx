@@ -1,4 +1,5 @@
 import { Check, Package, Play, RefreshCw, Wrench } from '../../icons';
+import { SettingSwitch } from '../../components/SettingsControls';
 
 export type TexLabInstallState = 'managed' | 'external' | 'missing' | 'checking' | 'error';
 
@@ -54,16 +55,15 @@ export function TexLabSettings({
             projects. TexLab runs locally.
           </p>
         </div>
-        <label className="texlab-toggle">
+        <div className="texlab-toggle">
           <span>Enabled</span>
-          <input
-            type="checkbox"
-            role="switch"
+          <SettingSwitch
+            label="TexLab enabled"
             checked={enabled}
             disabled={busy || !isAvailable || !onEnabledChange}
-            onChange={(event) => onEnabledChange?.(event.target.checked)}
+            onCheckedChange={(checked) => onEnabledChange?.(checked)}
           />
-        </label>
+        </div>
       </div>
 
       <div className="texlab-status" aria-live="polite">

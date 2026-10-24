@@ -300,7 +300,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(google).toContainText('Disabled');
     await googleEnabled.click();
     await expect(googleEnabled).toBeChecked();
-    const autoSend = aiDialog.getByRole('checkbox', {
+    const autoSend = aiDialog.getByRole('switch', {
       name: /Automatically send Problems prompts/,
     });
     await expect(autoSend).not.toBeChecked();
@@ -381,7 +381,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     );
     await providerEditor.getByRole('button', { name: 'Save Google Gemini', exact: true }).click();
     await expect(googleCard).toContainText('3 assistant');
-    const settingAutoSend = aiSettingsInline.getByRole('checkbox', {
+    const settingAutoSend = aiSettingsInline.getByRole('switch', {
       name: /Automatically send Problems prompts/,
     });
     await expect(settingAutoSend).not.toBeChecked();
@@ -719,7 +719,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     await settings.getByRole('button', { name: 'AI Settings', exact: true }).click();
     const aiSettingsForPrefs = settings.locator('.ai-settings-inline');
-    const settingAutoSendInline = aiSettingsForPrefs.getByRole('checkbox', {
+    const settingAutoSendInline = aiSettingsForPrefs.getByRole('switch', {
       name: /Automatically send Problems prompts/,
     });
     await expect(settingAutoSendInline).not.toBeChecked();

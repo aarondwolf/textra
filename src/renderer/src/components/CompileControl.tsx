@@ -1,4 +1,5 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Play, Square, Warning } from '../icons';
 import { Button, IconButton } from './Button';
 
@@ -15,7 +16,7 @@ export interface CompileControlProps {
   stepCount?: number;
   onCompile: () => void;
   onCancel: () => void;
-  recipeToggle?: { open: boolean; onToggle: () => void; controls?: string };
+  recipeTrigger?: ReactNode;
 }
 
 /** Shared Compile/Cancel feedback; the caller owns the recipe popup and its focus handling. */
@@ -32,7 +33,7 @@ export function CompileControl({
   stepCount,
   onCompile,
   onCancel,
-  recipeToggle,
+  recipeTrigger,
 }: CompileControlProps) {
   const title = running
     ? 'Cancel build'
@@ -78,7 +79,7 @@ export function CompileControl({
   }
 
   return (
-    <>
+    <div className="compile-control" role="group" aria-label="Compile controls">
       <Button
         variant="toolbar"
         className={`compile-button compile-feedback-${feedback}`}
@@ -113,22 +114,33 @@ export function CompileControl({
               ? 'Failed'
               : 'Compile'}
       </Button>
-      {recipeToggle && (
-        <Button
-          variant="toolbar"
-          className={`compile-button recipe-toggle compile-feedback-${feedback}`}
-          data-feedback={feedback}
-          aria-label="Choose compile recipe"
-          aria-expanded={recipeToggle.open}
-          aria-controls={recipeToggle.controls ?? 'compile-recipes'}
-          disabled={!canCompile || busy || running}
-          title={'Recipe: ' + engine}
-          onClick={recipeToggle.onToggle}
-        >
-          <ChevronDown size={14} />
-        </Button>
-      )}
-    </>
+      {recipeTrigger}
+    </div>
+  );
+}
+
+export function CompileRecipeTrigger({
+  feedback,
+  engine,
+  disabled,
+}: {
+  feedback: CompileControlProps['feedback'];
+  engine: string;
+  disabled: boolean;
+}) {
+  return (
+    <DropdownMenuPrimitive.Trigger asChild>
+      <Button
+        variant="toolbar"
+        className={`compile-button recipe-toggle compile-feedback-${feedback}`}
+        data-feedback={feedback}
+        aria-label="Choose compile recipe"
+        disabled={disabled}
+        title={'Recipe: ' + engine}
+      >
+        <ChevronDown size={14} />
+      </Button>
+    </DropdownMenuPrimitive.Trigger>
   );
 }
 

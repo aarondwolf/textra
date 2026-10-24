@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import type { AIProviderSettings, OllamaLocalStatus } from '../../../../shared/api';
 import {

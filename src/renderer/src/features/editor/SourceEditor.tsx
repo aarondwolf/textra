@@ -455,9 +455,23 @@ interface EditorFormatRequest {
 function EditorFormattingToolbar({
   disabled,
   activePath,
+  onSave,
+  saveDisabled,
+  onSaveAs,
+  fontSize,
+  onFontSizeChange,
+  wrap,
+  onToggleWrap,
 }: {
   disabled: boolean;
   activePath: string;
+  onSave?: () => void;
+  saveDisabled?: boolean;
+  onSaveAs?: () => void;
+  fontSize: number;
+  onFontSizeChange?: (size: number) => void;
+  wrap: boolean;
+  onToggleWrap?: () => void;
 }) {
   const updatePreferences = useUI((state) => state.updatePreferences);
   const setPanel = useUI((state) => state.setPanel);
@@ -493,6 +507,13 @@ function EditorFormattingToolbar({
       onOpenPdf={handleOpenPdf}
       onOpenMarkdown={handleOpenMarkdown}
       onHide={() => updatePreferences({ formatToolbarVisible: false })}
+      onSave={onSave}
+      saveDisabled={saveDisabled}
+      onSaveAs={onSaveAs}
+      fontSize={fontSize}
+      onFontSizeChange={onFontSizeChange}
+      wrap={wrap}
+      onToggleWrap={onToggleWrap}
     />
   );
 }
@@ -565,6 +586,11 @@ export function SourceEditor({
   autoSavePaused = false,
   aiSuppressed = false,
   formatToolbarVisible,
+  onSave,
+  saveDisabled,
+  onSaveAs,
+  onFontSizeChange,
+  onToggleWrap,
   bibliographyEntries,
   texlab,
 }: {
@@ -578,6 +604,11 @@ export function SourceEditor({
   autoSavePaused?: boolean;
   aiSuppressed?: boolean;
   formatToolbarVisible: boolean;
+  onSave?: () => void;
+  saveDisabled?: boolean;
+  onSaveAs?: () => void;
+  onFontSizeChange?: (size: number) => void;
+  onToggleWrap?: () => void;
   bibliographyEntries: readonly BibliographyEntry[];
   texlab?: TexlabEditorAdapter;
 }) {
@@ -1525,6 +1556,13 @@ export function SourceEditor({
         <EditorFormattingToolbar
           disabled={readOnly || !isTexPath(activePath)}
           activePath={activePath}
+          onSave={onSave}
+          saveDisabled={saveDisabled}
+          onSaveAs={onSaveAs}
+          fontSize={fontSize}
+          onFontSizeChange={onFontSizeChange}
+          wrap={wrap}
+          onToggleWrap={onToggleWrap}
         />
       )}
       <div ref={container} className="source-editor" data-testid="source-editor" />

@@ -1,7 +1,7 @@
 import { emitTextraEvent } from './services/events';
 import { useEffect, useRef, useState } from 'react';
 import { lazyFeature } from './features/startup/LazyFeature';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from './components/overlay-layers';
 import { Command } from 'cmdk';
 import {
   AIChat,

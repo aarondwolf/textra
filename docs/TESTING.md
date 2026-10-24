@@ -10,12 +10,36 @@ restores probe files.
 
 The development smoke test reloads after attaching renderer error diagnostics so
 static module failures are reported even if they occurred before CDP connected.
+It selects the renderer page by the local Vite URL when attaching over CDP, and uses
+an ephemeral debugging port so a Windows restart does not collide with a socket
+still being released by the old Electron process.
 Run it after renderer dependency changes: production builds convert CommonJS, but
 development uses the explicit `optimizeDeps.include` list in `electron.vite.config.ts`
 with discovery disabled. Keep new renderer/shared runtime dependencies in that list,
 including ESM packages whose transitive dependencies use CommonJS. The 2026-10-24
 parser refactor otherwise served `is-buffer` unconverted, aborting before React mounted
 with a missing default export and leaving a blank native window.
+
+## Radix controls and UI visual audit (2026-10-24)
+
+The settings/toolbar follow-up passed `npm test` (71 files, 728 tests), typecheck,
+lint, format check, and production build. The final full native Playwright run passed
+16 tests with two intentional skips (opt-in live provider and startup measurement).
+The Radix screen test captures Editor, Files, Compilation, Shortcuts, LaTeX tools,
+AI Settings, Import & export, wide/compact workspace and preview views. Screenshots
+were inspected after the final build; see `docs/UI_AUDIT.md`. Initial full-suite
+failures exposed Save-button dirty-state handling, fixed and verified by rerunning
+both affected workflows before the final full-suite pass.
+
+`tests/e2e/radix-controls.spec.ts` covers recipe and compile control alignment,
+Radix radio selection and Escape handling, Settings menu visibility/hit-testing,
+light/dark theme switching, and preview switching at a compact window size. It
+captures screenshots for wide and compact workspace layouts, Settings in both
+themes, the open theme menu, and the compact preview menu. `tests/e2e/chat.spec.ts`
+also captures the open model picker and chat history menu. The full native suite
+passed 16 tests with 2 opt-in/measurement tests skipped; the chat and Radix specs
+also passed targeted reruns after adding these captures. The component inventory
+and visual review are recorded in `docs/UI_AUDIT.md`.
 
 Unit tests cover validation and parsers. Service tests use temporary directories for
 real filesystem operations. Electron Playwright tests launch the built app; distinguish

@@ -318,8 +318,12 @@
   white-space: nowrap;
 }
 .tab-context-menu {
-  position: fixed;
-  z-index: 100;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0004;
 }
 .document-tab.selected .tab-close,
 .document-tab:hover .tab-close,
@@ -409,6 +413,10 @@
   padding: 3px 10px;
 }
 .editor-format-toolbar {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   height: 29px;
   min-height: 29px;
   max-height: 29px;
@@ -417,6 +425,9 @@
   gap: 2px;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+.editor-format-toolbar::-webkit-scrollbar {
+  display: none;
 }
 .editor-format-toolbar > button {
   min-width: 25px;
@@ -459,10 +470,6 @@
   color: var(--text);
 }
 .editor-format-heading-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  right: 0;
   min-width: 128px;
   padding: 4px;
   border: 1px solid var(--border);
@@ -582,16 +589,7 @@
 .dropdown-menu-container.open .dropdown-menu-trigger-caret {
   transform: rotate(180deg);
 }
-.dropdown-menu-custom-trigger {
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-}
 .dropdown-menu-popup {
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + 4px);
-  left: 0;
   min-width: 100%;
   width: max-content;
   max-width: 420px;
@@ -602,14 +600,6 @@
   border-radius: var(--radius-surface);
   background: var(--surface);
   box-shadow: 0 8px 24px #0004;
-}
-.dropdown-menu-popup.direction-up {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
-.dropdown-menu-popup.align-right {
-  left: auto;
-  right: 0;
 }
 .dropdown-menu-item {
   display: flex;
@@ -639,7 +629,8 @@
   color: var(--text);
   outline: none;
 }
-.dropdown-menu-item:disabled {
+.dropdown-menu-item:disabled,
+.dropdown-menu-item[data-disabled] {
   opacity: 0.45;
   cursor: default;
   background: transparent;
@@ -698,9 +689,160 @@
 .editor-format-hide {
   opacity: 0.6;
 }
+.editor-format-action-label {
+  font-size: 10px;
+}
+.editor-format-toolbar > .dropdown-menu-container {
+  width: 68px;
+}
 .editor-format-toolbar > .editor-format-hide:hover,
 .editor-format-toolbar > .editor-format-hide:focus-visible {
   opacity: 1;
+}
+.help-tooltip-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  cursor: help;
+}
+.help-tooltip-trigger:hover,
+.help-tooltip-trigger:focus-visible {
+  color: var(--accent);
+  border-color: var(--border);
+  outline: none;
+}
+.setup-dialog button.help-tooltip-trigger {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.setup-dialog button.help-tooltip-trigger:hover,
+.setup-dialog button.help-tooltip-trigger:focus-visible {
+  color: var(--accent);
+  background: var(--hover);
+  border-color: var(--border);
+}
+.help-tooltip-content {
+  z-index: 1000;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 24px #0005;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.help-tooltip-arrow {
+  fill: var(--surface);
+}
+.setting-pair {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 260px);
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+}
+.setting-pair-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 11px;
+}
+.setting-pair-control {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.setting-pair-control > .dropdown-menu-container,
+.setting-pair-control > input,
+.setting-pair-control > select {
+  width: min(100%, 250px);
+}
+.settings-pairs {
+  display: grid;
+  gap: 2px;
+}
+.setting-integer {
+  box-sizing: border-box;
+  height: 28px;
+  width: 100%;
+  max-width: 250px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+.setting-integer:disabled {
+  opacity: 0.5;
+}
+.history-settings-retention {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.history-settings-retention summary {
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.history-settings-retention ul {
+  margin: 6px 0 8px 16px;
+  padding: 0;
+  line-height: 1.6;
+}
+.setting-radio-group {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.setting-radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.setting-radio-option input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+@media (max-width: 680px) {
+  .setting-pair {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .setting-pair-control,
+  .setting-radio-group {
+    justify-content: flex-start;
+  }
 }
 .active-file-path {
   color: var(--faint);
@@ -2242,9 +2384,16 @@ h1 > span {
 }
 
 .compile-control {
-  position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: stretch;
+  flex-wrap: nowrap;
+  flex: none;
+  width: max-content;
+  white-space: nowrap;
+}
+.compile-control > .toolbar-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .compile-control > .compile-button:first-child {
   border-radius: var(--radius-pill) 0 0 var(--radius-pill);
@@ -2262,10 +2411,6 @@ h1 > span {
   border-left-color: rgba(224, 82, 82, 0.4);
 }
 .recipe-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  z-index: 50;
   min-width: 200px;
   max-width: min(360px, calc(100vw - 32px));
   max-height: min(70vh, 480px);
@@ -2280,7 +2425,8 @@ h1 > span {
   display: block;
   padding: 7px;
 }
-.recipe-menu button {
+.recipe-menu [role='menuitemradio'],
+.recipe-menu [role='menuitem'] {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2290,12 +2436,17 @@ h1 > span {
   font-size: 12px;
   text-align: left;
 }
-.recipe-menu button:hover,
-.recipe-menu button:focus-visible {
+.recipe-menu [role='menuitemradio'][data-highlighted],
+.recipe-menu [role='menuitem'][data-highlighted] {
   background: var(--hover);
 }
-.recipe-menu button[aria-pressed='true'] {
+.recipe-menu [role='menuitemradio'][data-state='checked'] {
   color: var(--accent);
+}
+.recipe-menu [role='separator'] {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 .sidebar-recipe-control {
@@ -2544,14 +2695,8 @@ h1 > span {
   margin: 4px 1px;
 }
 .preview-tabs-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 40;
   min-width: 190px;
   padding: 4px;
-  display: flex;
-  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--raised);
@@ -2562,24 +2707,31 @@ h1 > span {
   padding: 6px 4px 2px;
   border-top: 1px solid var(--border);
 }
+.preview-tabs-menu-options {
+  display: flex;
+  flex-direction: column;
+}
 .preview-menu-pdf .pdf-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
-.preview-tabs-menu > button {
+.preview-tabs-menu-item {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-pill);
+  background: transparent;
+  border: 0;
   font-size: 12px;
   color: var(--muted);
   text-align: left;
 }
-.preview-tabs-menu > button:hover,
-.preview-tabs-menu > button[aria-checked='true'] {
+.preview-tabs-menu-item:hover,
+.preview-tabs-menu-item[aria-pressed='true'] {
   color: var(--text);
   background: var(--hover);
 }
@@ -2698,8 +2850,6 @@ h1 > span {
   flex-shrink: 0;
 }
 .file-menu {
-  position: fixed;
-  z-index: 60;
   width: 184px;
   padding: 5px;
   border: 1px solid var(--border);
@@ -2768,10 +2918,6 @@ h1 > span {
   position: relative;
 }
 .editor-options-menu {
-  position: absolute;
-  z-index: 40;
-  right: 0;
-  top: calc(100% + 8px);
   width: 190px;
   padding: 6px;
   background: var(--surface);

@@ -59,7 +59,10 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
     for (const value of ['dark', 'light']) {
       await theme.click();
       await page
-        .getByRole('menuitem', { name: value === 'dark' ? 'Dark (default)' : 'Light', exact: true })
+        .getByRole('menuitemradio', {
+          name: value === 'dark' ? 'Dark (default)' : 'Light',
+          exact: true,
+        })
         .click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', value);
       const bounds = await theme.evaluate((element) => {

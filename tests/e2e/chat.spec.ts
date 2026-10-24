@@ -341,16 +341,17 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(model).toBeEnabled();
     await expect(model).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     await model.click();
-    const search = chat.getByRole('combobox', { name: 'Search model', exact: true });
+    const search = page.getByRole('combobox', { name: 'Search model', exact: true });
     await expect(search).toBeFocused();
-    const options = chat.getByRole('listbox', { name: 'Model', exact: true }).getByRole('option');
+    const options = page.getByRole('listbox', { name: 'Model', exact: true }).getByRole('option');
     await expect(options).toHaveCount(3);
+    await page.screenshot({ path: test.info().outputPath('model-picker.png') });
     await search.fill('gemma');
     await expect(options).toHaveCount(1);
     await page.keyboard.press('Enter');
     await expect(model).toHaveAccessibleName('Model: Gemma 4 26B');
     await model.click();
-    await chat.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
+    await page.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
     await page.keyboard.press('Enter');
     await expect(model).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     await composer.fill('   ');
@@ -393,7 +394,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     // Removing a provider clears its temporary role binding. Reconnecting must
     // not silently revive that choice; the user explicitly chooses again.
     await model.click();
-    await chat.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
+    await page.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
     await page.keyboard.press('Enter');
     await composer.fill('Why is my LaTeX brace missing?\n\n```tex\n\\usepackage{lipsum}\n```');
     await expect(ask).toBeEnabled();
@@ -641,7 +642,26 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await chat.getByRole('button', { name: 'New chat', exact: true }).click();
     await expect(history.locator('article')).toHaveCount(0);
     await historyButton.click();
-    const historyMenu = chat.getByRole('menu', { name: 'Workspace chat history', exact: true });
+    const historyMenu = page.getByRole('menu', { name: 'Chat history', exact: true });
+    await expect(historyMenu).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('chat-history-menu.png') });
+    const restoredItem = historyMenu.getByRole('menuitem', {
+      name: /^Restored debugging chat/,
+    });
+    const titleBounds = await restoredItem.locator('.ai-history-title').boundingBox();
+    const dateBounds = await restoredItem.locator('.ai-history-date').boundingBox();
+    expect(titleBounds).not.toBeNull();
+    expect(dateBounds).not.toBeNull();
+    expect(Math.abs(titleBounds!.y - dateBounds!.y)).toBeLessThan(6);
+    await historyMenu
+      .getByRole('menuitem', { name: 'Rename chat Restored debugging chat' })
+      .click();
+    const renameDialog = page.getByRole('dialog', { name: 'Rename chat' });
+    await expect(renameDialog).toBeVisible();
+    await renameDialog.getByRole('textbox', { name: 'Chat title' }).fill('Refactor notes');
+    await renameDialog.getByRole('button', { name: 'Save', exact: true }).click();
+    const renamedItem = page.getByRole('menuitem', { name: /^Refactor notes/ });
+    await expect(renamedItem).toBeVisible();
     await historyMenu.getByRole('menuitem', { name: /^Earlier troubleshooting/ }).click();
     await expect(history).toContainText('Earlier saved answer.');
     await expect(history).not.toContainText('Stored answer for this workspace.');

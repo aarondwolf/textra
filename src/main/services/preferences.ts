@@ -13,6 +13,12 @@ import {
   type Preferences,
 } from '../../shared/api';
 import { validateToolPath } from './tool-paths';
+import {
+  buildRecipeSchema,
+  createDefaultRecipeSettings,
+  recipeToolSchema,
+  validateRecipeSettings,
+} from '../../shared/recipes';
 
 const themeNames = new Set(['dark', 'light', 'midnight', 'forest', 'ocean', 'rose', 'sand']);
 const colorPattern = /^#[0-9a-fA-F]{6}$/;
@@ -188,6 +194,14 @@ export const preferencesSchema = z
       .max(120)
       .optional()
       .default(DEFAULT_PREFERENCES.historyIntervalMinutes),
+    globalBuildRecipes: z
+      .object({
+        recipes: z.array(buildRecipeSchema).max(100),
+        tools: z.array(recipeToolSchema).max(100),
+      })
+      .strict()
+      .optional()
+      .default(DEFAULT_PREFERENCES.globalBuildRecipes!),
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -197,6 +211,29 @@ export const preferencesSchema = z
         code: z.ZodIssueCode.custom,
         message: 'Unsupported or invalid preferences.',
         path: ['theme'],
+      });
+    }
+    const globalRecipes = data.globalBuildRecipes;
+    if (globalRecipes.recipes.length) {
+      try {
+        validateRecipeSettings({
+          ...createDefaultRecipeSettings(),
+          'latex-workshop.latex.recipes': globalRecipes.recipes,
+          'latex-workshop.latex.tools': globalRecipes.tools,
+          'latex-workshop.latex.recipe.default': 'lastUsed',
+        });
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Global recipes must reference valid, allowlisted TeX tools.',
+          path: ['globalBuildRecipes'],
+        });
+      }
+    } else if (globalRecipes.tools.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Global recipe tools require at least one recipe.',
+        path: ['globalBuildRecipes'],
       });
     }
   });

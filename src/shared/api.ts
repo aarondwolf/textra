@@ -1,4 +1,4 @@
-import type { RecipeSettings } from './recipes';
+import type { BuildRecipe, RecipeSettings, RecipeTool } from './recipes';
 import type {
   AIModelInfo,
   AIModelRef,
@@ -114,6 +114,8 @@ export interface Preferences {
   historyEnabled: boolean;
   /** Minutes between automatic snapshots of modified files. */
   historyIntervalMinutes: number;
+  /** Recipes saved in the user's TeXtra profile, available to copy into any project. */
+  globalBuildRecipes?: { recipes: BuildRecipe[]; tools: RecipeTool[] };
 }
 export interface ThemeCustomizations {
   accent: string;
@@ -180,6 +182,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   snippetsTemplatesOpenDefault: false,
   historyEnabled: true,
   historyIntervalMinutes: 10,
+  globalBuildRecipes: { recipes: [], tools: [] },
 };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 export interface FileEntry {

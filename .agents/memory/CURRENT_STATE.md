@@ -1,5 +1,19 @@
 # Current state
 
+2026-10-24 Radix UI repair and audit:
+
+- Kept Radix UI and `cmdk`; fixed portal stacking, theme/position styles, selection
+  semantics, nested dialog layering, the split compile/recipe trigger, preview/PDF
+  selection, chat history, and model picker behavior. See `docs/UI_AUDIT.md`.
+- Added shared tooltips, harmonized settings controls, global recipe storage/import,
+  history row/title improvements, and editor toolbar actions. Fixed toolbar clipping
+  in compact width and Save enablement after full-suite tests exposed the state gap.
+- Full Windows native E2E: 16 passed, 2 opt-in/measurement tests skipped. Unit and
+  integration suite: 71 files / 728 tests passed. Typecheck, lint, format, build,
+  and `npm run test:dev` (CSS HMR, preload reload, main restart) passed.
+- Wide/compact workspace and Settings/preview menu screenshots were captured and
+  inspected. Existing `sandbox/**` changes were not edited by this task.
+
 2026-10-24 Development black-window regression:
 
 - Confirmed pre-React module failure: unified-latex's transitive `is-buffer` was
@@ -10,9 +24,9 @@
 - Dev smoke attaches pageerror diagnostics and waits for initial navigation before
   reloading to capture static import errors. Updated shell-test cmdk selectors
   from textbox/button to combobox/option, matching installed declarations/runtime.
-- Normal native dev startup, interactive theme and CSS HMR PASS. Preload reload
-  also PASS in the extended run; main restart remains incomplete due to a Windows
-  old-process profile/debug-port lock race (old CDP connection stays alive).
+- Normal native dev startup, interactive theme, CSS HMR, preload reload, and main
+  restart with theme restoration PASS in the extended smoke. The smoke selects the
+  renderer URL and uses an ephemeral debugging port to avoid stale CDP/profile state.
 - Production build PASS. Broad suite: 726/727 passed, one storage-growth timeout;
   isolated storage-growth rerun PASS 3/3. Focused parser/startup tests PASS 31/31.
 - Native shell/security/preferences/relaunch test PASS 1/1 (37.9s) after updating

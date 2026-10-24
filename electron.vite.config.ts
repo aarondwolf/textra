@@ -15,14 +15,19 @@ export default defineConfig({
   },
   renderer: {
     // Keep mutable optimizer caches outside Dropbox/OneDrive checkouts on Windows.
-    cacheDir: join(
-      tmpdir(),
-      'textra-vite-cache',
-      createHash('sha256').update(process.cwd()).digest('hex').slice(0, 16),
-    ),
+    cacheDir:
+      process.env.TEXTRA_VITE_CACHE_DIR ||
+      join(
+        tmpdir(),
+        'textra-vite-cache',
+        createHash('sha256').update(process.cwd()).digest('hex').slice(0, 16),
+      ),
     plugins: [react(), tailwindcss()],
     build: {
       minify: true,
+      // Allow constrained UI-test hosts to refresh the manifest without
+      // deleting a generated assets directory they cannot replace.
+      emptyOutDir: process.env.TEXTRA_PRESERVE_RENDERER_OUTPUT !== 'true',
       // Emit the ~1,200 file-type SVGs as files instead of inlining them into the bundle.
       assetsInlineLimit: (file) => (file.includes('material-icon-theme') ? false : undefined),
     },
@@ -38,6 +43,7 @@ export default defineConfig({
         '@radix-ui/react-context-menu',
         '@radix-ui/react-dropdown-menu',
         '@radix-ui/react-popover',
+        '@radix-ui/react-tooltip',
         '@radix-ui/react-toast',
         '@dnd-kit/core',
         '@dnd-kit/sortable',

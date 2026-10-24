@@ -9,10 +9,11 @@ import {
   type ComponentProps,
   type FormEvent,
 } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog, useOverlayZIndex } from './components/overlay-layers';
 import * as Popover from '@radix-ui/react-popover';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
+import { Eye } from '@phosphor-icons/react';
 import {
   DndContext,
   closestCenter,
@@ -35,7 +36,7 @@ import { afterPaint, markStartup, scheduleBackground } from './features/startup/
 import { persistWorkspaceSession, restoreWorkspaceSession } from './features/startup/session';
 import { useStartup } from './state/startup';
 import { loadAISettings } from './features/chat/useAISettings';
-import { CompileControl, ProblemsButton } from './components/CompileControl';
+import { CompileControl, CompileRecipeTrigger, ProblemsButton } from './components/CompileControl';
 import { agentEditHunks } from '../../shared/ai-edits';
 import { AGENT_SOURCE_LIMIT, type AIAgentContext, type AIEditProposal } from '../../shared/ai';
 import {
@@ -470,6 +471,7 @@ function SortableTab({
   onReveal,
   onCopyRelativePath,
 }: SortableTabProps) {
+  const floatingZIndex = useOverlayZIndex('floating');
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: document.path,
   });
@@ -529,6 +531,7 @@ function SortableTab({
           className="file-menu tab-context-menu"
           role="menu"
           aria-label={'Tab actions for ' + document.path}
+          style={{ zIndex: floatingZIndex }}
         >
           <div className="file-menu-name">{document.path.split('/').at(-1)}</div>
           <ContextMenu.Item role="menuitem" onSelect={onClose}>
@@ -562,6 +565,7 @@ function SortableTab({
 
 export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: SectionId) => void }) {
   const state = useWorkspace();
+  const floatingZIndex = useOverlayZIndex('floating');
   const {
     project,
     documents,
@@ -869,7 +873,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     parts.forEach((_, index) => next.add(parts.slice(0, index + 1).join('/')));
     return next;
   };
-  const [editorOptionsOpen, setEditorOptionsOpen] = useState(false);
   useEffect(() => {
     setExpandedFolders(new Set());
   }, [project?.id]);
@@ -1218,6 +1221,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     : availableRecipes[0].name;
   const canCompile = configReady && !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
+  const recipeRequest = useRef(0);
   const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
   const [headerNode, setHeaderNode] = useState<HTMLDivElement | null>(null);
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -1225,6 +1229,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const [tabsHost, setTabsHost] = useState<HTMLDivElement | null>(null);
   const [tabMode, setTabMode] = useState<'full' | 'icons' | 'menu'>('full');
   const [pdfMenuSlot, setPdfMenuSlot] = useState<HTMLDivElement | null>(null);
+  const [previewMenuOpen, setPreviewMenuOpen] = useState(false);
   useEffect(() => {
     if (!tabsHost) return;
     // Hysteresis thresholds: buffer state transitions so rapid oscillation between icons and menu is prevented.
@@ -2817,6 +2822,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                         sideOffset={4}
                                         collisionPadding={8}
                                         aria-label={'Actions for ' + (file.path || project?.name)}
+                                        style={{ zIndex: floatingZIndex }}
                                       >
                                         <div className="file-menu-name">
                                           {file.name || project?.name}
@@ -2952,6 +2958,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                               <ContextMenu.Content
                                 className="file-menu"
                                 aria-label={'Actions for ' + (file.path || project?.name)}
+                                style={{ zIndex: floatingZIndex }}
                               >
                                 <div className="file-menu-name">{file.name || project?.name}</div>
                                 <ContextMenu.Item
@@ -3235,20 +3242,33 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 )}
                 {active && (
                   <div className="editor-tab-actions">
-                    <IconButton
-                      small={true}
-                      className="icon-button small"
-                      label="Save file"
-                      title="Save (Ctrl/Cmd+S)"
-                      disabled={!dirty(active) || busy || active.conflict}
-                      onClick={() =>
-                        void run(async () => {
-                          await saveAndLint(active.path);
-                        })
-                      }
-                    >
-                      <Save size={15} />
-                    </IconButton>
+                    {!formatToolbarVisible && (
+                      <IconButton
+                        small={true}
+                        className="icon-button small"
+                        label="Save file"
+                        title="Save (Ctrl/Cmd+S)"
+                        disabled={!dirty(active) || busy || active.conflict}
+                        onClick={() =>
+                          void run(async () => {
+                            await saveAndLint(active.path);
+                          })
+                        }
+                      >
+                        <Save size={15} />
+                      </IconButton>
+                    )}
+                    {!formatToolbarVisible && (
+                      <IconButton
+                        small={true}
+                        className="icon-button small"
+                        label="Show formatting toolbar"
+                        title="Show formatting toolbar"
+                        onClick={() => updatePreferences({ formatToolbarVisible: true })}
+                      >
+                        <Eye size={15} />
+                      </IconButton>
+                    )}
                     {/* Expand-editor button disabled: "Collapse right pane" covers it.
                         Wiring (expandedPane "editor", palette command, effects) is kept
                         so the decision can be revisited.
@@ -3272,120 +3292,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       </button>
                     )}
                     */}
-                    <Popover.Root open={editorOptionsOpen} onOpenChange={setEditorOptionsOpen}>
-                      <div className="editor-options">
-                        <Popover.Trigger asChild>
-                          <IconButton
-                            small={true}
-                            className="icon-button small"
-                            label="Editor options"
-                            title="Editor options"
-                          >
-                            <Ellipsis size={17} />
-                          </IconButton>
-                        </Popover.Trigger>
-                        <Popover.Portal>
-                          <Popover.Content
-                            className="editor-options-menu"
-                            id="editor-options-panel"
-                            role="group"
-                            aria-label="Editor options"
-                            side="bottom"
-                            align="end"
-                            sideOffset={6}
-                            collisionPadding={8}
-                          >
-                            <button
-                              className="text-button"
-                              aria-label="Save file as"
-                              disabled={busy}
-                              onClick={() => {
-                                setEditorOptionsOpen(false);
-                                saveAs();
-                              }}
-                            >
-                              Save as…
-                            </button>
-                            <label>
-                              Font size
-                              <DropdownMenu
-                                ariaLabel="Editor font size"
-                                fullWidth={true}
-                                value={String(fontSize)}
-                                items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
-                                  .sort((a, b) => a - b)
-                                  .map((size) => ({
-                                    value: String(size),
-                                    label: `${size}px`,
-                                  }))}
-                                onChange={(val) => setFontSize(Number(val))}
-                              />
-                            </label>
-                            <button
-                              className="text-button"
-                              aria-label="Toggle word wrap"
-                              aria-pressed={wrap}
-                              onClick={() => setWrap(!wrap)}
-                            >
-                              Word wrap <span>{wrap ? 'On' : 'Off'}</span>
-                            </button>
-                            <button
-                              className="text-button"
-                              aria-label="Toggle formatting bar"
-                              aria-pressed={formatToolbarVisible}
-                              onClick={() =>
-                                updatePreferences({ formatToolbarVisible: !formatToolbarVisible })
-                              }
-                            >
-                              Formatting bar{' '}
-                              <span>{formatToolbarVisible ? 'Shown' : 'Hidden'}</span>
-                            </button>
-                            <div
-                              className="editor-layout-presets"
-                              aria-label="Workspace layout presets"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedPane(null);
-                                  updatePreferences({
-                                    sidebarVisible: true,
-                                    previewVisible: true,
-                                    editorWidth: 55,
-                                  });
-                                }}
-                              >
-                                Split
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedPane('preview');
-                                  updatePreferences({
-                                    sidebarVisible: false,
-                                    previewVisible: true,
-                                  });
-                                }}
-                              >
-                                Preview
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedPane(null);
-                                  updatePreferences({
-                                    sidebarVisible: false,
-                                    previewVisible: false,
-                                  });
-                                }}
-                              >
-                                Focus writing
-                              </button>
-                            </div>
-                          </Popover.Content>
-                        </Popover.Portal>
-                      </div>
-                    </Popover.Root>
                   </div>
                 )}
               </div>
@@ -3458,9 +3364,18 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           fontSize={fontSize}
                           wrap={wrap}
                           readOnly={busy || active.conflict}
+                          saveDisabled={!dirty(active) || busy || active.conflict}
                           aiSuppressed={Boolean(agentProposal)}
                           autoSavePaused={agentProposal !== null}
                           formatToolbarVisible={formatToolbarVisible}
+                          onSave={() =>
+                            void run(async () => {
+                              await saveAndLint(active.path);
+                            })
+                          }
+                          onSaveAs={() => void saveAs()}
+                          onFontSizeChange={(size) => setFontSize(size)}
+                          onToggleWrap={() => setWrap(!wrap)}
                           bibliographyEntries={bibliographyEntries}
                           texlab={texlabAdapter}
                         />
@@ -3594,143 +3509,173 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               }}
             >
               <div className="preview-header" ref={setHeaderNode}>
-                <Popover.Root open={recipeOpen} onOpenChange={setRecipeOpen}>
-                  <div className="compile-control">
-                    <Popover.Anchor asChild>
-                      <div>
-                        <CompileControl
-                          running={build.running}
-                          feedback={buildFeedback}
-                          canCompile={canCompile}
-                          busy={busy}
-                          missingTool={Boolean(missingTool)}
-                          engine={engine}
-                          activePath={activePath}
-                          stepsDone={build.stepsDone}
-                          stepCount={build.stepCount}
-                          onCompile={() => void compile()}
-                          onCancel={() =>
-                            void run(async () => {
-                              unwrap(await window.textra.cancelBuild());
-                            })
-                          }
-                          recipeToggle={{
-                            open: recipeOpen,
-                            onToggle: () => {
-                              if (recipeOpen) setRecipeOpen(false);
-                              else if (project)
-                                void run(async () => {
-                                  const config = unwrap(
-                                    await window.textra.getProjectConfig(project.id),
-                                  );
-                                  if (useWorkspace.getState().project?.id !== project.id) return;
-                                  useWorkspace.setState({ projectConfig: config });
-                                  setRecipeOpen(true);
-                                });
-                            },
-                          }}
-                        />
-                      </div>
-                    </Popover.Anchor>
-                    <Popover.Portal>
-                      <Popover.Content
-                        className="recipe-menu"
-                        id="compile-recipes"
-                        role="group"
-                        aria-label="Compile recipe"
-                        side="bottom"
-                        align="start"
-                        sideOffset={6}
-                        collisionPadding={8}
+                <DropdownMenuPrimitive.Root
+                  open={recipeOpen}
+                  onOpenChange={(nextOpen) => {
+                    const request = ++recipeRequest.current;
+                    if (!nextOpen) {
+                      setRecipeOpen(false);
+                      return;
+                    }
+                    if (!project) return;
+                    setRecipeOpen(true);
+                    const projectIdToLoad = project.id;
+                    void window.textra
+                      .getProjectConfig(projectIdToLoad)
+                      .then((result) => {
+                        const config = unwrap(result);
+                        if (
+                          recipeRequest.current !== request ||
+                          useWorkspace.getState().project?.id !== projectIdToLoad
+                        )
+                          return;
+                        useWorkspace.setState({ projectConfig: config });
+                      })
+                      .catch(showError);
+                  }}
+                >
+                  <CompileControl
+                    running={build.running}
+                    feedback={buildFeedback}
+                    canCompile={canCompile}
+                    busy={busy}
+                    missingTool={Boolean(missingTool)}
+                    engine={engine}
+                    activePath={activePath}
+                    stepsDone={build.stepsDone}
+                    stepCount={build.stepCount}
+                    onCompile={() => void compile()}
+                    onCancel={() =>
+                      void run(async () => {
+                        unwrap(await window.textra.cancelBuild());
+                      })
+                    }
+                    recipeTrigger={
+                      <CompileRecipeTrigger
+                        feedback={buildFeedback}
+                        engine={engine}
+                        disabled={!canCompile || busy || build.running}
+                      />
+                    }
+                  />
+                  <DropdownMenuPrimitive.Portal>
+                    <DropdownMenuPrimitive.Content
+                      className="recipe-menu"
+                      aria-label="Compile recipe"
+                      side="bottom"
+                      align="start"
+                      sideOffset={6}
+                      collisionPadding={8}
+                      style={{ zIndex: floatingZIndex }}
+                    >
+                      <span className="eyebrow">COMPILE RECIPE</span>
+                      <DropdownMenuPrimitive.RadioGroup
+                        value={engine}
+                        onValueChange={(recipe) => {
+                          void run(() => selectRecipe(recipe));
+                        }}
                       >
-                        <span className="eyebrow">COMPILE RECIPE</span>
                         {availableRecipes.map((recipe) => (
-                          <button
-                            key={recipe.name}
-                            aria-pressed={engine === recipe.name}
-                            onClick={() => {
-                              setRecipeOpen(false);
-                              void run(() => selectRecipe(recipe.name));
-                            }}
-                          >
+                          <DropdownMenuPrimitive.RadioItem key={recipe.name} value={recipe.name}>
                             <span>
                               {BUILD_RECIPES.find((preset) => preset.value === recipe.name)
                                 ?.label ?? recipe.name}
                             </span>
-                            {engine === recipe.name && <Check size={14} />}
-                          </button>
+                            <DropdownMenuPrimitive.ItemIndicator>
+                              <Check size={14} />
+                            </DropdownMenuPrimitive.ItemIndicator>
+                          </DropdownMenuPrimitive.RadioItem>
                         ))}
-                        <button
-                          onClick={() => {
-                            setRecipeOpen(false);
-                            emitTextraEvent('textra:open-settings', { section: 'compilation' });
-                          }}
-                        >
-                          Manage recipes…
-                        </button>
-                      </Popover.Content>
-                    </Popover.Portal>
-                  </div>
-                </Popover.Root>
+                      </DropdownMenuPrimitive.RadioGroup>
+                      <DropdownMenuPrimitive.Separator />
+                      <DropdownMenuPrimitive.Item
+                        onSelect={() =>
+                          emitTextraEvent('textra:open-settings', { section: 'compilation' })
+                        }
+                      >
+                        Manage recipes…
+                      </DropdownMenuPrimitive.Item>
+                    </DropdownMenuPrimitive.Content>
+                  </DropdownMenuPrimitive.Portal>
+                </DropdownMenuPrimitive.Root>
                 <div className="preview-tabs-host" ref={setTabsHost}>
                   {tabMode === 'menu' ? (
-                    <DropdownMenu
-                      className="preview-tabs-dropdown"
-                      ariaLabel="Preview views"
-                      align="right"
-                      fullWidth={false}
-                      value={panel}
-                      customTrigger={(open) => (
+                    <Popover.Root open={previewMenuOpen} onOpenChange={setPreviewMenuOpen}>
+                      <Popover.Trigger asChild>
                         <IconButton
                           small={true}
                           className="icon-button small"
                           label="Preview menu"
-                          aria-haspopup="menu"
-                          aria-expanded={open}
+                          aria-haspopup="dialog"
+                          aria-expanded={previewMenuOpen}
                           title="Views and PDF controls"
                         >
                           <Ellipsis size={17} />
                         </IconButton>
-                      )}
-                      footer={
-                        panel === 'preview' ? (
-                          <div className="preview-menu-pdf" ref={setPdfMenuSlot} />
-                        ) : undefined
-                      }
-                      items={(
-                        [
-                          'preview',
-                          'problems',
-                          'output',
-                          ...(hasMarkdown ? (['markdown'] as const) : []),
-                        ] as const
-                      ).map((name) => ({
-                        value: name,
-                        label:
-                          name === 'preview'
-                            ? 'Preview'
-                            : name === 'problems'
-                              ? 'Problems'
-                              : name === 'output'
-                                ? 'Output'
-                                : 'Markdown',
-                        icon:
-                          name === 'preview' ? (
-                            <FilePdf size={15} />
-                          ) : name === 'problems' ? (
-                            <Warning size={15} />
-                          ) : name === 'output' ? (
-                            <Scroll size={15} />
-                          ) : (
-                            <MarkdownLogo size={15} />
-                          ),
-                        description:
-                          name === 'problems' && !!problemDiagnostics.length ? (
-                            <span className="count">{problemDiagnostics.length}</span>
-                          ) : undefined,
-                        onClick: () => setPanel(name),
-                      }))}
-                    />
+                      </Popover.Trigger>
+                      <Popover.Portal>
+                        <Popover.Content
+                          className="preview-tabs-menu"
+                          side="bottom"
+                          align="end"
+                          sideOffset={4}
+                          collisionPadding={8}
+                          style={{ zIndex: floatingZIndex }}
+                          aria-label="Preview views and controls"
+                        >
+                          <div
+                            className="preview-tabs-menu-options"
+                            role="group"
+                            aria-label="Preview views"
+                          >
+                            {(
+                              [
+                                'preview',
+                                'problems',
+                                'output',
+                                ...(hasMarkdown ? (['markdown'] as const) : []),
+                              ] as const
+                            ).map((name) => (
+                              <button
+                                key={name}
+                                type="button"
+                                className="preview-tabs-menu-item"
+                                aria-pressed={panel === name}
+                                onClick={() => {
+                                  setPanel(name);
+                                  setPreviewMenuOpen(false);
+                                }}
+                              >
+                                {name === 'preview' ? (
+                                  <FilePdf size={15} />
+                                ) : name === 'problems' ? (
+                                  <Warning size={15} />
+                                ) : name === 'output' ? (
+                                  <Scroll size={15} />
+                                ) : (
+                                  <MarkdownLogo size={15} />
+                                )}
+                                <span>
+                                  {name === 'preview'
+                                    ? 'Preview'
+                                    : name === 'problems'
+                                      ? 'Problems'
+                                      : name === 'output'
+                                        ? 'Output'
+                                        : 'Markdown'}
+                                </span>
+                                {name === 'problems' && !!problemDiagnostics.length && (
+                                  <span className="count">{problemDiagnostics.length}</span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                          {panel === 'preview' && (
+                            <div className="preview-menu-pdf" ref={setPdfMenuSlot} />
+                          )}
+                        </Popover.Content>
+                      </Popover.Portal>
+                    </Popover.Root>
                   ) : (
                     <div
                       className="preview-tabs"

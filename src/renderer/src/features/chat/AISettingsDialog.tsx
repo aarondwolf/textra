@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import type { AIProviderSettings, AISettings, Result } from '../../../../shared/api';
 import {
   AI_DEFAULT_ENDPOINTS,
@@ -29,7 +29,7 @@ const ProviderEditor = lazy(() => import('./AIProviderEditor'));
 const LABELS: Record<AIRole, string> = {
   assistant: 'Assistant',
   inlineCompletion: 'Inline edit (Ctrl/Cmd+I)',
-  completion: 'Automatic completion (ghost text)',
+  completion: 'Autocomplete',
 };
 const allModels = (): AIModelVisibility => ({ mode: 'all', models: [] });
 const providerLabel = (provider: AIProviderSettings) =>
@@ -202,13 +202,14 @@ export function AISettingsPanel({
         {settings && (
           <>
             <section className="ai-role-defaults" aria-label="Default models">
-              <h3>Models</h3>
+              <h3>Chat Settings</h3>
               {(['assistant', 'inlineCompletion'] as const).map(roleSelector)}
               <p className="ai-settings-note">
                 Assistant and Ctrl/Cmd+I selections in the workspace are temporary until restart.
               </p>
             </section>
-            <section className="ai-completion-settings" aria-label="Automatic completion">
+            <section className="ai-completion-settings" aria-label="Autocomplete (ghost text)">
+              <h3>Autocomplete (ghost text)</h3>
               <label className="ai-check">
                 <input
                   type="checkbox"
@@ -223,7 +224,7 @@ export function AISettingsPanel({
                     )
                   }
                 />
-                <span>Enable automatic completion (ghost text)</span>
+                <span>Enable automatic completion</span>
               </label>
               {settings.completion.enabled && (
                 <>

@@ -1,5 +1,31 @@
 # Test evidence
 
+2026-10-24 UI settings and toolbar follow-up:
+
+- `npm test`: 71 files, 728 tests passed. Typecheck, lint, `format:check` and
+  production build passed. Build emits the existing large-chunk warning.
+- Full `npm run test:e2e`: 16 passed, 2 skipped (opt-in live provider and startup
+  measurement); 3.9m. The Save toolbar action is covered by existing clean-document
+  and conflict workflow assertions. `radix-controls` and chat specs also passed in
+  targeted runs after the final UI changes.
+- E2E screenshot review covered the updated Settings sections, assistant history,
+  workspace toolbar at wide and compact sizes, and preview controls. Compact toolbar
+  contents now clip/scroll inside the editor pane.
+- A first broad run exposed the new Save action ignoring dirty state in two tests;
+  `saveDisabled` now follows dirty, busy and conflict state. Both failed cases passed
+  on targeted rerun, then the full suite passed.
+
+2026-10-24 Radix UI repair:
+
+- Native E2E: 16 passed, 2 skipped (opt-in live provider and startup measurement).
+- Unit/integration: 71 files, 727 tests passed.
+- Typecheck, lint, format check, and production build passed.
+- `npm run test:dev`: startup, Settings interaction, CSS HMR without reload,
+  preload reload, and main restart with theme restoration passed.
+- Dedicated Radix native test covered compile/recipe alignment, Escape dismissal,
+  Settings portal hit-testing/theme switch, and compact preview selection; captured
+  screenshots were visually inspected.
+
 2026-10-24 Development startup regression:
 
 - Original clean HEAD 7694481 reproduced with a blank renderer. Browser diagnostic
@@ -7,9 +33,9 @@
   mounted. Explicit Vite optimization now covers new renderer/shared dependencies.
 - `node tests/dev-smoke.mjs` PASS: native dev window, no uncaught renderer errors,
   interactive theme, CSS HMR without reload. Isolated disposable profile only.
-- `npm run test:dev` partial: startup/theme/HMR/preload reload PASS; main restart
-  FAIL (old browser remains connected, replacement reports Windows profile lock,
-  disk cache access and debug-port bind conflicts). Temporary probes removed.
+- `npm run test:dev` now passes startup/theme/HMR/preload reload and main restart.
+  The smoke attaches to the renderer URL and uses an ephemeral CDP port. Temporary
+  source/CSS probes are removed in `finally`.
 - `npm run build` PASS, with existing chunk-size warning. Native shell test PASS
   1/1 (37.9s), covering bridge security, theme/sidebar/palette and saved preferences
   across two launches. Updated cmdk roles to combobox/option after initial stale

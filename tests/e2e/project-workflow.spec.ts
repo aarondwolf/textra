@@ -77,7 +77,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await expect(page.locator('.monaco-editor .codicon-folding-expanded').first()).toBeAttached({
       timeout: 30_000,
     });
-    const fileActions = page.getByRole('menu', { name: 'Actions for main.tex', exact: true });
+    const fileActions = page.getByRole('menu', { name: 'More actions for main.tex', exact: true });
     // Selecting a file must not open its menu; it opens on right click or the ... button.
     await expect(fileActions).toHaveCount(0);
     await page.getByRole('button', { name: 'More actions for main.tex', exact: true }).click();
@@ -191,7 +191,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await expect(page.getByRole('combobox', { name: 'Root document', exact: true })).toHaveCount(0);
     await expect(page.locator('.build-toolbar')).toHaveCount(0);
     await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
-    await page.getByRole('button', { name: 'pdfLaTeX + BibTeX', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'pdfLaTeX + BibTeX', exact: true }).click();
     await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
     await expect
       .poll(
@@ -272,7 +272,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await settings
       .getByRole('button', { name: 'Default recipe for new documents', exact: true })
       .click();
-    await settings.getByRole('menuitem', { name: 'XeLaTeX', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'XeLaTeX', exact: true }).click();
     const exportFile = join(directory, 'settings.json');
     await application.evaluate(({ dialog }, path) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
@@ -288,7 +288,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     await settings.getByRole('button', { name: 'Appearance', exact: true }).click();
     await settings.getByRole('button', { name: 'Theme', exact: true }).click();
-    await settings.getByRole('menuitem', { name: 'Light', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'Light', exact: true }).click();
     await application.evaluate(({ dialog }, path) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
       dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
@@ -321,16 +321,16 @@ test('real project editing preserves external changes, compiles, and renders a P
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
     await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
     await expect(
-      page.getByRole('button', { name: 'pdfLaTeX + BibTeX', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'true');
+      page.getByRole('menuitemradio', { name: 'pdfLaTeX + BibTeX', exact: true }),
+    ).toHaveAttribute('aria-checked', 'true');
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Open ' + preservedPath, exact: true }).click();
     await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'XeLaTeX', exact: true })).toHaveAttribute(
-      'aria-pressed',
+    await expect(page.getByRole('menuitemradio', { name: 'XeLaTeX', exact: true })).toHaveAttribute(
+      'aria-checked',
       'true',
     );
-    await page.getByRole('button', { name: 'pdfLaTeX', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'pdfLaTeX', exact: true }).click();
     await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
     await expect
       .poll(
@@ -355,7 +355,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     });
     await page.getByRole('tab', { name: 'Edit main.tex', exact: true }).click();
     await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
-    await page.getByRole('button', { name: 'pdfLaTeX', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'pdfLaTeX', exact: true }).click();
     await expect(page.locator('.workspace-error')).toContainText('Settings are read-only.');
     await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
     await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveAttribute(

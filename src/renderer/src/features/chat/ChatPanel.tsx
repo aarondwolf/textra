@@ -1,13 +1,7 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type KeyboardEvent,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import * as Dialog from '@radix-ui/react-dialog';
 import { registerClosePreparation } from '../../state/shutdown';
 import type { AIMessage } from '../../../../shared/api';
 import {
@@ -30,6 +24,7 @@ import {
   Copy,
   FileText,
   History,
+  Pencil,
   Plus,
   Settings,
   Square,
@@ -106,11 +101,17 @@ export interface ReviewOutcomeEvent {
 }
 
 function storedChat(id: string, messages: AIMessage[]): AIStoredChat {
+  const firstPrompt = messages.find((message) => message.role === 'user')?.text ?? '';
+  const title = firstPrompt
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 8)
+    .join(' ')
+    .slice(0, 56);
   return {
     id,
-    title: (messages.find((message) => message.role === 'user')?.text ?? 'Untitled chat')
-      .replace(/\s+/g, ' ')
-      .slice(0, 80),
+    title: title || 'Untitled chat',
     updatedAt: Date.now(),
     messages: messages.map((message) => ({ ...message })),
   };
@@ -124,26 +125,6 @@ function mergeChats(...groups: AIStoredChat[][]): AIStoredChat[] {
       if (!previous || previous.updatedAt < chat.updatedAt) chats.set(chat.id, chat);
     }
   return [...chats.values()].sort((left, right) => right.updatedAt - left.updatedAt).slice(0, 100);
-}
-
-function navigateMenu(event: KeyboardEvent<HTMLDivElement>) {
-  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
-  if (!keys.includes(event.key)) return;
-  const items = [
-    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="menuitemradio"]:not(:disabled), [role="menuitem"]:not(:disabled)',
-    ),
-  ];
-  if (!items.length) return;
-  event.preventDefault();
-  const index = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    event.key === 'Home'
-      ? 0
-      : event.key === 'End'
-        ? items.length - 1
-        : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-  items[next]?.focus();
 }
 
 function messageText(message: AssistantUIMessage | undefined): string {
@@ -333,12 +314,14 @@ export function ChatPanel({
   const [chatId, setChatId] = useState<string>(() => crypto.randomUUID());
   const [sessionProject, setSessionProject] = useState(resetKey ?? null);
   const [savedChats, setSavedChats] = useState<AIStoredChat[]>([]);
+  const savedChatsRef = useRef(savedChats);
+  savedChatsRef.current = savedChats;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const historyControl = useRef<HTMLDivElement>(null);
-  const historyButton = useRef<HTMLButtonElement>(null);
+  const [editingChat, setEditingChat] = useState<AIStoredChat | null>(null);
+  const [editedChatTitle, setEditedChatTitle] = useState('');
   const projectGeneration = useRef(0);
   const chatInteraction = useRef(0);
   const liveProject = useRef(resetKey ?? null);
@@ -367,6 +350,14 @@ export function ChatPanel({
   const followResponse = useRef(true);
   const previousResetKey = useRef<string | null | undefined>(undefined);
   const previousContext = useRef(agentContext?.contextId);
+
+  const snapshotChat = useCallback((id: string, chatMessages: AIMessage[]): AIStoredChat => {
+    const generated = storedChat(id, chatMessages);
+    return {
+      ...generated,
+      title: savedChatsRef.current.find((chat) => chat.id === id)?.title ?? generated.title,
+    };
+  }, []);
 
   const agentWorking =
     loading && mode === 'agent' && Boolean(activeRequest) && Boolean(inflight.current?.contextId);
@@ -464,17 +455,17 @@ export function ChatPanel({
         const current = session.current;
         if (current.projectId) {
           const messages = running?.conversation ?? current.messages;
-          await persist(current.projectId, storedChat(current.id, messages));
+          await persist(current.projectId, snapshotChat(current.id, messages));
         }
         await Promise.all([...saves.current.values()]);
       }),
-    [abandonRequest, persist],
+    [abandonRequest, persist, snapshotChat],
   );
 
   useEffect(() => {
     if (!sessionProject || sessionProject !== (resetKey ?? null) || loading || !messages.length)
       return;
-    const snapshot = { projectId: sessionProject, chat: storedChat(chatId, messages) };
+    const snapshot = { projectId: sessionProject, chat: snapshotChat(chatId, messages) };
     void persist(snapshot.projectId, snapshot.chat)
       .then(() => {
         if (liveProject.current === snapshot.projectId) setHistoryError('');
@@ -483,19 +474,7 @@ export function ChatPanel({
         if (liveProject.current === snapshot.projectId)
           setHistoryError(cause instanceof Error ? cause.message : 'Could not save chat history.');
       });
-  }, [sessionProject, resetKey, chatId, messages, loading, persist]);
-
-  useEffect(() => {
-    if (!historyOpen) return;
-    const outside = (event: MouseEvent) => {
-      if (event.target instanceof Node && !historyControl.current?.contains(event.target))
-        setHistoryOpen(false);
-    };
-    document.addEventListener('mousedown', outside);
-    if (!historyLoading)
-      historyControl.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    return () => document.removeEventListener('mousedown', outside);
-  }, [historyOpen, historyLoading]);
+  }, [sessionProject, resetKey, chatId, messages, loading, persist, snapshotChat]);
 
   // An application-owned review outcome annotates the reply that produced the proposal, so
   // later requests do not treat rejected changes as applied.
@@ -520,21 +499,19 @@ export function ChatPanel({
     const current = session.current;
     if (chat?.id === current.id) {
       setHistoryOpen(false);
-      historyButton.current?.focus();
       return;
     }
     ++chatInteraction.current;
     setHistoryBusy(true);
     try {
       if (current.projectId && current.messages.length)
-        await persist(current.projectId, storedChat(current.id, current.messages));
+        await persist(current.projectId, snapshotChat(current.id, current.messages));
       if (generation !== projectGeneration.current) return;
       clearConversation();
       setChatId(chat?.id ?? crypto.randomUUID());
       setMessages(chat?.messages.map((message) => ({ ...message })) ?? []);
       setHistoryOpen(false);
       setHistoryError('');
-      historyButton.current?.focus();
     } catch (cause) {
       if (generation === projectGeneration.current)
         setHistoryError(
@@ -559,6 +536,7 @@ export function ChatPanel({
       if (!result.ok) throw new Error(result.error);
       if (!result.value) return;
       setSavedChats((items) => items.filter((item) => item.id !== chat.id));
+      setHistoryOpen(false);
       if (current.projectId === projectId && current.id === chat.id) {
         clearConversation();
         setChatId(crypto.randomUUID());
@@ -571,6 +549,19 @@ export function ChatPanel({
         setHistoryError(cause instanceof Error ? cause.message : 'Could not delete this chat.');
     } finally {
       if (liveProject.current === projectId) setHistoryBusy(false);
+    }
+  }
+
+  async function saveChatTitle() {
+    const title = editedChatTitle.replace(/\s+/g, ' ').trim();
+    if (!editingChat || !title || !sessionProject) return;
+    try {
+      await persist(sessionProject, { ...editingChat, title, updatedAt: Date.now() });
+      setEditingChat(null);
+      setEditedChatTitle('');
+      setHistoryError('');
+    } catch (cause) {
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not rename this chat.');
     }
   }
 
@@ -888,77 +879,78 @@ export function ChatPanel({
         >
           <Plus size={14} aria-hidden="true" />
         </button>
-        <div
-          className="ai-history-control"
-          ref={historyControl}
-          onBlur={(event) => {
-            if (
-              !(event.relatedTarget instanceof Node) ||
-              !event.currentTarget.contains(event.relatedTarget)
-            )
-              setHistoryOpen(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              setHistoryOpen(false);
-              historyButton.current?.focus();
-            }
-          }}
-        >
-          <button
-            ref={historyButton}
-            type="button"
-            className="ai-header-icon-button ai-history-trigger"
-            aria-label="Chat history"
-            title="Latest 100 workspace chats"
-            aria-haspopup="menu"
-            aria-expanded={historyOpen}
-            disabled={!sessionProject || loading || reviewActive || historyBusy}
-            onClick={() => setHistoryOpen((value) => !value)}
-          >
-            <History size={14} aria-hidden="true" />
-          </button>
-          {historyOpen && (
-            <div
-              className="ai-history-menu"
-              role="menu"
-              aria-label="Workspace chat history"
-              onKeyDown={navigateMenu}
-            >
-              {historyLoading && <p role="status">Loading history…</p>}
-              {!historyLoading && savedChats.length === 0 && <p>No saved chats yet.</p>}
-              {savedChats.map((chat) => (
-                <div key={chat.id} className="ai-history-row" role="none">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    disabled={historyBusy}
-                    title={chat.title}
-                    onClick={() => void chooseChat(chat)}
-                  >
-                    <span>{chat.title}</span>
-                    <small>
-                      {new Date(chat.updatedAt).toLocaleDateString()}
-                      {chat.id === chatId ? ' · Current' : ''}
-                    </small>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    className="ai-history-delete"
-                    disabled={historyBusy}
-                    aria-label={`Delete chat ${chat.title}`}
-                    title="Delete saved chat"
-                    onClick={() => void deleteSavedChat(chat)}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="ai-history-control">
+          <DropdownMenu.Root open={historyOpen} onOpenChange={setHistoryOpen}>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                className="ai-header-icon-button ai-history-trigger"
+                aria-label="Chat history"
+                title="Latest 100 workspace chats"
+                disabled={!sessionProject || loading || reviewActive || historyBusy}
+              >
+                <History size={14} aria-hidden="true" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="ai-history-menu"
+                side="bottom"
+                align="end"
+                sideOffset={6}
+                collisionPadding={8}
+                aria-label="Workspace chat history"
+              >
+                {historyLoading && <p role="status">Loading history…</p>}
+                {!historyLoading && savedChats.length === 0 && <p>No saved chats yet.</p>}
+                {savedChats.map((chat) => (
+                  <div key={chat.id} className="ai-history-row" role="none">
+                    <DropdownMenu.Item
+                      className="ai-history-item"
+                      disabled={historyBusy}
+                      title={chat.title}
+                      aria-current={chat.id === chatId ? 'page' : undefined}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        void chooseChat(chat);
+                      }}
+                    >
+                      <span className="ai-history-title">{chat.title}</span>
+                      <small className="ai-history-date">
+                        {new Date(chat.updatedAt).toLocaleDateString()}
+                        {chat.id === chatId ? ' · Current' : ''}
+                      </small>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className="ai-history-edit"
+                      disabled={historyBusy}
+                      aria-label={`Rename chat ${chat.title}`}
+                      title="Rename chat"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setEditingChat(chat);
+                        setEditedChatTitle(chat.title);
+                      }}
+                    >
+                      <Pencil size={13} aria-hidden="true" />
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className="ai-history-delete"
+                      disabled={historyBusy}
+                      aria-label={`Delete chat ${chat.title}`}
+                      title="Delete saved chat"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        void deleteSavedChat(chat);
+                      }}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </DropdownMenu.Item>
+                  </div>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
         <button
           type="button"
@@ -971,6 +963,62 @@ export function ChatPanel({
           <Settings size={14} aria-hidden="true" />
         </button>
       </header>
+      <Dialog.Root
+        open={Boolean(editingChat)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingChat(null);
+            setEditedChatTitle('');
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content
+            className="dialog-content action-dialog"
+            aria-describedby="rename-chat-hint"
+          >
+            <div className="dialog-header">
+              <Dialog.Title>Rename chat</Dialog.Title>
+              <Dialog.Close className="icon-button small" aria-label="Close rename dialog">
+                <X size={14} />
+              </Dialog.Close>
+            </div>
+            <p id="rename-chat-hint" className="setup-hint">
+              Choose a short title for this conversation.
+            </p>
+            <label className="field-label" style={{ marginTop: '8px' }}>
+              Chat title
+              <input
+                aria-label="Chat title"
+                value={editedChatTitle}
+                maxLength={80}
+                autoFocus
+                onChange={(event) => setEditedChatTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void saveChatTitle();
+                  }
+                }}
+              />
+            </label>
+            <div className="dialog-actions" style={{ marginTop: '16px' }}>
+              <Dialog.Close asChild>
+                <button type="button">Cancel</button>
+              </Dialog.Close>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!editedChatTitle.trim() || historyBusy}
+                onClick={() => void saveChatTitle()}
+              >
+                Save
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       {historyError && (
         <p className="ai-history-error" role="alert">
           {historyError}

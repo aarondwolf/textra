@@ -39,7 +39,7 @@ test('project recipes round-trip through builder, JSON and external settings edi
     );
     async function openRecipes() {
       await page.getByRole('button', { name: 'Choose compile recipe', exact: true }).click();
-      await page.getByRole('button', { name: 'Manage recipes…', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Manage recipes…', exact: true }).click();
       const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
       await settings
         .getByRole('button', { name: 'Advanced project settings…', exact: true })
@@ -57,9 +57,9 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await dialog.getByRole('button', { name: 'New recipe', exact: true }).click();
     await dialog.getByRole('textbox', { name: 'Recipe name', exact: true }).fill('Draft proof');
     await dialog.getByRole('button', { name: 'Add step', exact: true }).click();
-    await dialog
+    await page
       .getByRole('menu', { name: 'Add step', exact: true })
-      .getByRole('menuitem', { name: 'pdflatex', exact: true })
+      .getByRole('menuitemradio', { name: 'pdflatex', exact: true })
       .click();
     await dialog.getByRole('button', { name: 'Edit tool pdflatex', exact: true }).first().click();
     const synctex = dialog.getByRole('button', { name: /^SyncTeX/ });
@@ -75,9 +75,9 @@ test('project recipes round-trip through builder, JSON and external settings edi
       .getByRole('textbox', { name: 'Build folder', exact: true })
       .fill('build/custom output');
     await dialog.getByRole('button', { name: 'Project default recipe', exact: true }).click();
-    await dialog
+    await page
       .getByRole('menu', { name: 'Project default recipe', exact: true })
-      .getByRole('menuitem', { name: 'Draft proof', exact: true })
+      .getByRole('menuitemradio', { name: 'Draft proof', exact: true })
       .click();
     await dialog.locator('.recipe-scroll').evaluate((element) => {
       element.scrollTop = 0;

@@ -5,6 +5,7 @@ import { ResizableSeparator } from '../../components/ResizableSeparator';
 import { PaneHeader } from '../../components/Layout';
 import { IconButton } from '../../components/Button';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { useOverlayZIndex } from '../../components/overlay-layers';
 import {
   ChevronDown,
   ChevronRight,
@@ -113,6 +114,7 @@ export function HistoryPanel({
   onPinProject,
   projectBusy = false,
 }: HistoryPanelProps) {
+  const floatingZIndex = useOverlayZIndex('floating');
   const {
     snapshots,
     nextCursor,
@@ -347,13 +349,22 @@ export function HistoryPanel({
             <button
               type="button"
               disabled={Boolean(busyAction)}
+              title="Search for earlier TeXtra history stores. Nothing is imported until you choose a store and confirm the import."
               onClick={() => void discoverLegacyHistory()}
             >
               Recover earlier history…
             </button>
+            <p>
+              Find older TeXtra snapshots and merge them into this project. Existing snapshots and
+              the original history store are kept.
+            </p>
             {legacyHistories && (
               <div aria-label="Earlier history stores">
-                <p>Choose an earlier history store belonging to {projectName}.</p>
+                <p>
+                  Earlier history stores do not record which project they came from. Verify the
+                  sample paths belong to {projectName}, then choose a store to merge its snapshots
+                  into this project. The original store stays available.
+                </p>
                 {legacyHistories.length === 0 && <p>No earlier history stores found.</p>}
                 {legacyHistories.map((history) => (
                   <button
@@ -587,6 +598,7 @@ export function HistoryPanel({
                                         align="end"
                                         sideOffset={4}
                                         collisionPadding={8}
+                                        style={{ zIndex: floatingZIndex }}
                                         onClick={(e) => e.stopPropagation()}
                                       >
                                         <DropdownMenu.Item
@@ -792,7 +804,7 @@ export function HistoryPanel({
             {recentsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             <span id="history-recents-heading" className="writing-section-title-text">
               <FolderOpen size={13} aria-hidden="true" />
-              Recent Projects
+              <span>Recent Projects</span>
             </span>
             <span className="writing-count">{recents.length}</span>
           </button>

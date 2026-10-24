@@ -1,6 +1,8 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { CaretDown, Check } from '@phosphor-icons/react';
+import { useOverlayZIndex } from './overlay-layers';
+import { AppTooltip } from './HelpTooltip';
 
 export interface DropdownMenuItem<T extends string = string> {
   value: T;
@@ -35,8 +37,9 @@ export interface DropdownMenuProps<T extends string = string> {
   fullWidth?: boolean;
   title?: string;
   preventFocusSteal?: boolean;
-  customTrigger?: ReactNode | ((open: boolean) => ReactNode);
+  customTrigger?: ReactElement | ((open: boolean) => ReactElement);
   footer?: ReactNode;
+  mode?: 'actions' | 'single';
 }
 
 function isGroup<T extends string>(item: DropdownItemOrGroup<T>): item is DropdownMenuGroup<T> {
@@ -68,8 +71,11 @@ export function DropdownMenu<T extends string = string>({
   preventFocusSteal = false,
   customTrigger,
   footer,
+  mode,
 }: DropdownMenuProps<T>) {
   const [open, setOpen] = useState(false);
+  const floatingZIndex = useOverlayZIndex();
+  const menuMode = mode ?? (onChange ? 'single' : 'actions');
 
   const flatItems = useMemo(() => {
     const list: DropdownMenuItem<T>[] = [];
@@ -87,26 +93,15 @@ export function DropdownMenu<T extends string = string>({
   const selectedItem = selectedIndex >= 0 ? flatItems[selectedIndex] : undefined;
   const displayLabel = selectedItem ? selectedItem.label : placeholder;
 
-  const handleSelect = (item: DropdownMenuItem<T>) => {
-    if (item.disabled) return;
-    if (item.onClick) {
-      item.onClick();
-    }
-    if (onChange) {
-      onChange(item.value);
-    }
+  const handleActionSelect = (item: DropdownMenuItem<T>) => {
+    item.onClick?.();
+    onChange?.(item.value);
   };
 
   const renderItem = (item: DropdownMenuItem<T>) => {
     const isSelected = item.value === value;
-
-    return (
-      <DropdownMenuPrimitive.Item
-        key={item.value}
-        disabled={item.disabled}
-        className={['dropdown-menu-item', isSelected ? 'selected' : ''].filter(Boolean).join(' ')}
-        onSelect={() => handleSelect(item)}
-      >
+    const content = (
+      <>
         <span className="dropdown-menu-item-content">
           {item.icon}
           <span>{item.label}</span>
@@ -115,18 +110,65 @@ export function DropdownMenu<T extends string = string>({
           {item.description && (
             <span className="dropdown-menu-item-description">{item.description}</span>
           )}
-          {isSelected && (
+          {menuMode === 'single' ? (
+            <DropdownMenuPrimitive.ItemIndicator>
+              <Check
+                size={12}
+                weight="bold"
+                className="dropdown-menu-item-check"
+                aria-hidden="true"
+              />
+            </DropdownMenuPrimitive.ItemIndicator>
+          ) : isSelected ? (
             <Check
               size={12}
               weight="bold"
               className="dropdown-menu-item-check"
               aria-hidden="true"
             />
-          )}
+          ) : null}
         </div>
+      </>
+    );
+    const itemClass = ['dropdown-menu-item', isSelected ? 'selected' : '']
+      .filter(Boolean)
+      .join(' ');
+    return menuMode === 'single' ? (
+      <DropdownMenuPrimitive.RadioItem
+        key={item.value}
+        value={item.value}
+        disabled={item.disabled}
+        className={itemClass}
+        onSelect={() => item.onClick?.()}
+      >
+        {content}
+      </DropdownMenuPrimitive.RadioItem>
+    ) : (
+      <DropdownMenuPrimitive.Item
+        key={item.value}
+        disabled={item.disabled}
+        className={itemClass}
+        onSelect={() => handleActionSelect(item)}
+      >
+        {content}
       </DropdownMenuPrimitive.Item>
     );
   };
+
+  const defaultTrigger = (
+    <button
+      type="button"
+      className="dropdown-menu-trigger editor-format-heading-trigger"
+      aria-label={ariaLabel}
+      title={disabled || items.length === 0 ? title : undefined}
+      disabled={disabled || items.length === 0}
+      onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
+      style={triggerStyle}
+    >
+      <span className="dropdown-menu-trigger-text">{displayLabel}</span>
+      <CaretDown size={11} aria-hidden="true" className="dropdown-menu-trigger-caret" />
+    </button>
+  );
 
   return (
     <div
@@ -144,30 +186,15 @@ export function DropdownMenu<T extends string = string>({
       <DropdownMenuPrimitive.Root open={open} onOpenChange={setOpen}>
         <DropdownMenuPrimitive.Trigger asChild disabled={disabled || items.length === 0}>
           {customTrigger ? (
-            <div
-              role="button"
-              tabIndex={disabled || items.length === 0 ? -1 : 0}
-              aria-label={ariaLabel}
-              title={title}
-              className="dropdown-menu-custom-trigger"
-              onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
-              style={triggerStyle}
-            >
-              {typeof customTrigger === 'function' ? customTrigger(open) : customTrigger}
-            </div>
+            typeof customTrigger === 'function' ? (
+              customTrigger(open)
+            ) : (
+              customTrigger
+            )
+          ) : title && !disabled && items.length > 0 ? (
+            <AppTooltip content={title}>{defaultTrigger}</AppTooltip>
           ) : (
-            <button
-              type="button"
-              className="dropdown-menu-trigger editor-format-heading-trigger"
-              aria-label={ariaLabel}
-              title={title}
-              disabled={disabled || items.length === 0}
-              onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
-              style={triggerStyle}
-            >
-              <span className="dropdown-menu-trigger-text">{displayLabel}</span>
-              <CaretDown size={11} aria-hidden="true" className="dropdown-menu-trigger-caret" />
-            </button>
+            defaultTrigger
           )}
         </DropdownMenuPrimitive.Trigger>
 
@@ -188,21 +215,43 @@ export function DropdownMenu<T extends string = string>({
             style={{
               ...(fullWidth ? { minWidth: 'var(--radix-dropdown-menu-trigger-width)' } : {}),
               ...menuStyle,
+              zIndex: floatingZIndex,
             }}
           >
-            {items.map((itemOrGroup, idx) => {
-              if (isGroup(itemOrGroup)) {
-                return (
-                  <DropdownMenuPrimitive.Group key={`group-${itemOrGroup.group}-${idx}`}>
-                    <DropdownMenuPrimitive.Label className="dropdown-menu-group-header">
-                      {itemOrGroup.group}
-                    </DropdownMenuPrimitive.Label>
-                    {itemOrGroup.items.map((item) => renderItem(item))}
-                  </DropdownMenuPrimitive.Group>
-                );
-              }
-              return renderItem(itemOrGroup);
-            })}
+            {menuMode === 'single' ? (
+              <DropdownMenuPrimitive.RadioGroup
+                value={value ?? undefined}
+                onValueChange={(nextValue) => onChange?.(nextValue as T)}
+              >
+                {items.map((itemOrGroup, idx) => {
+                  if (isGroup(itemOrGroup)) {
+                    return (
+                      <DropdownMenuPrimitive.Group key={`group-${itemOrGroup.group}-${idx}`}>
+                        <DropdownMenuPrimitive.Label className="dropdown-menu-group-header">
+                          {itemOrGroup.group}
+                        </DropdownMenuPrimitive.Label>
+                        {itemOrGroup.items.map((item) => renderItem(item))}
+                      </DropdownMenuPrimitive.Group>
+                    );
+                  }
+                  return renderItem(itemOrGroup);
+                })}
+              </DropdownMenuPrimitive.RadioGroup>
+            ) : (
+              items.map((itemOrGroup, idx) => {
+                if (isGroup(itemOrGroup)) {
+                  return (
+                    <DropdownMenuPrimitive.Group key={`group-${itemOrGroup.group}-${idx}`}>
+                      <DropdownMenuPrimitive.Label className="dropdown-menu-group-header">
+                        {itemOrGroup.group}
+                      </DropdownMenuPrimitive.Label>
+                      {itemOrGroup.items.map((item) => renderItem(item))}
+                    </DropdownMenuPrimitive.Group>
+                  );
+                }
+                return renderItem(itemOrGroup);
+              })
+            )}
             {footer && <div className="dropdown-menu-footer">{footer}</div>}
           </DropdownMenuPrimitive.Content>
         </DropdownMenuPrimitive.Portal>

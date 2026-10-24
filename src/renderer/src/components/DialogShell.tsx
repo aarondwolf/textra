@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from './overlay-layers';
 import { X } from '../icons';
 import { IconButton } from './Button';
 

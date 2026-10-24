@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import type { ConflictDocument, ExternalChangeStatus, PreserveConflictOptions } from './types';
 import './conflicts.css';
 

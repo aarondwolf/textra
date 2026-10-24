@@ -96,6 +96,41 @@ describe('preference boundary validation', () => {
     expect(() => validatePreferences({ ...DEFAULT_PREFERENCES, wrap: 'yes' })).toThrow();
   });
 
+  it('stores user-level recipes only when their tools are allowlisted and referenced', () => {
+    const globalBuildRecipes = {
+      recipes: [{ name: 'User pdflatex', tools: ['pdflatex'] }],
+      tools: [
+        {
+          name: 'pdflatex',
+          command: 'pdflatex',
+          args: ['-interaction=nonstopmode', '%DOC_EXT%'],
+          cwd: '%DIR%',
+        },
+      ],
+    };
+    expect(
+      validatePreferences({ ...DEFAULT_PREFERENCES, globalBuildRecipes }).globalBuildRecipes,
+    ).toEqual(globalBuildRecipes);
+    expect(() =>
+      validatePreferences({
+        ...DEFAULT_PREFERENCES,
+        globalBuildRecipes: {
+          ...globalBuildRecipes,
+          tools: [{ ...globalBuildRecipes.tools[0], command: 'powershell' }],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      validatePreferences({
+        ...DEFAULT_PREFERENCES,
+        globalBuildRecipes: {
+          ...globalBuildRecipes,
+          recipes: [{ name: 'Broken', tools: ['missing-tool'] }],
+        },
+      }),
+    ).toThrow();
+  });
+
   it('defaults common problem help on and only accepts a boolean preference', () => {
     const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
     delete legacy.commonProblemHelp;

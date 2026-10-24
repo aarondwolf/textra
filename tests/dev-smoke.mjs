@@ -4,26 +4,24 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { chromium, expect } from '@playwright/test';
 
 const project = process.cwd();
 const results = join(project, '.test-data', 'dev-smoke');
 await mkdir(results, { recursive: true });
+const viteCache = join(results, 'vite-cache');
+await mkdir(viteCache, { recursive: true });
 const userData = await mkdtemp(join(results, 'user-data-'));
-const server = createServer();
-await new Promise((resolveListening) => server.listen(0, '127.0.0.1', resolveListening));
-const address = server.address();
-if (!address || typeof address === 'string') throw new Error('No local test port available.');
-const port = address.port;
-await new Promise((resolveClosed) => server.close(resolveClosed));
 const environment = { ...process.env };
 delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.ELECTRON_CLI_ARGS;
 delete environment.NO_SANDBOX;
 environment.TEXTRA_USER_DATA_DIR = userData;
-environment.REMOTE_DEBUGGING_PORT = String(port);
+environment.TEXTRA_VITE_CACHE_DIR = viteCache;
+// Electron restarts during this smoke test. Port 0 gives each process a fresh
+// debug endpoint, avoiding Windows' delayed socket release for a reused port.
+environment.REMOTE_DEBUGGING_PORT = '0';
 
 const processUnderTest = spawn(
   process.execPath,
@@ -38,6 +36,11 @@ for (const stream of [processUnderTest.stdout, processUnderTest.stderr]) {
 }
 let browser;
 let modified = false;
+const devtoolsPort = () => {
+  const ports = [...output.matchAll(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/g)];
+  const latest = ports.at(-1)?.[1];
+  return latest ? Number(latest) : null;
+};
 const restartProbes = new Map();
 const stylesheet = join(project, 'src', 'renderer', 'src', 'styles.css');
 const marker = `\n/* TeXtra temporary HMR smoke probe */\n:root { --textra-hmr-probe: verified; }\n`;
@@ -49,6 +52,8 @@ try {
         if (processUnderTest.exitCode !== null) {
           throw new Error(`Development process exited early: ${output}`);
         }
+        const port = devtoolsPort();
+        if (port === null) return false;
         try {
           browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 1000 });
           return true;
@@ -60,8 +65,17 @@ try {
     )
     .toBe(true);
   const context = browser.contexts()[0];
-  await expect.poll(() => context.pages().length, { timeout: 15000 }).toBeGreaterThan(0);
-  const page = context.pages()[0];
+  const applicationPage = () =>
+    context.pages().find((candidate) => candidate.url().startsWith('http://127.0.0.1:5173/'));
+  await expect.poll(() => applicationPage() !== undefined, { timeout: 15000 }).toBe(true);
+  const page = applicationPage();
+  if (!page)
+    throw new Error(
+      `Native renderer page was not found. CDP pages: ${context
+        .pages()
+        .map((candidate) => candidate.url())
+        .join(', ')}`,
+    );
   const rendererErrors = [];
   page.on('pageerror', (error) => {
     rendererErrors.push(error.message);
@@ -77,7 +91,7 @@ try {
   expect(rendererErrors, 'Development renderer must load without uncaught errors').toEqual([]);
   await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
   await page.getByRole('button', { name: 'Theme', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Light', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Light', exact: true }).click();
   await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   const sentinel = randomUUID();
   await page.evaluate((value) => {
@@ -121,6 +135,8 @@ try {
     await expect
       .poll(
         async () => {
+          const port = devtoolsPort();
+          if (port === null) return false;
           try {
             browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 5000 });
             return true;
@@ -133,7 +149,17 @@ try {
       .toBe(true);
     const restartedContext = browser.contexts()[0];
     await expect.poll(() => restartedContext.pages().length).toBeGreaterThan(0);
-    const restartedPage = restartedContext.pages()[0];
+    const restartedPage = restartedContext
+      .pages()
+      .find((candidate) => candidate.url().startsWith('http://127.0.0.1:5173/'));
+    if (!restartedPage) {
+      throw new Error(
+        `Restarted renderer page was not found. CDP pages: ${restartedContext
+          .pages()
+          .map((candidate) => candidate.url())
+          .join(', ')}`,
+      );
+    }
     await expect(restartedPage.getByRole('main', { name: 'Document workspace' })).toBeVisible();
     await expect(restartedPage.locator('html')).toHaveAttribute('data-theme', 'light');
     console.log('PASS: main rebuild restarts native Electron and restores preferences.');

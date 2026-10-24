@@ -87,13 +87,14 @@ test('approved formatting stays undoable and history restore preserves dirty tex
     await expect.poll(() => readFile(filename, 'utf8')).toContain('% New writing');
 
     const savedText = await readFile(filename, 'utf8');
-    const dirtySuffix = '\n% Dirty text must survive history restoration exactly.';
+    const dirtySuffix = ' Dirty text must survive history restoration exactly.';
     // Disk publication precedes the save acknowledgement and its history snapshot.
     // Monaco's logical readOnly does not set the native textarea's readonly flag.
     await expect(input).toHaveAttribute('aria-autocomplete', 'both');
     await input.focus();
+    await expect(input).toBeFocused();
     await page.keyboard.press('Control+End');
-    await page.keyboard.insertText(dirtySuffix);
+    await input.pressSequentially(dirtySuffix, { delay: 20 });
     await expect(editor).toContainText('Dirty text must survive history restoration exactly.');
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeEnabled();
     const dirtyText = savedText + dirtySuffix;
@@ -102,10 +103,11 @@ test('approved formatting stays undoable and history restore preserves dirty tex
       name: 'Snapshot actions',
       exact: true,
     });
-    if (await narrowActions.count()) await narrowActions.click();
+    const hasNarrowActions = (await narrowActions.count()) > 0;
+    if (hasNarrowActions) await narrowActions.click();
     page.once('dialog', (dialog) => void dialog.accept());
-    if (await narrowActions.count()) {
-      await originalSnapshot.getByRole('button', { name: 'Restore version', exact: true }).click();
+    if (hasNarrowActions) {
+      await page.getByRole('menuitem', { name: 'Restore version', exact: true }).click();
     } else {
       await originalSnapshot.getByRole('button', { name: 'Restore snapshot', exact: true }).click();
     }

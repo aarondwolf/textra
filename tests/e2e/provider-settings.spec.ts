@@ -134,9 +134,9 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       exact: true,
     });
     await defaultModel.click();
-    await editor
+    await page
       .getByRole('menu', { name: 'Connection default model', exact: true })
-      .getByRole('menuitem', { name: 'chat-a', exact: true })
+      .getByRole('menuitemradio', { name: 'chat-a', exact: true })
       .click();
     const chatFilter = editor.getByRole('group', {
       name: 'Assistant and inline completion',
@@ -148,9 +148,9 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       exact: true,
     });
     await chatVisibility.click();
-    await chatFilter
+    await page
       .getByRole('menu', { name: 'Assistant and inline completion visibility', exact: true })
-      .getByRole('menuitem', { name: 'Include selected models', exact: true })
+      .getByRole('menuitemradio', { name: 'Include selected models', exact: true })
       .click();
     await chatFilter
       .getByRole('textbox', {
@@ -165,9 +165,9 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       exact: true,
     });
     await automaticVisibility.click();
-    await autoFilter
+    await page
       .getByRole('menu', { name: 'Automatic completion visibility', exact: true })
-      .getByRole('menuitem', { name: 'Exclude selected models', exact: true })
+      .getByRole('menuitemradio', { name: 'Exclude selected models', exact: true })
       .click();
     await autoFilter
       .getByRole('textbox', { name: 'Automatic completion exact model IDs', exact: true })

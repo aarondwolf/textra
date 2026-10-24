@@ -1,4 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
+import { AppTooltip } from './HelpTooltip';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'default' | 'primary' | 'toolbar';
@@ -27,13 +28,18 @@ export const IconButton = forwardRef<
   HTMLButtonElement,
   ButtonProps & { label: string; small?: boolean }
 >(function IconButton({ label, small = true, className, ...props }, ref) {
-  return (
+  const { title, disabled, busy, ...buttonProps } = props;
+  const visibleTitle = title ?? label;
+  const button = (
     <Button
       ref={ref}
       aria-label={label}
-      title={label}
+      title={disabled || busy ? visibleTitle : undefined}
       className={['icon-button', small && 'small', className].filter(Boolean).join(' ')}
-      {...props}
+      disabled={disabled}
+      busy={busy}
+      {...buttonProps}
     />
   );
+  return disabled || busy ? button : <AppTooltip content={visibleTitle}>{button}</AppTooltip>;
 });

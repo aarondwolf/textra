@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { parse, type ParseError } from 'jsonc-parser';
 import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Plus, Trash2, X } from '../../icons';
 import type { ProjectConfig } from '../../../../shared/api';

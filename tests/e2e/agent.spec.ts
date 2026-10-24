@@ -298,7 +298,7 @@ test('native assistant answers, stages active-file edits for review, applies und
     await expect(chat).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event('textra-ai-settings-changed')));
     const modelButton = chat.getByRole('button', { name: /^Model: / });
-    const models = chat.getByRole('listbox', { name: 'Model', exact: true });
+    const models = page.getByRole('listbox', { name: 'Model', exact: true });
     await expect(modelButton).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
     // Chat begins without document access; only an explicit Agent choice authorizes edits.
     await expect(chat.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute(

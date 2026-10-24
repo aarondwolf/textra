@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { ArrowDown, ArrowUp, Pencil, Plus, Save, Trash2, X } from '../../icons';
-import type { ProjectConfig } from '../../../../shared/api';
+import type { Preferences, ProjectConfig } from '../../../../shared/api';
 import { BUILD_RECIPES } from '../../../../shared/api';
 import {
   createDefaultRecipeSettings,
@@ -18,6 +18,8 @@ interface CompileRecipeEditorProps {
   disabled: boolean;
   projectId: string;
   recipeName: string;
+  globalBuildRecipes?: Preferences['globalBuildRecipes'];
+  onSaveGlobal?: (recipes: NonNullable<Preferences['globalBuildRecipes']>) => void;
   onSelectRecipe?: (recipeName: string) => void;
   onSaved: (config: ProjectConfig, recipeName: string) => void;
 }
@@ -33,6 +35,8 @@ export function CompileRecipeEditor({
   disabled,
   projectId,
   recipeName,
+  globalBuildRecipes,
+  onSaveGlobal,
   onSelectRecipe,
   onSaved,
 }: CompileRecipeEditorProps) {
@@ -75,6 +79,14 @@ export function CompileRecipeEditor({
   const tools = settings['latex-workshop.latex.tools'];
   const recipeIndex = Math.min(editingRecipeIndex, recipes.length - 1);
   const recipe = recipes[recipeIndex]!;
+  const recipeChoices = [
+    ...recipes.map((recipe) => ({ value: recipe.name, recipe, isGlobal: false })),
+    ...(globalBuildRecipes?.recipes ?? []).map((recipe) => ({
+      value: `@user/${recipe.name}`,
+      recipe,
+      isGlobal: true,
+    })),
+  ];
 
   function update(patch: Partial<ProjectConfig>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -178,7 +190,9 @@ export function CompileRecipeEditor({
     }
   }
 
-  const locked = disabled || saving;
+  // Keep the recipe editor interactive when other workspace controls are temporarily
+  // disabled (for example while a compile is running). Only persistence itself locks it.
+  const locked = saving;
   return (
     <section className="compile-recipe-editor" aria-label="Compile recipe settings">
       <div className="compile-editor-heading">
@@ -190,21 +204,51 @@ export function CompileRecipeEditor({
           {error}
         </p>
       )}
-      <fieldset disabled={locked}>
+      <fieldset disabled={saving}>
         <label className="field-label">
           Recipe
           <DropdownMenu
             ariaLabel="Select recipe"
             value={recipe.name}
-            items={recipes.map((entry) => ({
-              value: entry.name,
-              label:
-                BUILD_RECIPES.find((preset) => preset.value === entry.name)?.label ?? entry.name,
+            items={recipeChoices.map(({ value, recipe: entry, isGlobal }) => ({
+              value,
+              label: `${BUILD_RECIPES.find((preset) => preset.value === entry.name)?.label ?? entry.name}${isGlobal ? ' · user' : ''}`,
             }))}
-            onChange={(name) => {
-              const idx = recipes.findIndex((r) => r.name === name);
+            onChange={(value) => {
+              let selectedName = value;
+              let importedUserRecipe = false;
+              let idx = recipes.findIndex((r) => r.name === value);
+              if (value.startsWith('@user/')) {
+                importedUserRecipe = true;
+                const globalName = value.slice('@user/'.length);
+                const global = globalBuildRecipes?.recipes.find((item) => item.name === globalName);
+                if (global) {
+                  selectedName = recipes.some((item) => item.name === global.name)
+                    ? `${global.name} (user)`
+                    : global.name;
+                  const nextTools = [...tools];
+                  for (const globalTool of globalBuildRecipes?.tools ?? []) {
+                    if (global.tools.includes(globalTool.name)) {
+                      const existingIndex = nextTools.findIndex(
+                        (item) => item.name === globalTool.name,
+                      );
+                      if (existingIndex < 0) nextTools.push(globalTool);
+                      else nextTools[existingIndex] = globalTool;
+                    }
+                  }
+                  const nextRecipes = [
+                    ...recipes,
+                    { ...global, name: selectedName, tools: [...global.tools] },
+                  ];
+                  update({
+                    'latex-workshop.latex.recipes': nextRecipes,
+                    'latex-workshop.latex.tools': nextTools,
+                  });
+                  idx = nextRecipes.length - 1;
+                }
+              }
               if (idx >= 0) setEditingRecipeIndex(idx);
-              onSelectRecipe?.(name);
+              if (!importedUserRecipe) onSelectRecipe?.(selectedName);
             }}
           />
         </label>
@@ -287,6 +331,7 @@ export function CompileRecipeEditor({
         <button
           type="button"
           className="recipe-add-step-faded"
+          aria-label="Add a step to this recipe"
           onClick={() => {
             const nextTool = tools[0]?.name ?? 'pdflatex';
             updateRecipe({ tools: [...recipe.tools, nextTool] });
@@ -336,11 +381,33 @@ export function CompileRecipeEditor({
           type="button"
           className="text-button"
           onClick={() => void save(false)}
-          disabled={locked}
+          disabled={disabled || locked}
           title="Save and overwrite the current recipe"
         >
           <Save size={13} /> Save
         </button>
+        {onSaveGlobal && (
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              const names = new Set(recipe.tools);
+              const globalTools = tools.filter((tool) => names.has(tool.name));
+              const existing = globalBuildRecipes ?? { recipes: [], tools: [] };
+              const nextRecipes = existing.recipes.filter((item) => item.name !== recipe.name);
+              const nextTools = existing.tools.filter((tool) => !names.has(tool.name));
+              onSaveGlobal({
+                recipes: [...nextRecipes, { ...recipe, tools: [...recipe.tools] }],
+                tools: [...nextTools, ...globalTools],
+              });
+              setError(null);
+            }}
+            disabled={disabled || locked}
+            title="Save this recipe to your TeXtra user profile for other projects"
+          >
+            <Save size={13} /> Save to user recipes
+          </button>
+        )}
         <button
           type="button"
           className="text-button"
@@ -348,7 +415,7 @@ export function CompileRecipeEditor({
             setSaveAsName(`${recipe.name} (copy)`);
             setSaveAsOpen(true);
           }}
-          disabled={locked}
+          disabled={disabled || locked}
           title="Save as a new recipe"
         >
           <Plus size={13} /> Save As…

@@ -1,11 +1,16 @@
 # Known issues
 
-- 2026-10-24 startup troubleshooting: fixed the development black window caused
-  by unoptimized CommonJS transitive parser dependencies. The extended native dev
-  smoke still exposes a separate main-restart race on Windows: electron-vite starts
-  a replacement while the old process holds its profile/debug port, and the old CDP
-  connection never disconnects within 15s. Fresh dev startup, CSS HMR and preload
-  reload work. Investigate process shutdown/restart ownership separately.
+- 2026-10-24 UI audit follow-up: no reproducible UI defects remain from the
+  requested views. The app has no existing LaTeX logo asset; the current tool icon
+  remains. The narrow editor toolbar is horizontally scrollable within its pane.
+
+- 2026-10-24 startup troubleshooting: the black development window from an
+  unoptimized CommonJS parser dependency was fixed by adding the missing renderer
+  dependency to Vite's optimize list. The expanded native smoke passes startup,
+  CSS HMR, preload reload, and main-process restart. The CDP harness selects the
+  renderer URL and uses an ephemeral debugging port. Windows/Dropbox may still deny
+  Vite cleanup of the generated `out/renderer/assets` reparse point; the verified
+  build-host workaround is documented in `docs/UI_AUDIT.md`.
 
 - 2026-10-24 architecture follow-up:
   - Confirmed history containment, corrupt-index preservation, restore data loss,

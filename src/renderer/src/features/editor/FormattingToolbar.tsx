@@ -1,5 +1,8 @@
 import {
   EyeSlash,
+  FilePlus,
+  FloppyDiskBack,
+  TextAlignLeft,
   FilePdf,
   ImageSquare,
   ListBullets,
@@ -29,6 +32,13 @@ export default function FormattingToolbar({
   onOpenPdf,
   onOpenMarkdown,
   onHide,
+  onSave,
+  saveDisabled = false,
+  onSaveAs,
+  fontSize,
+  onFontSizeChange,
+  wrap,
+  onToggleWrap,
 }: {
   disabled: boolean;
   hasPdf?: boolean;
@@ -36,6 +46,13 @@ export default function FormattingToolbar({
   onOpenPdf?: () => void;
   onOpenMarkdown?: () => void;
   onHide: () => void;
+  onSave?: () => void;
+  saveDisabled?: boolean;
+  onSaveAs?: () => void;
+  fontSize?: number;
+  onFontSizeChange?: (size: number) => void;
+  wrap?: boolean;
+  onToggleWrap?: () => void;
 }) {
   return (
     <div className="editor-format-toolbar" role="toolbar" aria-label="LaTeX formatting">
@@ -138,6 +155,52 @@ export default function FormattingToolbar({
         ]}
       />
       <span className="editor-format-spacer" />
+      {onSave && (
+        <button
+          type="button"
+          aria-label="Save file"
+          title="Save (Ctrl/Cmd+S)"
+          disabled={disabled || saveDisabled}
+          onClick={onSave}
+        >
+          <FloppyDiskBack size={15} />
+        </button>
+      )}
+      {onSaveAs && (
+        <button
+          type="button"
+          aria-label="Save file as"
+          title="Save as…"
+          disabled={disabled}
+          onClick={onSaveAs}
+        >
+          <FilePlus size={15} />
+        </button>
+      )}
+      {typeof fontSize === 'number' && onFontSizeChange && (
+        <DropdownMenu
+          ariaLabel="Editor font size"
+          title="Editor font size"
+          fullWidth={false}
+          value={String(fontSize)}
+          items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
+            .sort((a, b) => a - b)
+            .map((size) => ({ value: String(size), label: `${size}px` }))}
+          onChange={(value) => onFontSizeChange(Number(value))}
+        />
+      )}
+      {onToggleWrap && (
+        <button
+          type="button"
+          aria-label="Toggle word wrap"
+          title={`Word wrap ${wrap ? 'on' : 'off'}`}
+          aria-pressed={wrap}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onToggleWrap}
+        >
+          <TextAlignLeft size={15} />
+        </button>
+      )}
       {isMarkdown ? (
         <button
           type="button"

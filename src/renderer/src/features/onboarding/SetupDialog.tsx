@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import {
   AIChat,
   Code,
@@ -30,9 +30,10 @@ import {
 import { preferencesSaved, useUI } from '../../state/ui';
 import { sortProjectTexFiles, useWorkspace } from '../../state/workspace';
 import { Button } from '../../components/Button';
-import { SettingRow, StatusMessage } from '../../components/Layout';
+import { StatusMessage } from '../../components/Layout';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import { SaveFooter } from '../save-status/SaveFooter';
+import { RadioChoice, SettingPair } from '../../components/SettingsControls';
 import { aiSavesSettled, currentAISaveState, useAISaveState } from '../chat/useAISettings';
 import { validateRecipeSettings } from '../../../../shared/recipes';
 import {
@@ -73,6 +74,42 @@ function parseChktexRules(value: string): number[] | null {
   const rules = value.split(',').map((part) => Number(part.trim()));
   if (rules.some((rule) => !Number.isInteger(rule) || rule < 1 || rule > 10_000)) return null;
   return [...new Set(rules)].sort((left, right) => left - right);
+}
+
+const SYSTEM_FONTS = [
+  'Arial',
+  'Calibri',
+  'Cambria',
+  'Cascadia Code',
+  'Consolas',
+  'Courier New',
+  'Georgia',
+  'Inter',
+  'Segoe UI',
+  'Tahoma',
+  'Times New Roman',
+  'Verdana',
+];
+
+function availableFontItems(editor = false, current = '') {
+  const context = document.createElement('canvas').getContext('2d');
+  const fallback = editor ? 'monospace' : 'sans-serif';
+  const known = context
+    ? SYSTEM_FONTS.filter((font) => {
+        context.font = `72px "${font}", ${fallback}`;
+        const candidateWidth = context.measureText('TeXtra font availability 0123').width;
+        context.font = `72px ${fallback}`;
+        return candidateWidth !== context.measureText('TeXtra font availability 0123').width;
+      })
+    : SYSTEM_FONTS;
+  const items = [
+    { value: '', label: 'System default' },
+    ...known.map((font) => ({ value: font, label: font })),
+  ];
+  if (current && !items.some((item) => item.value === current)) {
+    items.push({ value: current, label: `${current} (current)` });
+  }
+  return items;
 }
 
 function parseChktexSeverities(value: string): Record<string, DiagnosticSeverity> | null {
@@ -533,32 +570,32 @@ export default function SetupDialog({
 
                   <h3>Fonts</h3>
                   <p className="setup-hint">
-                    Specify custom font families for the interface and editor. Leave blank to use
-                    system defaults.
+                    Choose installed system fonts for the interface and editor. System default
+                    follows your operating system.
                   </p>
-                  <div className="setup-actions" style={{ display: 'flex', gap: '10px' }}>
-                    <label className="field-label" style={{ flex: 1 }}>
-                      UI Font
-                      <input
-                        aria-label="UI Font"
-                        placeholder="'Segoe UI', system-ui, sans-serif"
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Interface font"
+                      help="Choose a system font for application labels and controls. System default follows your operating system."
+                    >
+                      <DropdownMenu
+                        ariaLabel="Interface font"
                         value={preferences.uiFont ?? ''}
-                        onChange={(event) =>
-                          updatePreferences({ uiFont: event.target.value || undefined })
-                        }
+                        items={availableFontItems(false, preferences.uiFont ?? '')}
+                        onChange={(value) => updatePreferences({ uiFont: value || undefined })}
                       />
-                    </label>
-                    <label className="field-label" style={{ flex: 1 }}>
-                      Editor Font
-                      <input
-                        aria-label="Editor Font"
-                        placeholder="'Cascadia Code', Consolas, monospace"
+                    </SettingPair>
+                    <SettingPair
+                      label="Editor font"
+                      help="Choose a system font for source text. A monospace font is recommended."
+                    >
+                      <DropdownMenu
+                        ariaLabel="Editor font"
                         value={preferences.editorFont ?? ''}
-                        onChange={(event) =>
-                          updatePreferences({ editorFont: event.target.value || undefined })
-                        }
+                        items={availableFontItems(true, preferences.editorFont ?? '')}
+                        onChange={(value) => updatePreferences({ editorFont: value || undefined })}
                       />
-                    </label>
+                    </SettingPair>
                   </div>
 
                   <h3>Theme colors</h3>
@@ -799,134 +836,128 @@ export default function SetupDialog({
               {section === 'editor' && (
                 <>
                   <h3>Editor</h3>
-                  <label className="texlab-toggle">
-                    <span>Show minimap</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.editorMinimap}
-                      onChange={(event) =>
-                        updatePreferences({ editorMinimap: event.target.checked })
-                      }
-                    />
-                  </label>
-                  <p className="setup-hint">
-                    A compact document overview is useful in long source files. It is off by default
-                    to keep the editor uncluttered.
-                  </p>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Show minimap"
+                      help="A compact overview of long source files. Off by default to keep the editor uncluttered."
+                    >
+                      <RadioChoice
+                        label="Show minimap"
+                        value={preferences.editorMinimap ? 'on' : 'off'}
+                        onChange={(value) => updatePreferences({ editorMinimap: value === 'on' })}
+                      />
+                    </SettingPair>
+                  </div>
                   <h3>Autosave</h3>
-                  <label className="texlab-toggle">
-                    <span>Save after typing stops</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.autoSave}
-                      onChange={(event) => updatePreferences({ autoSave: event.target.checked })}
-                    />
-                  </label>
-                  <label className="chktex-field">
-                    Delay before saving (milliseconds)
-                    <input
-                      type="number"
-                      min="1000"
-                      max="120000"
-                      step="500"
-                      disabled={!preferences.autoSave}
-                      value={preferences.autoSaveDelayMs}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (Number.isInteger(value) && value >= 1000 && value <= 120000)
-                          updatePreferences({ autoSaveDelayMs: value });
-                      }}
-                    />
-                  </label>
-                  <p className="setup-hint">
-                    Autosave uses the same conflict checks as Ctrl/Cmd+S. It is disabled by default
-                    and starts at a three-second delay.
-                  </p>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Save after typing stops"
+                      help="Uses the same conflict checks as Ctrl/Cmd+S. Autosave is off by default."
+                    >
+                      <RadioChoice
+                        label="Save after typing stops"
+                        value={preferences.autoSave ? 'on' : 'off'}
+                        onChange={(value) => updatePreferences({ autoSave: value === 'on' })}
+                      />
+                    </SettingPair>
+                    <SettingPair
+                      label="Autosave delay"
+                      help="Time without typing before TeXtra saves the file. Range: 1–120 seconds."
+                    >
+                      <input
+                        className="setting-integer"
+                        aria-label="Autosave delay in milliseconds"
+                        type="number"
+                        min={1000}
+                        max={120000}
+                        step={500}
+                        disabled={!preferences.autoSave}
+                        value={preferences.autoSaveDelayMs}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isInteger(value) && value >= 1000 && value <= 120000)
+                            updatePreferences({ autoSaveDelayMs: value });
+                        }}
+                      />
+                    </SettingPair>
+                  </div>
                   <h3>Tabs and recovery</h3>
-                  <label className="texlab-toggle editor-session-toggle">
-                    <span>Restore the previous session after restart</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.restoreSession}
-                      onChange={(event) =>
-                        updatePreferences({ restoreSession: event.target.checked })
-                      }
-                    />
-                  </label>
-                  <label className="texlab-toggle editor-session-toggle">
-                    <span>Use preview tabs for unedited files</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.previewTabs}
-                      onChange={(event) => updatePreferences({ previewTabs: event.target.checked })}
-                    />
-                  </label>
-                  <label className="chktex-field">
-                    Tab close buttons
-                    <DropdownMenu
-                      ariaLabel="Tab close buttons"
-                      value={preferences.tabCloseButtons}
-                      items={[
-                        { value: 'hover', label: 'Show on hover' },
-                        { value: 'always', label: 'Always show' },
-                      ]}
-                      onChange={(val) =>
-                        updatePreferences({
-                          tabCloseButtons: val as 'always' | 'hover',
-                        })
-                      }
-                    />
-                  </label>
-                  <p className="setup-hint">
-                    Reopen files from your last session and choose how editor tabs are displayed.
-                  </p>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Restore previous session"
+                      help="Reopen your projects, tabs, and layout after restarting TeXtra."
+                    >
+                      <RadioChoice
+                        label="Restore previous session"
+                        value={preferences.restoreSession ? 'on' : 'off'}
+                        onChange={(value) => updatePreferences({ restoreSession: value === 'on' })}
+                      />
+                    </SettingPair>
+                    <SettingPair
+                      label="Preview tabs"
+                      help="Open unedited files in a reusable tab until you make a change."
+                    >
+                      <RadioChoice
+                        label="Preview tabs"
+                        value={preferences.previewTabs ? 'on' : 'off'}
+                        onChange={(value) => updatePreferences({ previewTabs: value === 'on' })}
+                      />
+                    </SettingPair>
+                    <SettingPair
+                      label="Tab close buttons"
+                      help="Keep close buttons visible, or show them only while a tab is hovered."
+                    >
+                      <RadioChoice
+                        label="Tab close buttons"
+                        value={preferences.tabCloseButtons}
+                        options={[
+                          { value: 'hover', label: 'On hover' },
+                          { value: 'always', label: 'Always' },
+                        ]}
+                        onChange={(value) =>
+                          updatePreferences({ tabCloseButtons: value as 'always' | 'hover' })
+                        }
+                      />
+                    </SettingPair>
+                  </div>
                   <h3>Snippets & Symbols</h3>
-                  <label className="texlab-toggle">
-                    <span>Keep Math Symbols open by default</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.snippetsSymbolsOpenDefault}
-                      onChange={(event) =>
-                        updatePreferences({ snippetsSymbolsOpenDefault: event.target.checked })
-                      }
-                    />
-                  </label>
-                  <label className="texlab-toggle">
-                    <span>Keep Templates & Snippets open by default</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.snippetsTemplatesOpenDefault}
-                      onChange={(event) =>
-                        updatePreferences({ snippetsTemplatesOpenDefault: event.target.checked })
-                      }
-                    />
-                  </label>
-                  <p className="setup-hint">
-                    Choose whether sections in the Snippets & Symbols sidebar tab start expanded or
-                    collapsed.
-                  </p>
+                  <div className="settings-pairs">
+                    <SettingPair label="Math Symbols open by default">
+                      <RadioChoice
+                        label="Math Symbols open by default"
+                        value={preferences.snippetsSymbolsOpenDefault ? 'on' : 'off'}
+                        onChange={(value) =>
+                          updatePreferences({ snippetsSymbolsOpenDefault: value === 'on' })
+                        }
+                      />
+                    </SettingPair>
+                    <SettingPair label="Templates & Snippets open by default">
+                      <RadioChoice
+                        label="Templates & Snippets open by default"
+                        value={preferences.snippetsTemplatesOpenDefault ? 'on' : 'off'}
+                        onChange={(value) =>
+                          updatePreferences({ snippetsTemplatesOpenDefault: value === 'on' })
+                        }
+                      />
+                    </SettingPair>
+                  </div>
                 </>
               )}
               {section === 'preferences' && (
                 <>
                   <h3>File history</h3>
-                  <label className="texlab-toggle editor-session-toggle">
-                    <span>Enable automatic file history</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.historyEnabled}
-                      onChange={(event) =>
-                        updatePreferences({ historyEnabled: event.target.checked })
-                      }
-                    />
-                  </label>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Automatic file history"
+                      help="Keep compressed snapshots in .textra/history/ inside each project."
+                    >
+                      <RadioChoice
+                        label="Automatic file history"
+                        value={preferences.historyEnabled ? 'on' : 'off'}
+                        onChange={(value) => updatePreferences({ historyEnabled: value === 'on' })}
+                      />
+                    </SettingPair>
+                  </div>
                   <p className="setup-hint">
                     Storage location: <code>&lt;workspace&gt;/.textra/history/</code>. Flat-file
                     compressed gzip snapshots mirroring your project structure.
@@ -949,14 +980,9 @@ export default function SetupDialog({
                           }}
                         />
                       </label>
-                      <div
-                        className="history-settings-retention"
-                        style={{ margin: '8px 0', fontSize: '12px', color: 'var(--muted)' }}
-                      >
-                        <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
-                          Retention & Pruning Rules
-                        </div>
-                        <ul style={{ margin: '0 0 8px 16px', padding: 0, lineHeight: 1.6 }}>
+                      <details className="history-settings-retention">
+                        <summary>Retention &amp; Pruning Rules</summary>
+                        <ul>
                           <li>
                             <strong>0–30 days:</strong> Keep all snapshots (intermediate saves
                             closer than 10 mins thinned after 30 mins)
@@ -974,7 +1000,7 @@ export default function SetupDialog({
                             <strong>Pinned versions:</strong> Never pruned
                           </li>
                         </ul>
-                      </div>
+                      </details>
                       <div style={{ marginTop: 8 }}>
                         <button
                           type="button"
@@ -991,91 +1017,92 @@ export default function SetupDialog({
                     </>
                   )}
                   <h3>External file changes</h3>
-                  <p className="setup-hint">
-                    Protect the buffer you have open when another app, including a background
-                    writing assistant, changes the same file. TeXtra never overwrites the original
-                    file after it detects a change.
-                  </p>
-                  <label className="texlab-toggle">
-                    <span>Detect external changes</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.externalChangeDetection}
-                      onChange={(event) =>
-                        updatePreferences({ externalChangeDetection: event.target.checked })
-                      }
-                    />
-                  </label>
-                  <label className="chktex-field">
-                    Quiet period before comparison (seconds)
-                    <DropdownMenu
-                      ariaLabel="Quiet period before comparison (seconds)"
-                      disabled={!preferences.externalChangeDetection}
-                      value={String(preferences.externalChangeQuietPeriodMs)}
-                      items={[
-                        { value: '2000', label: '2 seconds' },
-                        { value: '3000', label: '3 seconds' },
-                        { value: '4000', label: '4 seconds' },
-                        { value: '5000', label: '5 seconds' },
-                      ]}
-                      onChange={(val) =>
-                        updatePreferences({
-                          externalChangeQuietPeriodMs: Number(val),
-                        })
-                      }
-                    />
-                  </label>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Detect external changes"
+                      help="Protects the open buffer when another app edits the file. TeXtra never overwrites the original after detecting a change."
+                    >
+                      <RadioChoice
+                        label="Detect external changes"
+                        value={preferences.externalChangeDetection ? 'on' : 'off'}
+                        onChange={(value) =>
+                          updatePreferences({ externalChangeDetection: value === 'on' })
+                        }
+                      />
+                    </SettingPair>
+                    <SettingPair
+                      label="Quiet period (seconds)"
+                      help="Wait this long without changes before enabling read-only comparison."
+                    >
+                      <input
+                        className="setting-integer"
+                        aria-label="Quiet period before comparison in seconds"
+                        type="number"
+                        min={2}
+                        max={5}
+                        step={1}
+                        disabled={!preferences.externalChangeDetection}
+                        value={preferences.externalChangeQuietPeriodMs / 1000}
+                        onChange={(event) => {
+                          const seconds = Number(event.target.value);
+                          if (Number.isInteger(seconds) && seconds >= 2 && seconds <= 5)
+                            updatePreferences({ externalChangeQuietPeriodMs: seconds * 1000 });
+                        }}
+                      />
+                    </SettingPair>
+                  </div>
                   <p className="setup-hint">
                     The external version must stop changing for this long before TeXtra enables its
                     read-only comparison. While it is active, wait before comparing.
                   </p>
-                  <label className="texlab-toggle">
-                    <span>Use polling only</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.externalChangePollingOnly}
-                      disabled={!preferences.externalChangeDetection}
-                      onChange={(event) =>
-                        updatePreferences({ externalChangePollingOnly: event.target.checked })
-                      }
-                    />
-                  </label>
-                  <p className="setup-hint">
-                    Turn this on if filesystem watching is unreliable in a network, Dropbox, or
-                    other synchronized folder. Polling still detects changes, but may respond less
-                    quickly.
-                  </p>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Use polling only"
+                      help="Use this when file watching is unreliable on network or synchronized folders. Polling may respond less quickly."
+                    >
+                      <RadioChoice
+                        label="Use polling only"
+                        value={preferences.externalChangePollingOnly ? 'on' : 'off'}
+                        onChange={(value) =>
+                          updatePreferences({ externalChangePollingOnly: value === 'on' })
+                        }
+                      />
+                    </SettingPair>
+                  </div>
                   <h3>Conflict copies</h3>
-                  <label className="texlab-toggle">
-                    <span>Open the read-only diff after creating a conflict copy</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.openDiffAfterConflictCopy}
-                      disabled={!preferences.externalChangeDetection}
-                      onChange={(event) =>
-                        updatePreferences({ openDiffAfterConflictCopy: event.target.checked })
-                      }
-                    />
-                  </label>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Open diff after conflict copy"
+                      help="Open a read-only comparison after creating the safety copy."
+                    >
+                      <RadioChoice
+                        label="Open diff after conflict copy"
+                        value={preferences.openDiffAfterConflictCopy ? 'on' : 'off'}
+                        onChange={(value) =>
+                          updatePreferences({ openDiffAfterConflictCopy: value === 'on' })
+                        }
+                      />
+                    </SettingPair>
+                  </div>
                   <p className="setup-hint">
                     The diff view lets you compare conflicting versions side by side without
                     modifying either file.
                   </p>
                   <h3>Problem explanations</h3>
-                  <label className="texlab-toggle">
-                    <span>Explain common TeX errors in plain language</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={preferences.commonProblemHelp}
-                      onChange={(event) =>
-                        updatePreferences({ commonProblemHelp: event.target.checked })
-                      }
-                    />
-                  </label>
+                  <div className="settings-pairs">
+                    <SettingPair
+                      label="Explain common TeX errors"
+                      help="Show a short plain-language explanation and link for recognized build errors."
+                    >
+                      <RadioChoice
+                        label="Explain common TeX errors"
+                        value={preferences.commonProblemHelp ? 'on' : 'off'}
+                        onChange={(value) =>
+                          updatePreferences({ commonProblemHelp: value === 'on' })
+                        }
+                      />
+                    </SettingPair>
+                  </div>
                   <p className="setup-hint">
                     When TeXtra recognizes a common build error, Problems can show a short
                     explanation and a link to further help. This is on by default.
@@ -1529,7 +1556,10 @@ export default function SetupDialog({
               {section === 'compilation' && (
                 <>
                   <h3>Compilation</h3>
-                  <SettingRow label="Root document (.tex)">
+                  <SettingPair
+                    label="Root document (.tex)"
+                    help="Choose which project document TeXtra builds. Auto-detect uses the active or detected main file."
+                  >
                     <DropdownMenu
                       ariaLabel="Root document (.tex)"
                       value={project ? (projectConfig?.rootFile ?? '') : ''}
@@ -1572,12 +1602,15 @@ export default function SetupDialog({
                         void updateProjectRootFile(nextRoot || null);
                       }}
                     />
-                  </SettingRow>
+                  </SettingPair>
                   <p className="setup-hint">
                     Choose the root .tex document to build for this project. If set to Auto-detect,
                     TeXtra automatically uses the active document or detected main file.
                   </p>
-                  <SettingRow label="Default recipe for new documents">
+                  <SettingPair
+                    label="Default recipe for new documents"
+                    help="New documents start with this compile recipe. Each document can remember its own last-used recipe."
+                  >
                     <DropdownMenu
                       ariaLabel="Default recipe for new documents"
                       value={preferences.defaultRecipe}
@@ -1587,7 +1620,7 @@ export default function SetupDialog({
                       }))}
                       onChange={(val) => updatePreferences({ defaultRecipe: val as BuildEngine })}
                     />
-                  </SettingRow>
+                  </SettingPair>
                   <p className="setup-hint">
                     Compile builds the active .tex document. Each document remembers its last used
                     recipe in the project settings.
@@ -1605,6 +1638,10 @@ export default function SetupDialog({
                           activePath={useWorkspace.getState().activePath}
                           config={useWorkspace.getState().projectConfig}
                           disabled={busy || buildRunning}
+                          globalBuildRecipes={preferences.globalBuildRecipes}
+                          onSaveGlobal={(globalBuildRecipes) =>
+                            updatePreferences({ globalBuildRecipes })
+                          }
                           projectId={useWorkspace.getState().project!.id}
                           recipeName={useWorkspace.getState().engine}
                           onSelectRecipe={(recipeName) =>

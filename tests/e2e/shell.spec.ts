@@ -158,7 +158,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     await expect(page.locator('.topbar, .statusbar, .bottom-panel')).toHaveCount(0);
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     await page.getByRole('button', { name: 'Theme', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Light', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'Light', exact: true }).click();
     await page.getByRole('button', { name: 'Close settings', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.getByRole('button', { name: 'Toggle sidebar', exact: true }).click();

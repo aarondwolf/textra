@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useChat } from '@ai-sdk/react';
+import { registerClosePreparation } from '../../state/shutdown';
 import type { AIMessage } from '../../../../shared/api';
 import {
   AI_PROVIDERS,
@@ -348,7 +349,6 @@ export function ChatPanel({
   const saves = useRef(new Map<string, Promise<void>>());
   const session = useRef({ projectId: sessionProject, id: chatId, messages, input, loading });
   session.current = { projectId: sessionProject, id: chatId, messages, input, loading };
-  const settled = useRef<{ projectId: string; chat: AIStoredChat } | null>(null);
   const latestContext = useRef(agentContext?.contextId);
   latestContext.current = agentContext?.contextId;
   const sending = useRef(false);
@@ -456,11 +456,25 @@ export function ChatPanel({
     }
   }, []);
 
+  useEffect(
+    () =>
+      registerClosePreparation(async () => {
+        const running = inflight.current;
+        if (running) await abandonRequest(++requestId.current);
+        const current = session.current;
+        if (current.projectId) {
+          const messages = running?.conversation ?? current.messages;
+          await persist(current.projectId, storedChat(current.id, messages));
+        }
+        await Promise.all([...saves.current.values()]);
+      }),
+    [abandonRequest, persist],
+  );
+
   useEffect(() => {
     if (!sessionProject || sessionProject !== (resetKey ?? null) || loading || !messages.length)
       return;
     const snapshot = { projectId: sessionProject, chat: storedChat(chatId, messages) };
-    settled.current = snapshot;
     void persist(snapshot.projectId, snapshot.chat)
       .then(() => {
         if (liveProject.current === snapshot.projectId) setHistoryError('');
@@ -520,7 +534,6 @@ export function ChatPanel({
       setMessages(chat?.messages.map((message) => ({ ...message })) ?? []);
       setHistoryOpen(false);
       setHistoryError('');
-      settled.current = null;
       historyButton.current?.focus();
     } catch (cause) {
       if (generation === projectGeneration.current)
@@ -552,7 +565,6 @@ export function ChatPanel({
         setMessages([]);
         setInput('');
         projectSessions.current.delete(projectId);
-        settled.current = null;
       }
     } catch (cause) {
       if (liveProject.current === projectId)
@@ -587,15 +599,7 @@ export function ChatPanel({
         messages: old.messages,
         input: old.input,
       });
-      const snapshot = !old.loading
-        ? { projectId: old.projectId, chat: storedChat(old.id, old.messages) }
-        : settled.current;
-      if (snapshot?.projectId === old.projectId)
-        void persist(snapshot.projectId, snapshot.chat).catch(() =>
-          setHistoryError(
-            'The previous workspace chat could not be saved. It is still available in this session.',
-          ),
-        );
+      // Workspace preparation already persisted this conversation before main retired its token.
     }
     previousResetKey.current = projectId;
     const generation = ++projectGeneration.current;
@@ -615,7 +619,6 @@ export function ChatPanel({
     setHistoryError('');
     setHistoryOpen(false);
     setHistoryBusy(false);
-    settled.current = null;
     proposalTurn.current = null;
     setActiveRequest(null);
     setPartialResponse('');

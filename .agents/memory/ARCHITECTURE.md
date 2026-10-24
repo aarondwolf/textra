@@ -1,5 +1,26 @@
 # Architecture memory
 
+2026-10-24 Electron architecture refactor:
+
+- Bootstrap acquires the per-profile instance lock before importing application services.
+  application.ts composes services; window.ts owns secure window policy; ipc.ts owns
+  fixed capabilities; lifecycle.ts owns workspace admission, generations and shutdown.
+- Workspace resources stop/drain before replacing the project token. Application-scoped
+  preference work remains available during transitions. Renderer persistence owners
+  flush before retiring the old project, and acknowledge native close after settling.
+- DocumentSessionController owns buffer lifetimes/versions, Monaco attachments and
+  coalesced per-document saves. Approved replacements reconcile undoably; stale
+  formatting is rejected and history restores preserve intervening typing.
+- HistoryStorage owns canonical containment and bounded disk IO. Versioned catalogs
+  are validated before use; portable .textra/history is authoritative. Lists paginate.
+  Restore durably backs up captured editor and differing disk text before CAS save.
+  Main notes the restored revision as a local save before watcher notifications.
+- Language jobs own all process streams, limits, deadlines and awaited cancellation.
+  TexLab has bounded incremental frames/backpressure and reserved shutdown admission.
+  Watcher generations prevent stale registrations and samples after teardown.
+- Pending preference writes settle before import/export. App's central dispatcher
+  exclusively owns Save/Compile keyboard shortcuts; the legacy duplicate is removed.
+
 2026-10-23 startup refactor: project APIs expose initial `treeState: loading` listings; known
 files read before `refreshProject` completes the tree. `prepareProject` runs initialization
 after core readiness. Renderer startup/session lifecycle handles versioned legacy-compatible

@@ -1,5 +1,21 @@
 # Known issues
 
+- 2026-10-24 architecture follow-up:
+  - Confirmed history containment, corrupt-index preservation, restore data loss,
+    stale Monaco replacement, overlapping saves, watcher/process lifetime and framing
+    defects are fixed; see docs/ELECTRON_AUDIT.md for scope and evidence.
+  - Portable Node checks cannot eliminate a hostile concurrent filesystem TOCTOU race.
+    Interrupted history publication may leave unindexed bytes; legacy import retains
+    originals. These are documented limits, not claims of atomic OS directory handles.
+  - macOS/Linux native behavior, installers/migration release checks and genuinely
+    cold packaged launch measurements remain open. No live provider calls in this slice.
+  - Windows/Dropbox can hold the generated out/renderer/assets directory during Vite
+    cleanup. Verified empty-directory removal using native PowerShell allowed rebuild;
+    no source or user files were deleted and application write safety was not relaxed.
+  - Native Monaco tests must await logical editability after save acknowledgement.
+    Disk publication precedes history completion; native textarea readonly alone is
+    insufficient. Installed Monaco exposes readOnly through aria-autocomplete.
+
 - 2026-10-22 SDK assistant UX follow-up: the native chat e2e now passes with the Chat/Agent
   controls present, covering provider onboarding, Markdown, reasoning display and retries.
   Native Agent staging and sequential multi-hunk approval remain separate checks. Targeted

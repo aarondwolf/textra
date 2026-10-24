@@ -7,6 +7,7 @@ import { parse, type ParseError } from 'jsonc-parser';
 import { createDefaultRecipeSettings, validateRecipeSettings } from '../../shared/recipes';
 import { validatePreferences } from './preferences';
 import { ProjectError, validateRelativePath } from './projects';
+import { readBounded } from './bounded-read';
 
 const MAX_SETTINGS_BYTES = 1024 * 1024;
 const engines = new Set<BuildEngine>([
@@ -242,16 +243,9 @@ export class ConfigService {
     try {
       const info = await file.stat();
       if (!info.isFile() || info.size > MAX_SETTINGS_BYTES) return invalid();
-      const bytes = Buffer.alloc(info.size + 1);
-      let size = 0;
-      while (size < bytes.length) {
-        const chunk = await file.read(bytes, size, bytes.length - size, null);
-        if (!chunk.bytesRead) break;
-        size += chunk.bytesRead;
-      }
-      if (size > MAX_SETTINGS_BYTES) return invalid();
+      const bytes = await readBounded(file, MAX_SETTINGS_BYTES, invalid);
       try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size));
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
       } catch {
         return invalid();
       }

@@ -67,6 +67,14 @@ import {
   type TexlabStatus,
 } from '../../shared/api';
 import { useUI } from './state/ui';
+import { flushWorkspacePersistence } from './state/shutdown';
+import {
+  applyFormatting,
+  prepareFormatting,
+  restoreHistoryDocument,
+  type FormattingPreview,
+} from './state/document-actions';
+import { runLanguageRequest } from './state/language-requests';
 import { validateRecipeSettings } from '../../shared/recipes';
 import {
   checkExternalChanges,
@@ -490,6 +498,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     setExpandedPane,
   } = useUI();
   const projectId = project?.id;
+  const [resourceEpoch, setResourceEpoch] = useState(0);
+  useEffect(() => window.textra.onCloseCancelled(() => setResourceEpoch((epoch) => epoch + 1)), []);
   const treeState = project?.treeState;
   const editorReady = useStartup((state) => state.editorReady);
   const restoration = useStartup((state) => state.restoration);
@@ -681,9 +691,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const [texlabProblemDiagnostics, setTexlabProblemDiagnostics] = useState<
     ReadonlyMap<string, readonly ProblemDiagnostic[]>
   >(new Map());
-  const [formatPreview, setFormatPreview] = useState<{ path: string; content: string } | null>(
-    null,
-  );
+  const [formatPreview, setFormatPreview] = useState<FormattingPreview | null>(null);
   const [conflictPath, setConflictPath] = useState<string | null>(null);
   const [externalChange, setExternalChange] = useState<ExternalFileChangeEvent | null>(null);
   const [conflictSnapshotPath, setConflictSnapshotPath] = useState<string | undefined>();
@@ -722,6 +730,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }, [coreReady, preferences.texlabEnabled, project?.id]);
   const texlabAdapter = useMemo(() => {
     const adapter = createTexlabAdapter({
+      resourceEpoch,
       documents,
       ready:
         preferences.texlabEnabled &&
@@ -747,6 +756,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         projectFileUri(rootPath, document.path) ?? `inmemory://textra/${document.path}`,
     };
   }, [
+    resourceEpoch,
     documents,
     preferences.texlabEnabled,
     project?.rootPath,
@@ -1285,6 +1295,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     preferences.externalChangePollingOnly,
     preferences.externalChangeQuietPeriodMs,
     watchedDocumentRefs,
+    resourceEpoch,
   ]);
   useEffect(() => {
     if (!preferences.externalChangeDetection) return;
@@ -1376,6 +1387,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     }
     cancelWorkspaceRestoration();
     protect(async () => {
+      await flushWorkspacePersistence();
       const result = recentId
         ? await window.textra.openRecentProject(recentId)
         : await window.textra.chooseProject();
@@ -1395,6 +1407,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     protect(async () => {
       let targetProject = project;
       if (!targetProject) {
+        await flushWorkspacePersistence();
         const result = await window.textra.chooseProject();
         const next = unwrap(result);
         if (!next) return;
@@ -1457,8 +1470,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     });
   }
   async function refresh() {
-    if (project)
-      useWorkspace.setState({ project: unwrap(await window.textra.refreshProject(project.id)) });
+    if (!project) return;
+    const refreshed = unwrap(await window.textra.refreshProject(project.id));
+    if (useWorkspace.getState().project?.id === project.id)
+      useWorkspace.setState({ project: refreshed });
   }
   function newEntry(kind: 'file' | 'directory') {
     if (!project) return;
@@ -1487,6 +1502,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         ...(creating.kind === 'file' ? { content: '' } : {}),
       }),
     );
+    if (useWorkspace.getState().project?.id !== project.id) return;
     useWorkspace.setState({ project: next });
     setCreating(null);
     setSelected(path);
@@ -1509,6 +1525,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             content: original.content,
           }),
         );
+        if (useWorkspace.getState().project?.id !== project.id) return;
         useWorkspace.setState({ project: next });
         await openDocument(path);
       },
@@ -1566,6 +1583,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     async (path = conflictPath): Promise<void> => {
       if (!project || !path) return;
       const result = await window.textra.readFile({ projectId: project.id, path });
+      if (useWorkspace.getState().project?.id !== project.id) return;
       const current = useWorkspace.getState().documents.find((document) => document.path === path);
       if (!current) return;
       if (preferences.previewVisible) {
@@ -1589,8 +1607,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       content: conflictedDocument.content,
     });
     if (!result.ok) throw new Error(result.error);
+    if (useWorkspace.getState().project?.id !== conflictedDocument.projectId) return;
     setConflictSnapshotPath(result.value.path);
     const projectInfo = await window.textra.refreshProject(conflictedDocument.projectId);
+    if (useWorkspace.getState().project?.id !== conflictedDocument.projectId) return;
     if (projectInfo.ok) useWorkspace.setState({ project: projectInfo.value });
     await openDocument(result.value.path);
     notify(`Saved ${result.value.path}`, 'success');
@@ -1643,6 +1663,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           const next = unwrap(
             await window.textra.renameEntry({ projectId: project.id, path, newPath }),
           );
+          if (useWorkspace.getState().project?.id !== project.id) return;
           if (next) {
             const previousRoot = useWorkspace.getState().rootFile;
             const movedRoot =
@@ -1671,6 +1692,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       // The operating system's Trash confirmation is the one destructive-action
       // confirmation. Do not make people approve the same deletion twice.
       const next = unwrap(await window.textra.deleteEntry({ projectId: project.id, path }));
+      if (useWorkspace.getState().project?.id !== project.id) return;
       if (next) {
         const previousRoot = useWorkspace.getState().rootFile;
         useWorkspace.setState({
@@ -1688,7 +1710,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }
   async function lintDocument(path: string) {
     if (!project || !/\.tex$/i.test(path)) return;
-    const result = await window.textra.lintLatex({ projectId: project.id, path });
+    const result = await runLanguageRequest(project.id, path, 'lint', (requestId) =>
+      window.textra.lintLatex({ projectId: project.id, path, requestId }),
+    );
+    if (!result) return;
     if (!result.ok) {
       // ChkTeX is optional, so a missing executable does not interrupt saving.
       if (result.code !== 'TOOL_MISSING') showError(result.error);
@@ -1728,9 +1753,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     const projectId = project.id;
     const path = active.path;
     const timer = window.setTimeout(() => {
-      void window.textra
-        .lintLatex({ projectId, path })
+      void runLanguageRequest(projectId, path, 'lint', (requestId) =>
+        window.textra.lintLatex({ projectId, path, requestId }),
+      )
         .then((result) => {
+          if (!result) return;
           if (!result.ok) {
             if (result.code !== 'TOOL_MISSING') showError(result.error);
             return;
@@ -1750,13 +1777,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }, [active, preferences.chktexEnabled, preferences.chktexRunMode, project]);
   async function formatActive() {
     if (!project || !active || !/\.tex$/i.test(active.path)) return;
-    const result = await window.textra.formatLatex({
-      projectId: project.id,
-      path: active.path,
-      content: active.content,
-    });
-    if (!result.ok) throw new Error(result.error);
-    setFormatPreview({ path: active.path, content: result.value.content });
+    const preview = await prepareFormatting(project.id, active.path);
+    if (preview) setFormatPreview(preview);
   }
   async function prepareProblemPrompt(diagnostic: ProblemDiagnostic, bounded = false) {
     const projectId = project?.id;
@@ -1900,42 +1922,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               expectedConfig: config,
             }),
           );
+    if (useWorkspace.getState().project?.id !== project.id) return;
     useWorkspace.setState((state) => ({
       projectConfig: saved,
       recipes: { ...state.recipes, [activePath]: recipe },
     }));
   }
-  useEffect(() => {
-    const keyboard = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        if (useWorkspace.getState().busy || prompt || pending) return;
-        if (activePath) {
-          if (event.shiftKey) saveAs();
-          else if (
-            useWorkspace.getState().documents.find((document) => document.path === activePath)
-              ?.conflict
-          ) {
-            setConflictPath(activePath);
-          } else
-            void run(async () => {
-              await saveAndLint(activePath);
-            });
-        }
-      }
-      if (event.key === 'Enter') {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest('input, textarea, [role="dialog"], [data-inline-edit]')) return;
-        event.preventDefault();
-        void compile();
-      }
-    };
-    window.addEventListener('keydown', keyboard);
-    return () => window.removeEventListener('keydown', keyboard);
-  });
-
   useEffect(() => {
     setHistoryDiff(null);
   }, [activePath]);
@@ -1947,6 +1939,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       path: snapshot.path,
       snapshotId: snapshot.id,
     });
+    if (
+      useWorkspace.getState().project?.id !== project.id ||
+      useWorkspace.getState().activePath !== activePath
+    )
+      return;
     if (res.ok) {
       if (preferences.previewVisible) {
         updatePreferences({ previewVisible: false });
@@ -1970,29 +1967,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       `Restore "${snapshot.path}" to snapshot from ${dateStr}?\n\nCurrent changes will be backed up automatically before restoring.`,
     );
     if (!confirmed) return;
-    const workspace = useWorkspace.getState();
-    const doc = workspace.documents.find((d) => d.path === snapshot.path);
-    const expectedRevision = doc?.revision ?? '';
-    const res = await window.textra.restoreFileHistorySnapshot({
-      projectId: project.id,
-      path: snapshot.path,
-      snapshotId: snapshot.id,
-      expectedRevision,
-    });
+    const res = await restoreHistoryDocument(project.id, snapshot);
+    if (useWorkspace.getState().project?.id !== project.id) return;
     if (res.ok) {
-      useWorkspace.setState((state) => ({
-        documents: state.documents.map((d) =>
-          d.path === snapshot.path
-            ? {
-                ...d,
-                content: res.value.content,
-                savedContent: res.value.content,
-                revision: res.value.revision,
-                conflict: false,
-              }
-            : d,
-        ),
-      }));
       setHistoryDiff(null);
       window.dispatchEvent(new CustomEvent('textra:history:updated'));
       window.dispatchEvent(
@@ -2588,6 +2565,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
             ) : sidebarView === 'history' || sidebarView === 'recents' ? (
               <HistoryPanel
                 projectId={project?.id ?? null}
+                projectName={project?.rootPath}
                 activePath={activePath}
                 activeContent={active?.content}
                 isDirty={Boolean(active && dirty(active))}
@@ -3379,6 +3357,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                         else if (project)
                           void run(async () => {
                             const config = unwrap(await window.textra.getProjectConfig(project.id));
+                            if (useWorkspace.getState().project?.id !== project.id) return;
                             useWorkspace.setState({ projectConfig: config });
                             setRecipeOpen(true);
                           });
@@ -4042,7 +4021,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               <button
                 className="primary-button"
                 onClick={() => {
-                  if (formatPreview) editDocument(formatPreview.path, formatPreview.content);
+                  if (formatPreview && !applyFormatting(formatPreview))
+                    showError(
+                      'The document changed after formatting. Format it again to review the current text.',
+                    );
                   setFormatPreview(null);
                 }}
               >

@@ -5,7 +5,7 @@ Navigation and new windows are denied. Main validates IPC sender and arguments.
 The bridge never exposes raw ipcRenderer or a generic exec operation.
 
 All project paths must remain beneath the canonical selected root. Reject
-traversal, absolute paths, protected/generated paths, and escaping symlinks.
+traversal, absolute paths, invalid components, and escaping symlinks.
 Files use revision checks and atomic replacement. Dirty buffers must survive
 failed saves and project switches. Destructive operations require confirmation.
 
@@ -104,22 +104,36 @@ Provider usage pages open through a fixed main-process URL; provider errors and 
 shown verbatim. A follow-up such as "apply that fix" is an ordinary manual instruction; nothing
 initiates requests or approves edits without a click.
 
-MVP keys use Electron `safeStorage` encryption in git-ignored repository-local
-`.textra-local/ai.json`, with atomic writes, version validation and symlink rejection.
+Provider credentials use Electron `safeStorage` encryption in `userData/ai/ai.json`.
 Encryption must be available for key providers; Linux's `basic_text` backend is rejected.
-Local Ollama stores no key. A key is saved only after the provider's model listing succeeds;
-failed tests preserve the previous configuration. Settings IPC returns configured flags,
-model lists and defaults, never keys or ciphertext. Version 1 single-key files migrate to the
-Google provider. Removing a provider requires native confirmation and works without decrypting.
-It removes only TeXtra's local copy; key revocation remains a separate action with the
-provider. An active AI request blocks removal.
-Portable settings exports exclude this file. Repository-local storage may be synced/backed up with the
-checkout; encrypted keys remain bound to the OS account's storage backend.
+Local Ollama stores no key. Saving a connection is offline; Test / Refresh explicitly
+contacts the configured provider. Settings IPC returns configured flags, model lists
+and defaults, never keys or ciphertext. Portable settings exports exclude credentials.
+Development startup can exclusively copy an existing regular repository-local
+`.textra-local/ai.json` into a missing userData store; it never overwrites an existing
+store or deletes the original. Isolated test profiles never run this migration.
+Keys remain bound to the OS account's storage backend. Release verification of
+migration and OS storage remains required.
 
-TODO before public release: move AI settings into Electron userData and an OS-level,
-app-scoped store (for example electron-store plus safeStorage), add migration UX
-and review spending controls and release packaging. The current location is an MVP only.
-Logs must redact secret-like values. Never include environment dumps or keys.
+File history is plaintext source stored in the selected project's `.textra/history`.
+It travels with project copies and sync services. Main validates every persisted record
+and every storage path, rejecting symlinks, junctions, hardlinks, traversal, unsupported
+versions, and malformed indexes. Index reads are capped at 16 MiB/20,000 snapshots;
+compressed snapshots and decompressed source are bounded. Listings are paginated
+(default 100, maximum 200). Invalid catalogs are preserved. Restore must successfully
+back up the captured editor buffer and differing disk content before revision-checked
+replacement. Pruning publishes the surviving index before removing unreferenced files.
+Legacy app-data UUID stores remain intact; explicit recovery requires selecting a store
+and confirming its import in a native dialog because the original project identity is unknown.
+
+One instance owns each user profile. Closing awaits the renderer's persistence
+acknowledgement, native discard confirmation when needed, resource cancellation,
+and persistence queues. A failed acknowledgement or flush keeps the window open.
+A known renderer crash or load failure requires an explicit native confirmation
+before closing without its acknowledgement; persistence queues are still drained.
+Optional language jobs have bounded concurrency, byte limits, deadlines, stream-error
+handling and process-tree cancellation. TexLab framing and outbound writes are bounded.
+Logs contain safe event/error codes, never document requests or raw storage errors.
 
 Project recipe JSON does not grant arbitrary process execution. Commands and flags
 are allowlisted, all steps are checked before execution, output/auxiliary paths stay
@@ -162,7 +176,7 @@ bounded, versioned metadata from app userData and revalidates source/output path
 symlink/hardlink restrictions, size, PDF header, file fingerprint and content hash.
 Stale, missing or invalid output is ignored. No document is compiled automatically,
 and cached bytes never authorize restored SyncTeX operations. Isolated native test
-profiles also use an isolated AI store; they cannot read the normal repository-local keys.
+profiles also use an isolated AI store; they cannot read the normal userData credentials.
 
 TexLab document closure uses a narrow canonical project/file reference and only
 releases in-memory language-server state. Repeated unchanged source is not sent

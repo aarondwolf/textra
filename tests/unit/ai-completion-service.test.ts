@@ -145,6 +145,39 @@ describe('completion service coordination', () => {
     await expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
     expect(signal.aborted).toBe(true);
   });
+
+  it.each(['completion', 'inlineCompletion'] as const)(
+    'workspace cancellation aborts %s and allows a fresh request after cleanup',
+    async (role) => {
+      await service.setCompletionSettings({ enabled: true, allowOutsideEnvironments: false });
+      let started!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      generate.mockImplementationOnce(async () => {
+        started();
+        return new Promise<string>(() => undefined);
+      });
+      const pending = service.complete({ ...snapshot, role });
+      const rejected = expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
+      await ready;
+      service.cancelAll();
+      await rejected;
+      expect(generate.mock.calls[0][2].signal.aborted).toBe(true);
+      await expect(
+        service.complete({ ...snapshot, role, requestId: 'fresh-request' }),
+      ).resolves.toMatchObject({ text: 'insertion' });
+    },
+  );
+
+  it('workspace cancellation revokes foreground resolution before provider generation starts', async () => {
+    const action = vi.fn(async () => 'should never send');
+    const pending = service.withProvider(snapshot.model, action);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
+    service.cancelAll();
+    await rejected;
+    expect(action).not.toHaveBeenCalled();
+  });
   it('revokes pending completion when its configuration changes', async () => {
     let started!: () => void;
     const ready = new Promise<void>((resolve) => (started = resolve));

@@ -22,6 +22,7 @@ import type {
   RenameRequest,
   SaveRequest,
 } from '../../shared/api';
+import { readBounded } from './bounded-read';
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 const MAX_PREVIEW_PDF_BYTES = 64 * 1024 * 1024;
@@ -163,16 +164,9 @@ export class ProjectService {
     const file = await open(target, 'r');
     let bytes: Buffer;
     try {
-      const buffer = Buffer.alloc(Math.min(Math.max(info.size + 1024, 4096), MAX_TEXT_BYTES + 1));
-      let size = 0;
-      while (size < buffer.length) {
-        const result = await file.read(buffer, size, buffer.length - size, null);
-        if (result.bytesRead === 0) break;
-        size += result.bytesRead;
-      }
-      if (size > MAX_TEXT_BYTES)
+      bytes = await readBounded(file, MAX_TEXT_BYTES, () => {
         throw new ProjectError('FILE_TOO_LARGE', 'Text files must be smaller than 5 MiB.');
-      bytes = buffer.subarray(0, size);
+      });
     } finally {
       await file.close();
     }
@@ -203,7 +197,15 @@ export class ProjectService {
       throw new ProjectError('INVALID_PATH', 'Select a regular PDF file.');
     if (info.size > MAX_PREVIEW_PDF_BYTES)
       throw new ProjectError('FILE_TOO_LARGE', 'PDF previews must be smaller than 64 MiB.');
-    const bytes = await readFile(target);
+    const file = await open(target, 'r');
+    let bytes: Buffer;
+    try {
+      bytes = await readBounded(file, MAX_PREVIEW_PDF_BYTES, () => {
+        throw new ProjectError('FILE_TOO_LARGE', 'PDF previews must be smaller than 64 MiB.');
+      });
+    } finally {
+      await file.close();
+    }
     if (bytes.subarray(0, 5).toString() !== '%PDF-')
       throw new ProjectError('INVALID_PDF', 'This file is not a valid PDF.');
     this.getRoot(ref.projectId);

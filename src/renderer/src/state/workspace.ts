@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useStartup } from './startup';
+import { documentSessions, type DocumentCapture } from './document-sessions';
 import type {
   BuildEngine,
   BuildState,
@@ -65,6 +66,16 @@ export const useWorkspace = create<WorkspaceState>(() => ({
   source: null,
 }));
 export const dirty = (document: OpenDocument) => document.content !== document.savedContent;
+useWorkspace.subscribe((state, previous) => {
+  if (state.documents !== previous.documents) documentSessions.observe(state.documents);
+});
+
+/** Approved rewrites must still refer to the same open buffer and version. */
+export function replaceDocument(capture: DocumentCapture, content: string): boolean {
+  if (documentSessions.locked || !documentSessions.matches(capture)) return false;
+  editDocument(capture.path, content);
+  return true;
+}
 export function showError(error: unknown): void {
   useWorkspace.setState({ error: error instanceof Error ? error.message : String(error) });
 }
@@ -240,6 +251,7 @@ export async function openDocument(
   }
 }
 export function editDocument(path: string, content: string): void {
+  if (documentSessions.locked) return;
   useWorkspace.setState((state) => ({
     documents: state.documents.map((document) =>
       document.path === path ? { ...document, content } : document,
@@ -281,9 +293,22 @@ export function reorderDocuments(fromIndex: number, toIndex: number): void {
     return { documents };
   });
 }
-export async function saveDocument(path: string): Promise<boolean> {
+export function saveDocument(path: string): Promise<boolean> {
   const document = useWorkspace.getState().documents.find((item) => item.path === path);
-  if (!document || !dirty(document)) return true;
+  if (!document) return Promise.resolve(true);
+  return documentSessions.save(document.projectId, path, () =>
+    saveDocumentOnce(document.projectId, path),
+  );
+}
+
+export function documentSavesSettled(): Promise<void> {
+  return documentSessions.savesSettled();
+}
+
+async function saveDocumentOnce(projectId: string, path: string): Promise<boolean> {
+  const document = useWorkspace.getState().documents.find((item) => item.path === path);
+  if (!document || document.projectId !== projectId || !dirty(document)) return true;
+  const capture = documentSessions.capture(projectId, path);
   try {
     if (document.conflict)
       throw new Error('The file changed on disk. Reload it or save your edits to a new file.');
@@ -297,14 +322,22 @@ export async function saveDocument(path: string): Promise<boolean> {
       if (result.code === 'CONFLICT' || /changed|conflict|revision/i.test(result.error))
         useWorkspace.setState((state) => ({
           documents: state.documents.map((item) =>
-            item.path === path ? { ...item, conflict: true, externalState: 'stable' } : item,
+            item.path === path &&
+            item.projectId === projectId &&
+            capture &&
+            documentSessions.owns(capture)
+              ? { ...item, conflict: true, externalState: 'stable' }
+              : item,
           ),
         }));
       throw new Error(result.error);
     }
     useWorkspace.setState((state) => ({
       documents: state.documents.map((item) =>
-        item.path === path && item.projectId === document.projectId
+        item.path === path &&
+        item.projectId === document.projectId &&
+        capture &&
+        documentSessions.owns(capture)
           ? {
               ...item,
               revision: result.value.revision,

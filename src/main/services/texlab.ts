@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { terminateProcessTree } from './owned-process';
 
 /** JSON values accepted by the Language Server Protocol. */
 export type JsonPrimitive = string | number | boolean | null;
@@ -95,6 +96,8 @@ export class TexlabError extends Error {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 12_000;
 const STOP_TIMEOUT_MS = 2_000;
+const MAX_HEADER_BYTES = 8 * 1024;
+const MAX_OUTBOUND_BYTES = 16 * 1024 * 1024;
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const MAX_ACTIVE_REQUESTS = 8;
@@ -137,7 +140,17 @@ export class TexlabService {
   private initialized = false;
   private workspaceRoot: string | null = null;
   private nextRequestId = 1;
-  private receiveBuffer = Buffer.alloc(0);
+  private readonly headerBuffer = Buffer.alloc(MAX_HEADER_BYTES);
+  private headerBytes = 0;
+  private bodyBuffer: Buffer | null = null;
+  private bodyBytes = 0;
+  private readonly outbound: Buffer[] = [];
+  private outboundBytes = 0;
+  private waitingDrain = false;
+  private childClosed: Promise<void> = Promise.resolve();
+  private stopping: Promise<void> | null = null;
+  private terminating: Promise<void> | null = null;
+  private generation = 0;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly documentVersions = new Map<string, number>();
   private readonly documentTexts = new Map<string, string>();
@@ -156,6 +169,8 @@ export class TexlabService {
   }
 
   async start(options: TexlabStartOptions): Promise<TexlabInitializeResult> {
+    if (this.terminating) await this.terminating;
+    if (this.stopping) await this.stopping;
     if (!options.executable || !options.workspaceRoot)
       throw new TexlabError(
         'TEXLAB_START_FAILED',
@@ -168,7 +183,7 @@ export class TexlabService {
       return this.start(options);
     }
 
-    this.starting = this.spawnAndInitialize(options).finally(() => {
+    this.starting = this.spawnAndInitialize(options, this.generation).finally(() => {
       this.starting = null;
     });
     return this.starting;
@@ -176,25 +191,40 @@ export class TexlabService {
 
   private initializeResult: TexlabInitializeResult = { capabilities: {} };
 
-  private async spawnAndInitialize(options: TexlabStartOptions): Promise<TexlabInitializeResult> {
+  private async spawnAndInitialize(
+    options: TexlabStartOptions,
+    generation: number,
+  ): Promise<TexlabInitializeResult> {
     const child = await new Promise<ChildProcessWithoutNullStreams>((resolve, reject) => {
-      const process = spawn(options.executable, [], {
+      const spawned = spawn(options.executable, [], {
         cwd: options.workspaceRoot,
         shell: false,
         windowsHide: true,
+        detached: process.platform !== 'win32',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       const fail = (error: Error) => {
-        process.removeListener('spawn', succeed);
+        spawned.removeListener('spawn', succeed);
         reject(new TexlabError('TEXLAB_START_FAILED', `TexLab could not start: ${error.message}`));
       };
       const succeed = () => {
-        process.removeListener('error', fail);
-        resolve(process);
+        spawned.removeListener('error', fail);
+        resolve(spawned);
       };
-      process.once('error', fail);
-      process.once('spawn', succeed);
+      spawned.once('error', fail);
+      spawned.once('spawn', succeed);
     });
+    if (generation !== this.generation) {
+      const closed = new Promise<void>((resolve) => child.once('close', resolve));
+      // Install stream error owners before terminating an initialization in flight.
+      child.on('error', () => undefined);
+      child.stdin.on('error', () => undefined);
+      child.stdout.on('error', () => undefined);
+      child.stderr.on('error', () => undefined);
+      await terminateProcessTree(child).catch(() => undefined);
+      await this.awaitExit(child, closed);
+      throw new TexlabError('TEXLAB_NOT_STARTED', 'TexLab startup was cancelled.');
+    }
     this.attach(child);
     this.workspaceRoot = options.workspaceRoot;
     try {
@@ -216,6 +246,8 @@ export class TexlabService {
         }),
       );
       const capabilities = asJsonObject(result.capabilities ?? {});
+      if (generation !== this.generation)
+        throw new TexlabError('TEXLAB_NOT_STARTED', 'TexLab startup was cancelled.');
       const serverInfo = this.parseServerInfo(result.serverInfo);
       this.initializeResult = serverInfo ? { capabilities, serverInfo } : { capabilities };
       this.initialized = true;
@@ -228,26 +260,61 @@ export class TexlabService {
   }
 
   async stop(): Promise<void> {
+    if (this.terminating) await this.terminating;
+    if (this.stopping) return this.stopping;
+    this.generation++;
     const child = this.child;
-    if (!child) return;
-    for (const [id, request] of this.pending) if (request.lane) this.cancelRequest(id);
-    try {
-      if (this.initialized) await this.requestInternal('shutdown', null);
-      this.notifyInternal('exit');
-    } catch {
-      // A terminating language server does not need to complete graceful shutdown.
+    if (!child) {
+      await this.starting?.catch(() => undefined);
+      return;
     }
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (!child.killed) child.kill();
-        resolve();
+    const closed = this.childClosed;
+    this.stopping = (async () => {
+      const deadline = setTimeout(() => {
+        void this.stopImmediately();
       }, STOP_TIMEOUT_MS);
-      child.once('close', () => {
-        clearTimeout(timer);
-        resolve();
-      });
+      try {
+        for (const [id, request] of this.pending) if (request.lane) this.cancelRequest(id);
+        try {
+          if (this.initialized)
+            await Promise.race([this.requestInternal('shutdown', null), closed]);
+          if (this.child === child) this.notifyInternal('exit');
+        } catch {
+          /* A failed server still needs termination. */
+        }
+        await this.awaitExit(child, closed);
+        if (this.terminating) await this.terminating;
+      } finally {
+        clearTimeout(deadline);
+        if (this.child === child) this.clearState('TexLab stopped.');
+      }
+    })().finally(() => {
+      this.stopping = null;
     });
-    this.clearState('TexLab stopped.');
+    return this.stopping;
+  }
+
+  private async awaitExit(
+    child: ChildProcessWithoutNullStreams,
+    closed: Promise<void>,
+  ): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      closed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          void terminateProcessTree(child)
+            .catch(() => undefined)
+            .then(() => {
+              child.stdin.destroy();
+              child.stdout.destroy();
+              child.stderr.destroy();
+              resolve();
+            });
+        }, STOP_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
   async openDocument(document: TexlabTextDocument): Promise<void> {
@@ -377,43 +444,71 @@ export class TexlabService {
 
   private attach(child: ChildProcessWithoutNullStreams): void {
     this.child = child;
-    child.stdout.on('data', (chunk: Buffer) => this.receive(chunk));
-    child.stderr.on('data', () => {
-      // TexLab writes human-readable progress to stderr; it is not an LSP channel.
+    this.childClosed = new Promise<void>((resolve) => child.once('close', resolve));
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (this.child === child) this.receive(chunk);
     });
-    const stopped = () => {
-      if (this.child === child) this.clearState('TexLab stopped unexpectedly.');
+    child.stderr.on('data', () => {
+      /* Drain human-readable progress. */
+    });
+    child.stdin.on('drain', () => {
+      if (this.child !== child) return;
+      this.waitingDrain = false;
+      this.flushOutbound();
+    });
+    const failed = () => {
+      if (this.child === child) void this.stopImmediately();
     };
-    child.once('error', stopped);
-    child.once('close', stopped);
+    child.on('error', failed);
+    child.stdin.on('error', failed);
+    child.stdout.on('error', failed);
+    child.stderr.on('error', failed);
+    child.once('close', () => {
+      if (this.child === child) this.clearState('TexLab stopped unexpectedly.');
+    });
   }
 
   private receive(chunk: Buffer): void {
-    this.receiveBuffer = Buffer.concat([this.receiveBuffer, chunk]);
-    while (true) {
-      const headerEnd = this.receiveBuffer.indexOf('\r\n\r\n');
-      if (headerEnd < 0) return;
-      const header = this.receiveBuffer.subarray(0, headerEnd).toString('ascii');
-      const contentLengthRow = header.split('\r\n').find((row) => /^content-length\s*:/i.test(row));
-      const contentLength = Number(contentLengthRow?.split(':', 2)[1]?.trim());
-      if (
-        !Number.isSafeInteger(contentLength) ||
-        contentLength < 0 ||
-        contentLength > MAX_MESSAGE_BYTES
-      ) {
-        void this.stopImmediately();
-        return;
+    let offset = 0;
+    try {
+      while (offset < chunk.length) {
+        if (!this.bodyBuffer) {
+          if (this.headerBytes >= MAX_HEADER_BYTES) throw new Error('Oversized LSP header.');
+          this.headerBuffer[this.headerBytes++] = chunk[offset++]!;
+          if (
+            this.headerBytes < 4 ||
+            this.headerBuffer.readUInt32BE(this.headerBytes - 4) !== 0x0d0a0d0a
+          )
+            continue;
+          const header = this.headerBuffer.subarray(0, this.headerBytes - 4).toString('ascii');
+          const rows = header.split('\r\n').filter((row) => /^content-length\s*:/i.test(row));
+          const rawLength = rows[0]?.split(':', 2)[1]?.trim() ?? '';
+          const length = Number(rawLength);
+          if (
+            rows.length !== 1 ||
+            !/^\d+$/.test(rawLength) ||
+            !Number.isSafeInteger(length) ||
+            length < 1 ||
+            length > MAX_MESSAGE_BYTES
+          )
+            throw new Error('Invalid LSP length.');
+          this.bodyBuffer = Buffer.allocUnsafe(length);
+          this.bodyBytes = 0;
+          this.headerBytes = 0;
+        }
+        const count = Math.min(this.bodyBuffer.length - this.bodyBytes, chunk.length - offset);
+        chunk.copy(this.bodyBuffer, this.bodyBytes, offset, offset + count);
+        offset += count;
+        this.bodyBytes += count;
+        if (this.bodyBytes !== this.bodyBuffer.length) continue;
+        const body = this.bodyBuffer;
+        this.bodyBuffer = null;
+        this.bodyBytes = 0;
+        this.handleMessage(JSON.parse(body.toString('utf8')) as JsonRpcMessage);
+        if (!this.child) return;
       }
-      const messageEnd = headerEnd + 4 + contentLength;
-      if (this.receiveBuffer.length < messageEnd) return;
-      const body = this.receiveBuffer.subarray(headerEnd + 4, messageEnd).toString('utf8');
-      this.receiveBuffer = this.receiveBuffer.subarray(messageEnd);
-      try {
-        this.handleMessage(JSON.parse(body) as JsonRpcMessage);
-      } catch {
-        void this.stopImmediately();
-        return;
-      }
+    } catch {
+      void this.stopImmediately();
     }
   }
 
@@ -568,8 +663,36 @@ export class TexlabService {
     if (!child || child.stdin.destroyed)
       throw new TexlabError('TEXLAB_NOT_STARTED', 'TexLab is not running.');
     const body = Buffer.from(JSON.stringify(message), 'utf8');
-    child.stdin.write(`Content-Length: ${body.byteLength}\r\n\r\n`);
-    child.stdin.write(body);
+    const header = Buffer.from('Content-Length: ' + body.byteLength + '\r\n\r\n');
+    const size = body.length + header.length;
+    if (
+      body.length > MAX_MESSAGE_BYTES ||
+      this.outbound.length >= MAX_PENDING_REQUESTS ||
+      this.outboundBytes + child.stdin.writableLength + size > MAX_OUTBOUND_BYTES
+    ) {
+      void this.stopImmediately();
+      throw new TexlabError('TEXLAB_BUSY', 'TexLab outbound queue exceeded its size limit.');
+    }
+    this.outbound.push(Buffer.concat([header, body]));
+    this.outboundBytes += size;
+    this.flushOutbound();
+  }
+
+  private flushOutbound(): void {
+    const child = this.child;
+    if (!child || this.waitingDrain) return;
+    try {
+      while (this.outbound.length) {
+        const frame = this.outbound.shift()!;
+        this.outboundBytes -= frame.length;
+        if (!child.stdin.write(frame)) {
+          this.waitingDrain = true;
+          break;
+        }
+      }
+    } catch {
+      void this.stopImmediately();
+    }
   }
 
   private parseServerInfo(value: unknown): TexlabServerInfo | undefined {
@@ -612,9 +735,20 @@ export class TexlabService {
   }
 
   private async stopImmediately(): Promise<void> {
+    if (this.terminating) return this.terminating;
     const child = this.child;
-    if (child && !child.killed) child.kill();
+    const closed = this.childClosed;
     this.clearState('TexLab stopped unexpectedly.');
+    if (!child) return;
+    this.terminating = Promise.resolve()
+      .then(async () => {
+        await terminateProcessTree(child).catch(() => undefined);
+        await this.awaitExit(child, closed);
+      })
+      .finally(() => {
+        this.terminating = null;
+      });
+    return this.terminating;
   }
 
   private clearState(reason: string): void {
@@ -627,7 +761,12 @@ export class TexlabService {
     this.child = null;
     this.initialized = false;
     this.workspaceRoot = null;
-    this.receiveBuffer = Buffer.alloc(0);
+    this.headerBytes = 0;
+    this.bodyBuffer = null;
+    this.bodyBytes = 0;
+    this.outbound.length = 0;
+    this.outboundBytes = 0;
+    this.waitingDrain = false;
     this.documentVersions.clear();
     this.documentTexts.clear();
   }

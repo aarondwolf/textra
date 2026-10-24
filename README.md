@@ -16,7 +16,8 @@ with a local Ollama server.
 - [x] Phase 1 workflow: collapsible explorer, reveal-active, persisted editor settings, custom TeX paths, PDF match highlights
 - [x] TexLab 5.26.0: bundled Windows language intelligence and editor navigation
 - [ ] Phase 1 verification: XeLaTeX/LuaLaTeX, macOS/Linux, crop/rotation SyncTeX
-- [ ] Phase 2: writing tools, diagnostics, optional AI
+- [x] Phase 2 workflows: writing tools, diagnostics, optional AI
+- [ ] Phase 2 verification: complete native/platform interaction matrix
 - [ ] Phase 3: research and presentation workflows
 - [ ] Phase 4: installers, TeX installation help and distribution
 
@@ -41,6 +42,8 @@ prioritizing selected defaults without contacting a provider or warming a model.
 See [startup measurements](docs/PERFORMANCE.md) for reproducible checks and limits.
 `npm run test:dev` verifies HMR and main/preload reload behavior; run it without
 concurrent source edits because it temporarily appends and restores test probes.
+See the [Electron audit and refactor](docs/ELECTRON_AUDIT.md) for the current
+resource, document-preservation and history-storage architecture.
 
 ## Workflow and setup
 
@@ -83,6 +86,17 @@ precedence. After a configurable 2–5 second quiet period, a read-only Monaco d
 preserved buffer with the external file; it does not merge. Preferences can use polling only for
 Dropbox/network folders. Save As never replaces an existing file. Closing/switching checks unsaved
 edits. Delete uses the OS trash.
+
+**File history** keeps compressed source snapshots inside `.textra/history`, so history
+moves with the project. The History view loads snapshots in pages and supports reviewed
+restore, export, pinning and deletion. Restore preserves the current buffer and disk
+version before replacing the file; failed backups prevent restoration. Invalid history
+catalogs are preserved and reported. Older app-data history can be explicitly recovered
+from the History view after selecting the correct store; originals remain untouched.
+History is plaintext project data and can be copied by your folder's sync service.
+
+A second launch focuses the running window for that profile. Closing waits for pending
+settings and document writes; if a persistence barrier fails, TeXtra stays open.
 
 **TexLab language intelligence** is bundled for Windows x64 and enabled by default. It powers
 LaTeX completion, hover, definitions, references, document symbols, folding, inlay hints, and

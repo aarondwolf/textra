@@ -96,6 +96,7 @@ export class AgentWorkspaceService {
     request: unknown,
     emit?: (event: AIAssistantEvent) => void,
   ): Promise<AIAssistantResult> {
+    const generation = this.generation;
     const contextId =
       request && typeof request === 'object' && 'contextId' in request
         ? request.contextId
@@ -105,6 +106,11 @@ export class AgentWorkspaceService {
         throw new AIError('INVALID_ARGUMENT', 'Provide a valid document context.');
       await this.current(contextId);
     }
+    if (generation !== this.generation)
+      throw new AIError(
+        'AI_AGENT_STALE',
+        'The active document changed. Ask again in the current workspace.',
+      );
     return this.agent.run(request, emit);
   }
 

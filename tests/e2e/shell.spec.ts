@@ -8,10 +8,11 @@ test('native shell keeps security boundaries and persists representative UI acti
   await mkdir(root, { recursive: true });
   const userData = await mkdtemp(join(root, 'user-data-'));
   let application: ElectronApplication | undefined;
-  const environment: Record<string, string> = { TEXTRA_USER_DATA_DIR: userData };
+  const environment: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) environment[key] = value;
   }
+  environment.TEXTRA_USER_DATA_DIR = userData;
   delete environment.ELECTRON_RUN_AS_NODE;
   delete environment.NO_SANDBOX;
   delete environment.ELECTRON_CLI_ARGS;
@@ -58,10 +59,12 @@ test('native shell keeps security boundaries and persists representative UI acti
     expect(cancelledDeletion).toEqual({ result: { ok: true, value: null }, confirmedPrompt: true });
     expect(await page.evaluate(() => Object.keys(window.textra).sort())).toEqual([
       'acceptAIAgentProposal',
+      'acknowledgeBeforeClose',
       'cancelAIAssistant',
       'cancelAICompletion',
       'cancelAIInlineEdit',
       'cancelBuild',
+      'cancelLanguageRequest',
       'checkTexlab',
       'chooseProject',
       'chooseToolPath',
@@ -74,9 +77,12 @@ test('native shell keeps security boundaries and persists representative UI acti
       'copyText',
       'createConflictCopy',
       'createEntry',
+      'createFileHistorySnapshot',
       'deleteAIChat',
       'deleteEntry',
+      'deleteFileHistorySnapshot',
       'detectTools',
+      'exportFileHistorySnapshot',
       'exportSettings',
       'formatLatex',
       'getAISettings',
@@ -90,11 +96,16 @@ test('native shell keeps security boundaries and persists representative UI acti
       'getRecentProjects',
       'getTexlabDiagnostics',
       'getTexlabStatus',
+      'importLegacyFileHistory',
       'importSettings',
       'lintLatex',
       'listAIChats',
+      'listFileHistory',
+      'listLegacyFileHistories',
       'onAIAssistantEvent',
       'onAIInlineEditChunk',
+      'onBeforeClose',
+      'onCloseCancelled',
       'onExternalFileChange',
       'openAIProviderLink',
       'openInCode',
@@ -102,9 +113,12 @@ test('native shell keeps security boundaries and persists representative UI acti
       'openSetupLink',
       'openStackExchangeSearch',
       'openTexFaqHelp',
+      'openUserDataFolder',
+      'pinFileHistorySnapshot',
       'prepareAI',
       'prepareProject',
       'readFile',
+      'readFileHistorySnapshot',
       'readPdf',
       'readProjectPdf',
       'refreshAIModels',
@@ -114,6 +128,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'renameEntry',
       'requestAICompletion',
       'requestAIInlineEdit',
+      'restoreFileHistorySnapshot',
       'restoreLastPdf',
       'revealEntry',
       'reviewAIAgentProposal',
@@ -142,7 +157,8 @@ test('native shell keeps security boundaries and persists representative UI acti
 
     await expect(page.locator('.topbar, .statusbar, .bottom-panel')).toHaveCount(0);
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-    await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
+    await page.getByRole('button', { name: 'Theme', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Light', exact: true }).click();
     await page.getByRole('button', { name: 'Close settings', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.getByRole('button', { name: 'Toggle sidebar', exact: true }).click();
@@ -154,7 +170,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     await palette.getByRole('textbox', { name: 'Search commands' }).fill('preview');
     await palette.getByRole('button', { name: 'Toggle preview pane', exact: true }).click();
     await expect(palette).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Expand preview', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show PDF preview', exact: true })).toBeVisible();
 
     await expect
       .poll(async () => {
@@ -170,11 +186,11 @@ test('native shell keeps security boundaries and persists representative UI acti
       restored.getByRole('button', { name: 'Toggle sidebar', exact: true }),
     ).toHaveAttribute('aria-pressed', 'false');
     await expect(
-      restored.getByRole('button', { name: 'Expand preview', exact: true }),
+      restored.getByRole('button', { name: 'Show PDF preview', exact: true }),
     ).toBeVisible();
     await restored.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-    await expect(restored.getByRole('combobox', { name: 'Theme', exact: true })).toHaveValue(
-      'light',
+    await expect(restored.getByRole('button', { name: 'Theme', exact: true })).toContainText(
+      'Light',
     );
     await restored.getByRole('button', { name: 'Close settings', exact: true }).click();
   } finally {

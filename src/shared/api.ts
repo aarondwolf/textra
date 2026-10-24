@@ -258,6 +258,20 @@ export interface HistorySnapshotSummary {
 export interface HistorySnapshotContent extends HistorySnapshotSummary {
   content: string;
 }
+export interface ListFileHistoryRequest extends FileRef {
+  cursor?: string;
+  limit?: number;
+}
+export interface HistorySnapshotPage {
+  snapshots: HistorySnapshotSummary[];
+  nextCursor: string | null;
+}
+export interface LegacyHistorySummary {
+  id: string;
+  snapshotCount: number;
+  latestCreatedAt: string | null;
+  samplePaths: string[];
+}
 export interface CreateHistorySnapshotRequest extends FileRef {
   content: string;
   trigger: HistorySnapshotTrigger;
@@ -273,6 +287,8 @@ export interface PinHistorySnapshotRequest extends HistorySnapshotRef {
 }
 export interface RestoreHistorySnapshotRequest extends HistorySnapshotRef {
   expectedRevision: string;
+  /** Captured editor text which must be durably backed up before restoration. */
+  recoveryBuffer: string;
 }
 export interface RecentProject {
   id: string;
@@ -353,8 +369,9 @@ export interface TexlabRequest extends TexlabDocumentRequest {
   line?: number;
   character?: number;
 }
-export type LintRequest = FileRef;
+export type LintRequest = FileRef & { requestId?: string };
 export interface FormatRequest extends FileRef {
+  requestId?: string;
   content: string;
 }
 export interface FormatResult {
@@ -491,6 +508,10 @@ export interface TextraAPI {
   getAppInfo(): Promise<Result<AppInfo>>;
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;
+  /** Flush renderer-owned persistence before the native close decision. */
+  onBeforeClose(listener: (requestId: string) => void): () => void;
+  onCloseCancelled(listener: () => void): () => void;
+  acknowledgeBeforeClose(request: { requestId: string; ready: boolean }): Promise<Result<void>>;
   chooseProject(): Promise<Result<ProjectInfo | null>>;
   refreshProject(projectId: string): Promise<Result<ProjectInfo>>;
   prepareProject(projectId: string): Promise<Result<void>>;
@@ -525,7 +546,6 @@ export interface TextraAPI {
   readPdf(request: FileRef): Promise<Result<Uint8Array>>;
   restoreLastPdf(projectId: string): Promise<Result<RestoredPdf | null>>;
   prepareAI(): Promise<Result<void>>;
-  readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;
   /** Reads an explicit, validated PDF selected from the active project. */
   readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;
   syncForward(request: SyncForwardRequest): Promise<Result<PdfLocation>>;
@@ -558,10 +578,16 @@ export interface TextraAPI {
   getTexlabDiagnostics(request: FileRef): Promise<Result<Diagnostic[]>>;
   lintLatex(request: LintRequest): Promise<Result<Diagnostic[]>>;
   formatLatex(request: FormatRequest): Promise<Result<FormatResult>>;
+  cancelLanguageRequest(request: { requestId: string }): Promise<Result<void>>;
   openStackExchangeSearch(query: string): Promise<Result<void>>;
   openTexFaqHelp(url: string): Promise<Result<void>>;
   copyText(text: string): Promise<Result<void>>;
-  listFileHistory(request: FileRef): Promise<Result<HistorySnapshotSummary[]>>;
+  listFileHistory(request: ListFileHistoryRequest): Promise<Result<HistorySnapshotPage>>;
+  listLegacyFileHistories(projectId: string): Promise<Result<LegacyHistorySummary[]>>;
+  importLegacyFileHistory(request: {
+    projectId: string;
+    legacyId: string;
+  }): Promise<Result<number>>;
   readFileHistorySnapshot(request: HistorySnapshotRef): Promise<Result<HistorySnapshotContent>>;
   createFileHistorySnapshot(
     request: CreateHistorySnapshotRequest,

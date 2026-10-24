@@ -168,6 +168,48 @@ describe('editor state preserves concurrent work', () => {
     expect(await saveAll()).toBe(true);
     expect(flag).toHaveBeenCalledWith(false);
   });
+  it('coalesces overlapping saves and uses the completed disk revision for newer edits', async () => {
+    const first = deferred<Result<FileSnapshot>>();
+    const saveFile = vi
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(async (request) => ({
+        ok: true,
+        value: { ...document(), content: request.content, revision: 'second-revision' },
+      }));
+    vi.stubGlobal('window', { textra: { saveFile } });
+    editDocument('main.tex', 'first edit');
+    const firstSave = saveDocument('main.tex');
+    editDocument('main.tex', 'second edit');
+    const secondSave = saveDocument('main.tex');
+    expect(saveFile).toHaveBeenCalledTimes(1);
+    first.resolve({
+      ok: true,
+      value: { ...document(), content: 'first edit', revision: 'first-revision' },
+    });
+    expect(await firstSave).toBe(true);
+    expect(await secondSave).toBe(true);
+    expect(saveFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: 'second edit', expectedRevision: 'first-revision' }),
+    );
+    expect(useWorkspace.getState().documents[0]).toMatchObject({
+      content: 'second edit',
+      savedContent: 'second edit',
+      conflict: false,
+    });
+  });
+
+  it('does not write an unchanged document twice for overlapping save commands', async () => {
+    const write = deferred<Result<FileSnapshot>>();
+    const saveFile = vi.fn(() => write.promise);
+    vi.stubGlobal('window', { textra: { saveFile } });
+    editDocument('main.tex', 'edit');
+    const first = saveDocument('main.tex');
+    const second = saveDocument('main.tex');
+    write.resolve({ ok: true, value: { ...document(), content: 'edit', revision: 'saved' } });
+    await Promise.all([first, second]);
+    expect(saveFile).toHaveBeenCalledTimes(1);
+  });
   it('explicit discard resets edits while retaining an external-change warning', async () => {
     const flag = vi.fn(async () => ({ ok: true, value: undefined }));
     vi.stubGlobal('window', { textra: { setDirty: flag } });

@@ -34,6 +34,7 @@ import type { AIEditProposal } from '../../../../shared/ai';
 import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
 import { editDocument, saveDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
+import { documentSessions } from '../../state/document-sessions';
 import { useUI } from '../../state/ui';
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
@@ -412,6 +413,7 @@ export interface TexlabInlayHint {
  * access to Monaco. Missing methods leave TeXtra's local editor behavior intact.
  */
 export interface TexlabEditorAdapter {
+  readonly resourceEpoch?: number;
   readonly isReady: boolean;
   readonly diagnostics?: ReadonlyMap<string, readonly TexlabDiagnostic[]>;
   /** Supplies the real project file URI so TexLab can resolve includes and bibliographies. */
@@ -582,6 +584,8 @@ export function SourceEditor({
   const container = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const models = useRef(new Map<string, monaco.editor.ITextModel>());
+  const modelOwners = useRef(new Map<string, () => void>());
+  const synchronizingModel = useRef(false);
   const views = useRef(new Map<string, monaco.editor.ICodeEditorViewState>());
   const current = useRef<string | null>(null);
   const aiCompletion = useRef<ReturnType<typeof installAICompletion> | null>(null);
@@ -757,6 +761,7 @@ export function SourceEditor({
     const keyboardHost = instance.getDomNode();
     keyboardHost?.addEventListener('keydown', prepareOnKey, true);
     const applyAgentEdit = (event: Event) => {
+      if (documentSessions.locked) return;
       const proposal = (event as CustomEvent<AIEditProposal>).detail;
       const model = instance.getModel();
       const document = documentsRef.current.find((item) => item.path === current.current);
@@ -783,6 +788,7 @@ export function SourceEditor({
     };
     window.addEventListener('textra:apply-agent-edit', applyAgentEdit);
     const applyDocumentContent = (event: Event) => {
+      if (documentSessions.locked) return;
       const detail = (event as CustomEvent<{ path: string; text: string }>).detail;
       if (!detail || !current.current || current.current !== detail.path) return;
       const model = models.current.get(detail.path) ?? instance.getModel();
@@ -802,6 +808,7 @@ export function SourceEditor({
     };
     window.addEventListener('textra:replace-source', replaceSource);
     const insertSource = (event: Event) => {
+      if (documentSessions.locked) return;
       const detail = (event as CustomEvent<{ text: string; caret: number }>).detail;
       const model = instance.getModel();
       const selection = instance.getSelection();
@@ -821,6 +828,7 @@ export function SourceEditor({
     };
     window.addEventListener('textra:insert-source', insertSource);
     const formatSource = (event: Event) => {
+      if (documentSessions.locked) return;
       const detail = (event as CustomEvent<EditorFormatRequest>).detail;
       const model = instance.getModel();
       const selection = instance.getSelection();
@@ -895,6 +903,11 @@ export function SourceEditor({
     };
     window.addEventListener('textra:format-source', formatSource);
     const content = instance.onDidChangeModelContent(() => {
+      if (synchronizingModel.current) return;
+      if (documentSessions.locked) {
+        documentSessions.observe(useWorkspace.getState().documents, true);
+        return;
+      }
       if (!current.current) return;
       const path = current.current;
       editDocument(path, instance.getValue());
@@ -1042,6 +1055,7 @@ export function SourceEditor({
         }));
     };
     const environmentEnter = instance.onKeyDown((event) => {
+      if (documentSessions.locked) return;
       if (
         event.keyCode !== monaco.KeyCode.Enter ||
         event.ctrlKey ||
@@ -1283,6 +1297,7 @@ export function SourceEditor({
       },
     });
     const retainedModels = models.current;
+    const retainedOwners = modelOwners.current;
     return () => {
       disposed = true;
       cancelPreparation();
@@ -1314,11 +1329,13 @@ export function SourceEditor({
       inlayHints.dispose();
       instance.dispose();
       retainedModels.forEach((model, path) => {
+        retainedOwners.get(path)?.();
         if (isTexPath(path))
           void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
         model.dispose();
       });
       retainedModels.clear();
+      retainedOwners.clear();
       current.current = null;
     };
   }, []);
@@ -1344,10 +1361,47 @@ export function SourceEditor({
           monaco.Uri.parse(documentUri(document, texlabRef.current)),
         );
         models.current.set(document.path, model);
+        const attachedModel = model;
+        modelOwners.current.set(
+          document.path,
+          documentSessions.attach(document.projectId, document.path, {
+            read: () => attachedModel.getValue(),
+            replace: (content) => {
+              synchronizingModel.current = true;
+              try {
+                attachedModel.pushStackElement();
+                attachedModel.pushEditOperations(
+                  [],
+                  [{ range: attachedModel.getFullModelRange(), text: content }],
+                  () => null,
+                );
+                attachedModel.pushStackElement();
+              } finally {
+                synchronizingModel.current = false;
+              }
+              const latest = useWorkspace
+                .getState()
+                .documents.find(
+                  (item) => item.projectId === document.projectId && item.path === document.path,
+                );
+              const settings = autoSavePreferences.current;
+              if (
+                latest &&
+                latest.content !== latest.savedContent &&
+                !latest.conflict &&
+                settings.enabled &&
+                !settings.readOnly
+              ) {
+                if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+                autoSaveTimer.current = setTimeout(() => {
+                  void saveDocument(document.path);
+                }, settings.delayMs);
+              }
+            },
+          }),
+        );
         if (isTexPath(document.path) && texlabRef.current?.isReady)
           void texlabRef.current.syncDocument?.(toTexlabDocument(model, document));
-      } else if (document.path !== current.current && model.getValue() !== document.content) {
-        model.setValue(document.content);
       }
     }
     if (current.current !== activePath) {
@@ -1377,6 +1431,8 @@ export function SourceEditor({
         if (isTexPath(path))
           void texlabRef.current?.closeDocument?.({ path, uri: model.uri.toString() });
         model.dispose();
+        modelOwners.current.get(path)?.();
+        modelOwners.current.delete(path);
         models.current.delete(path);
         views.current.delete(path);
       }
@@ -1389,7 +1445,7 @@ export function SourceEditor({
       if (model && isTexPath(document.path))
         void adapter.syncDocument?.(toTexlabDocument(model, document));
     }
-  }, [documents, texlab?.isReady]);
+  }, [documents, texlab?.isReady, texlab?.resourceEpoch]);
   useEffect(() => {
     const diagnostics = texlab?.diagnostics;
     for (const [path, model] of models.current) {

@@ -27,6 +27,7 @@ interface SyncSlot {
   onDiagnostics: (path: string, diagnostics: readonly Diagnostic[]) => void;
 }
 interface AdapterRequests {
+  resourceEpoch: number;
   sync: Map<string, SyncSlot>;
   requests: Map<string, Promise<unknown>>;
 }
@@ -210,11 +211,13 @@ export function texlabMarkers(diagnostics: readonly Diagnostic[]): TexlabDiagnos
 }
 
 export function createTexlabAdapter({
+  resourceEpoch = 0,
   documents,
   ready,
   diagnostics,
   onDiagnostics,
 }: {
+  resourceEpoch?: number;
   documents: readonly OpenDocument[];
   ready: boolean;
   diagnostics: ReadonlyMap<string, readonly TexlabDiagnostic[]>;
@@ -223,10 +226,14 @@ export function createTexlabAdapter({
   const bridge = window.textra;
   let state = sessions.get(bridge);
   if (!state) {
-    state = { sync: new Map(), requests: new Map() };
+    state = { resourceEpoch, sync: new Map(), requests: new Map() };
     sessions.set(bridge, state);
   }
   const session = state;
+  if (session.resourceEpoch !== resourceEpoch) {
+    session.resourceEpoch = resourceEpoch;
+    for (const slot of session.sync.values()) slot.text = null;
+  }
   const openKeys = new Set(
     documents.map((document) => documentKey(document.projectId, document.path)),
   );
@@ -329,6 +336,7 @@ export function createTexlabAdapter({
     return current.running;
   };
   return {
+    resourceEpoch,
     isReady: ready,
     diagnostics,
     syncDocument: ready ? sync : undefined,

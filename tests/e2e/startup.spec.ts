@@ -22,10 +22,18 @@ test('restores the active document and all 50 saved tabs without losing edits', 
       await editor.focus();
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+End' : 'Control+End');
       await page.keyboard.insertText('% Edited immediately after restoration.\n');
-      await page.getByRole('button', { name: 'Save file', exact: true }).click();
+      await expect(page.locator('.source-editor')).toContainText('Edited immediately');
+      const save = page.getByRole('button', { name: 'Save file', exact: true });
+      await expect(save).toBeEnabled();
+      await save.click();
       await expect
-        .poll(() => readFile(join(fixture.root, 'document-50.tex'), 'utf8'))
-        .toContain('Edited immediately');
+        .poll(async () => ({
+          disk: await readFile(join(fixture.root, 'document-50.tex'), 'utf8'),
+          errors: await page.locator('.workspace-error').allTextContents(),
+          saveEnabled: await save.isEnabled(),
+          activeTab: await page.getByRole('tab', { selected: true }).allTextContents(),
+        }))
+        .toMatchObject({ disk: expect.stringContaining('Edited immediately') });
       await expect(page.getByRole('tab', { name: /^Edit document-\d+\.tex$/ })).toHaveCount(50, {
         timeout: 30000,
       });

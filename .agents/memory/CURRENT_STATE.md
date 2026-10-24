@@ -1,5 +1,29 @@
 # Current state
 
+2026-10-24 Electron audit milestone (branch codex/electron-architecture, base 81298e0):
+
+- Implemented the user-approved comprehensive architecture plan. Findings and source
+  map: docs/ELECTRON_AUDIT.md. One profile owner, explicit workspace/close lifecycle,
+  secure portable history/reviewed legacy recovery, versioned Monaco buffers and
+  save queues, bounded/cancellable language processes, watcher and TexLab ownership.
+- Integration fixes include late AI/build admission guards, current dirty state on
+  close, flush-before-project-switch, local-restore watcher acknowledgement, immediate
+  settings export/import persistence, and removal of duplicate keyboard dispatch.
+- Final unit/integration gate: 704/704 in 67 files (67.95s). Full serial Windows native
+  gate: 15 passed, 2 deliberate skips (4.1m); the skipped startup benchmark then passed
+  separately (three warm launches, 24.5s). No live provider calls or real profile used.
+  Typecheck, lint, production build and HMR/preload/main restart smoke passed.
+- Warm-profile editor observation median 2.133s (1.879-2.666s); main timer-delay p95
+  9.57-10.67ms, maximum 16.81ms. These are diagnostic samples, not a controlled speedup
+  or a cold packaged launch. See docs/PERFORMANCE.md for methodology and limits.
+- Next unfinished gate remains Phase 1 cross-platform verification; Phase 2/platform
+  matrix and release gates remain open. No critical unresolved audit defect identified.
+- Next three actions: profile packaged warm/cold startup/first paint; run macOS/Linux
+  editor/compile/PDF/SyncTeX plus remaining TeX-engine matrix; implement and verify
+  installer, upgrade/uninstall and credential migration release checks.
+- Launch: npm run dev. Tests/probes restored; generated fixtures are ignored. The
+  local audit milestone commit records this verified tree; no push is authorized.
+
 2026-10-23 Code Quality Audit Priority 1 & 2 Optimizations & Bug Fixes:
 
 - Hot-Loop File I/O Short-Circuit in ExternalEditorService:

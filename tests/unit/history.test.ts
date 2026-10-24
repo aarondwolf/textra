@@ -1,11 +1,24 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  copyFile,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryService } from '../../src/main/services/history';
 import { ProjectService } from '../../src/main/services/projects';
 import type { ProjectInfo } from '../../src/shared/api';
+import { HistoryStorage } from '../../src/main/services/history-storage';
 
 const gzipAsync = promisify(gzip);
 
@@ -31,10 +44,11 @@ describe('flat-file compressed automatic file history', () => {
 
     projects = new ProjectService(join(directory, 'user-data'));
     project = await projects.openRoot(root);
-    history = new HistoryService(projects);
+    history = new HistoryService(projects, join(directory, 'user-data'));
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await history.flush();
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
@@ -91,7 +105,10 @@ describe('flat-file compressed automatic file history', () => {
     });
     expect(second!.id).toBe(first!.id);
 
-    const list = await history.list({ projectId: project.id, path: 'sections/intro.tex' });
+    const { snapshots: list } = await history.list({
+      projectId: project.id,
+      path: 'sections/intro.tex',
+    });
     expect(list.length).toBe(1);
 
     // Forced snapshot creates a new snapshot even if content is identical
@@ -105,7 +122,7 @@ describe('flat-file compressed automatic file history', () => {
     expect(third).not.toBeNull();
     expect(third!.id).not.toBe(first!.id);
 
-    const listAfterForce = await history.list({
+    const { snapshots: listAfterForce } = await history.list({
       projectId: project.id,
       path: 'sections/intro.tex',
     });
@@ -150,7 +167,7 @@ describe('flat-file compressed automatic file history', () => {
     expect(pinned.pinned).toBe(true);
     expect(pinned.label).toBe('Pre-Submission Draft');
 
-    const list = await history.list({ projectId: project.id, path: 'main.tex' });
+    const { snapshots: list } = await history.list({ projectId: project.id, path: 'main.tex' });
     expect(list[0].pinned).toBe(true);
     expect(list[0].label).toBe('Pre-Submission Draft');
 
@@ -192,6 +209,7 @@ describe('flat-file compressed automatic file history', () => {
       path: 'main.tex',
       snapshotId: snapshot1!.id,
       expectedRevision: v2.revision,
+      recoveryBuffer: v2.content,
     });
 
     expect(restored.content).toBe(originalContent);
@@ -199,8 +217,8 @@ describe('flat-file compressed automatic file history', () => {
     expect(diskContent).toBe(originalContent);
 
     // Verify pre-restore backup snapshot exists
-    const all = await history.list({ projectId: project.id, path: 'main.tex' });
-    const preRestoreBackup = all.find((s) => s.label === 'Pre-restore backup');
+    const { snapshots: all } = await history.list({ projectId: project.id, path: 'main.tex' });
+    const preRestoreBackup = all.find((s) => s.label === 'Pre-restore editor backup');
     expect(preRestoreBackup).toBeDefined();
   });
 
@@ -225,8 +243,8 @@ describe('flat-file compressed automatic file history', () => {
         id,
         path: 'main.tex',
         createdAt: isoDate,
-        sizeBytes: 20,
-        revision: 'dummy-rev-' + id,
+        sizeBytes: Buffer.byteLength(`Content for ${id}`, 'utf8'),
+        revision: createHash('sha256').update(`Content for ${id}`).digest('hex'),
         trigger: 'save' as const,
         pinned,
         label,
@@ -299,7 +317,10 @@ describe('flat-file compressed automatic file history', () => {
     // Expected pruned: sDayEarly, sWeekEarly, sMonthEarly = 3 pruned
     expect(prunedCount).toBe(3);
 
-    const remaining = await history.list({ projectId: project.id, path: 'main.tex' });
+    const { snapshots: remaining } = await history.list({
+      projectId: project.id,
+      path: 'main.tex',
+    });
     const remainingIds = new Set(remaining.map((s) => s.id));
 
     expect(remainingIds.has(sRecent.id)).toBe(true);
@@ -335,7 +356,7 @@ describe('flat-file compressed automatic file history', () => {
     files = await readdir(historyDir);
     expect(files.find((f) => f.includes(snap!.id))).toBeUndefined();
 
-    const list = await history.list({ projectId: project.id, path: 'main.tex' });
+    const { snapshots: list } = await history.list({ projectId: project.id, path: 'main.tex' });
     expect(list.find((s) => s.id === snap!.id)).toBeUndefined();
   });
 
@@ -359,9 +380,8 @@ describe('flat-file compressed automatic file history', () => {
         trigger,
         pinned: false,
         label: null,
-        hash: 'hash_' + id,
-        sizeBytes: compressed.length,
-        revision: 1,
+        sizeBytes: Buffer.byteLength(`Content for ${id}`, 'utf8'),
+        revision: createHash('sha256').update(`Content for ${id}`).digest('hex'),
       };
     };
 
@@ -396,7 +416,10 @@ describe('flat-file compressed automatic file history', () => {
     const prunedCount = await history.prune(project.id, now);
     expect(prunedCount).toBe(1);
 
-    const remaining = await history.list({ projectId: project.id, path: 'main.tex' });
+    const { snapshots: remaining } = await history.list({
+      projectId: project.id,
+      path: 'main.tex',
+    });
     const remainingIds = new Set(remaining.map((s) => s.id));
     expect(remainingIds.has('save-rec1')).toBe(true);
     expect(remainingIds.has('save-rec2')).toBe(true);
@@ -405,7 +428,7 @@ describe('flat-file compressed automatic file history', () => {
     expect(remainingIds.has('manual-old')).toBe(true);
   });
 
-  it('stores snapshots in userDataDir when provided and no project .textra/history exists', async () => {
+  it('keeps production history portable and available after the project session changes', async () => {
     const customUserData = join(directory, 'custom-user-data');
     const isolatedHistory = new HistoryService(projects, customUserData);
 
@@ -418,18 +441,347 @@ describe('flat-file compressed automatic file history', () => {
     });
 
     expect(snapshot).not.toBeNull();
-    // Snapshots must be in customUserData/history/<projectId>
-    const userHistoryDir = join(customUserData, 'history', project.id);
-    const files = await readdir(userHistoryDir);
+    const files = await readdir(join(root, '.textra', 'history'));
     expect(files).toContain('index.json');
 
-    // And read back successfully
+    const reopened = await projects.openRoot(root);
+    expect(reopened.id).not.toBe(project.id);
     const readBack = await isolatedHistory.read({
-      projectId: project.id,
+      projectId: reopened.id,
       path: 'main.tex',
       snapshotId: snapshot!.id,
     });
     expect(readBack.content).toBe(content);
     await isolatedHistory.flush();
+  });
+
+  it.each(['{not json', '{"version":2,"snapshots":[]}'])(
+    'preserves corrupt or future catalogs: %s',
+    async (catalog) => {
+      const indexPath = join(root, '.textra', 'history', 'index.json');
+      await mkdir(join(root, '.textra', 'history'), { recursive: true });
+      await writeFile(indexPath, catalog);
+      await expect(history.list({ projectId: project.id, path: 'main.tex' })).rejects.toMatchObject(
+        { code: 'INVALID_HISTORY' },
+      );
+      await expect(
+        history.create({
+          projectId: project.id,
+          path: 'main.tex',
+          content: 'new',
+          trigger: 'save',
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_HISTORY' });
+      expect(await readFile(indexPath, 'utf8')).toBe(catalog);
+    },
+  );
+
+  it.each([
+    { path: '../../../outside/victim' },
+    { id: '../../victim' },
+    { revision: 'not-a-hash' },
+    { createdAt: 'not-a-date' },
+    { sizeBytes: -1 },
+    { pinned: 'yes' },
+    { trigger: 'shell' },
+    { extra: 'unknown-field' },
+  ])('rejects untrusted persisted snapshot records before pruning: %j', async (change) => {
+    const valid = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'original',
+      trigger: 'save',
+    });
+    const indexPath = join(root, '.textra', 'history', 'index.json');
+    const malicious = JSON.stringify({ version: 1, snapshots: [{ ...valid, ...change }] });
+    await writeFile(indexPath, malicious);
+    const before = await readdir(join(root, '.textra', 'history'));
+    await expect(history.prune(project.id)).rejects.toMatchObject({ code: 'INVALID_HISTORY' });
+    expect(await readFile(indexPath, 'utf8')).toBe(malicious);
+    expect(await readdir(join(root, '.textra', 'history'))).toEqual(before);
+  });
+
+  it('bounds index reads without replacing oversized data', async () => {
+    const indexPath = join(root, '.textra', 'history', 'index.json');
+    await mkdir(join(root, '.textra', 'history'), { recursive: true });
+    await writeFile(indexPath, Buffer.alloc(16 * 1024 * 1024 + 1, 32));
+    await expect(history.list({ projectId: project.id, path: 'main.tex' })).rejects.toMatchObject({
+      code: 'HISTORY_LIMIT',
+    });
+    expect((await stat(indexPath)).size).toBe(16 * 1024 * 1024 + 1);
+  });
+
+  it.each(['settings-parent', 'history-directory', 'snapshot-parent'])(
+    'rejects linked storage directories: %s',
+    async (location) => {
+      const outside = join(directory, 'outside');
+      await mkdir(outside);
+      const destination =
+        location === 'settings-parent'
+          ? join(root, '.textra')
+          : location === 'history-directory'
+            ? join(root, '.textra', 'history')
+            : join(root, '.textra', 'history', 'sections');
+      await mkdir(dirname(destination), { recursive: true });
+      await symlink(outside, destination, process.platform === 'win32' ? 'junction' : 'dir');
+      await expect(
+        history.create({
+          projectId: project.id,
+          path: 'sections/intro.tex',
+          content: 'do not escape',
+          trigger: 'save',
+        }),
+      ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+      expect(await readdir(outside)).toEqual([]);
+    },
+  );
+
+  it('rejects hard-linked indexes and snapshots without changing the external link', async () => {
+    const snapshot = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'safe content',
+      trigger: 'save',
+    });
+    const historyDir = join(root, '.textra', 'history');
+    const snapshotFile = join(historyDir, `main.tex.${snapshot.id}.gz`);
+    const externalSnapshot = join(directory, 'external.gz');
+    await link(snapshotFile, externalSnapshot);
+    const originalSnapshot = await readFile(externalSnapshot);
+    await expect(
+      history.read({ projectId: project.id, path: 'main.tex', snapshotId: snapshot.id }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    await expect(
+      history.deleteSnapshot({ projectId: project.id, path: 'main.tex', snapshotId: snapshot.id }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(await readFile(externalSnapshot)).toEqual(originalSnapshot);
+    const indexPath = join(historyDir, 'index.json');
+    const externalIndex = join(directory, 'external-index.json');
+    await link(indexPath, externalIndex);
+    const originalIndex = await readFile(externalIndex);
+    await expect(
+      history.create({ projectId: project.id, path: 'main.tex', content: 'new', trigger: 'save' }),
+    ).rejects.toMatchObject({ code: 'UNSAFE_PATH' });
+    expect(await readFile(externalIndex)).toEqual(originalIndex);
+  });
+
+  it('returns bounded pages without duplicating snapshots across cursors', async () => {
+    const snapshot = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'page fixture',
+      trigger: 'save',
+    });
+    const snapshots = Array.from({ length: 251 }, (_, index) => ({
+      ...snapshot,
+      id: `snapshot-${String(index).padStart(3, '0')}`,
+    }));
+    await writeFile(
+      join(root, '.textra', 'history', 'index.json'),
+      JSON.stringify({ version: 1, snapshots }),
+    );
+    const first = await history.list({ projectId: project.id, path: 'main.tex' });
+    expect(first.snapshots).toHaveLength(100);
+    const second = await history.list({
+      projectId: project.id,
+      path: 'main.tex',
+      cursor: first.nextCursor!,
+      limit: 200,
+    });
+    expect(second.snapshots).toHaveLength(151);
+    expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.snapshots, ...second.snapshots].map((s) => s.id)).size).toBe(251);
+    await expect(
+      history.list({ projectId: project.id, path: 'main.tex', limit: 201 }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(
+      history.list({ projectId: project.id, path: 'main.tex', cursor: 'missing-cursor' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('backs up the exact dirty editor buffer and differing disk text before restoring', async () => {
+    const historical = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'historical',
+      trigger: 'manual',
+    });
+    const disk = await projects.readFile({ projectId: project.id, path: 'main.tex' });
+    await history.restore({
+      projectId: project.id,
+      path: 'main.tex',
+      snapshotId: historical.id,
+      expectedRevision: disk.revision,
+      recoveryBuffer: 'unsaved editor text α\n',
+    });
+    const { snapshots } = await history.list({ projectId: project.id, path: 'main.tex' });
+    for (const [backupLabel, content] of [
+      ['Pre-restore editor backup', 'unsaved editor text α\n'],
+      ['Pre-restore disk backup', disk.content],
+    ]) {
+      const backup = snapshots.find((s) => s.label === backupLabel)!;
+      expect(backup).toBeDefined();
+      expect(
+        (await history.read({ projectId: project.id, path: 'main.tex', snapshotId: backup.id }))
+          .content,
+      ).toBe(content);
+    }
+    expect(await readFile(join(root, 'main.tex'), 'utf8')).toBe('historical');
+  });
+
+  it('aborts restoration when publishing the recovery backup fails', async () => {
+    const historical = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'historical',
+      trigger: 'manual',
+    });
+    const disk = await projects.readFile({ projectId: project.id, path: 'main.tex' });
+    const original = HistoryStorage.prototype.write;
+    vi.spyOn(HistoryStorage.prototype, 'write').mockImplementation(async function (
+      this: HistoryStorage,
+      ...args
+    ) {
+      if (args[0].at(-1) === 'index.json') throw new Error('backup index unavailable');
+      return original.apply(this, args);
+    });
+    await expect(
+      history.restore({
+        projectId: project.id,
+        path: 'main.tex',
+        snapshotId: historical.id,
+        expectedRevision: disk.revision,
+        recoveryBuffer: 'dirty editor',
+      }),
+    ).rejects.toThrow('backup index unavailable');
+    expect(await readFile(join(root, 'main.tex'), 'utf8')).toBe(disk.content);
+  });
+
+  it('keeps all compressed snapshots when prune index publication fails', async () => {
+    const early = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'early',
+      trigger: 'save',
+    });
+    const late = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'late',
+      trigger: 'save',
+    });
+    const indexPath = join(root, '.textra', 'history', 'index.json');
+    const catalog = JSON.stringify({
+      version: 1,
+      snapshots: [
+        { ...early, createdAt: '2026-08-01T01:00:00.000Z' },
+        { ...late, createdAt: '2026-08-01T02:00:00.000Z' },
+      ],
+    });
+    await writeFile(indexPath, catalog);
+    const before = await readdir(join(root, '.textra', 'history'));
+    vi.spyOn(HistoryStorage.prototype, 'write').mockRejectedValue(
+      new Error('cannot publish prune'),
+    );
+    await expect(history.prune(project.id, Date.parse('2026-10-01T00:00:00.000Z'))).rejects.toThrow(
+      'cannot publish prune',
+    );
+    expect(await readdir(join(root, '.textra', 'history'))).toEqual(before);
+    expect(await readFile(indexPath, 'utf8')).toBe(catalog);
+  });
+
+  it('preserves a concurrent external index edit rather than publishing a stale catalog', async () => {
+    const snapshot = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'original',
+      trigger: 'save',
+    });
+    const indexPath = join(root, '.textra', 'history', 'index.json');
+    const external = JSON.stringify({
+      version: 1,
+      snapshots: [{ ...snapshot, pinned: true, label: 'External edit' }],
+    });
+    const original = HistoryStorage.prototype.write;
+    vi.spyOn(HistoryStorage.prototype, 'write').mockImplementation(async function (
+      this: HistoryStorage,
+      ...args
+    ) {
+      if (args[0].at(-1) === 'index.json') await writeFile(indexPath, external);
+      return original.apply(this, args);
+    });
+    await expect(
+      history.create({ projectId: project.id, path: 'main.tex', content: 'new', trigger: 'save' }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await readFile(indexPath, 'utf8')).toBe(external);
+  });
+
+  it('rejects modified snapshot bytes and bounded decompression bombs', async () => {
+    const snapshot = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'original',
+      trigger: 'save',
+    });
+    const path = join(root, '.textra', 'history', `main.tex.${snapshot.id}.gz`);
+    await writeFile(path, await gzipAsync(Buffer.from('tampered')));
+    await expect(
+      history.read({ projectId: project.id, path: 'main.tex', snapshotId: snapshot.id }),
+    ).rejects.toMatchObject({ code: 'INVALID_HISTORY' });
+    await writeFile(path, await gzipAsync(Buffer.alloc(5 * 1024 * 1024 + 1, 65)));
+    await expect(
+      history.read({ projectId: project.id, path: 'main.tex', snapshotId: snapshot.id }),
+    ).rejects.toMatchObject({ code: 'INVALID_HISTORY' });
+  });
+
+  it('explicitly imports a selected legacy UUID store and preserves the original bytes', async () => {
+    const snapshot = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'legacy content',
+      trigger: 'manual',
+      label: 'recovered milestone',
+    });
+    const oldHistory = join(root, '.textra', 'history');
+    const id = randomUUID();
+    const legacyDir = join(directory, 'user-data', 'history', id);
+    await mkdir(legacyDir, { recursive: true });
+    for (const name of await readdir(oldHistory))
+      await copyFile(join(oldHistory, name), join(legacyDir, name));
+    const originals = await Promise.all(
+      (await readdir(legacyDir)).map(async (name) => ({
+        name,
+        bytes: await readFile(join(legacyDir, name)),
+      })),
+    );
+    // This is a disposable fixture directory under the test workspace.
+    await rm(oldHistory, { recursive: true, maxRetries: 5, retryDelay: 100 });
+    expect((await history.list({ projectId: project.id, path: 'main.tex' })).snapshots).toEqual([]);
+    const candidates = await history.listLegacy(project.id);
+    expect(candidates).toEqual([
+      { id, snapshotCount: 1, latestCreatedAt: snapshot.createdAt, samplePaths: ['main.tex'] },
+    ]);
+    await expect(
+      history.importLegacy({ projectId: project.id, legacyId: '../outside' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    const originalWrite = HistoryStorage.prototype.write;
+    const publication = vi
+      .spyOn(HistoryStorage.prototype, 'write')
+      .mockImplementation(async function (this: HistoryStorage, ...args) {
+        if (args[0].at(-1) === 'index.json') throw new Error('interrupted import');
+        return originalWrite.apply(this, args);
+      });
+    await expect(history.importLegacy({ projectId: project.id, legacyId: id })).rejects.toThrow(
+      'interrupted import',
+    );
+    publication.mockRestore();
+    expect(await history.importLegacy({ projectId: project.id, legacyId: id })).toBe(1);
+    expect(await history.importLegacy({ projectId: project.id, legacyId: id })).toBe(0);
+    expect(
+      (await history.read({ projectId: project.id, path: 'main.tex', snapshotId: snapshot.id }))
+        .content,
+    ).toBe('legacy content');
+    for (const original of originals)
+      expect(await readFile(join(legacyDir, original.name))).toEqual(original.bytes);
   });
 });

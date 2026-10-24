@@ -66,7 +66,8 @@ try {
     timeout: 30000,
   });
   await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('light');
+  await page.getByRole('button', { name: 'Theme', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Light', exact: true }).click();
   await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   const sentinel = randomUUID();
   await page.evaluate((value) => {

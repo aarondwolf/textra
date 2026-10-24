@@ -68,19 +68,32 @@ export class TexlabManager {
   private currentProjectId: string | null = null;
   private syncQueue: Promise<void> = Promise.resolve();
   private queuedSyncs = 0;
+  private generation = 0;
+  private stopping: Promise<void> | null = null;
 
-  private enqueue<T>(action: () => Promise<T>): Promise<T> {
-    if (this.queuedSyncs >= 64)
+  private enqueue<T>(action: (generation: number) => Promise<T>): Promise<T> {
+    if (this.stopping || this.queuedSyncs >= 64)
       return Promise.reject(new TexlabError('TEXLAB_BUSY', 'TexLab synchronization is busy.'));
+    const generation = this.generation;
     this.queuedSyncs++;
-    const run = this.syncQueue.then(action).finally(() => {
-      this.queuedSyncs--;
-    });
+    const run = this.syncQueue
+      .then(() => {
+        this.assertCurrent(generation);
+        return action(generation);
+      })
+      .finally(() => {
+        this.queuedSyncs--;
+      });
     this.syncQueue = run.then(
       () => undefined,
       () => undefined,
     );
     return run;
+  }
+
+  private assertCurrent(generation: number): void {
+    if (generation !== this.generation)
+      throw new TexlabError('TEXLAB_NOT_STARTED', 'TexLab workspace was stopped.');
   }
 
   constructor(
@@ -214,20 +227,23 @@ export class TexlabManager {
 
   async sync(request: TexlabDocumentRequest): Promise<string> {
     this.validateDocument(request);
-    return this.enqueue(() => this.syncDocument(request));
+    return this.enqueue((generation) => this.syncDocument(request, generation));
   }
 
-  private async syncDocument(request: TexlabDocumentRequest): Promise<string> {
+  private async syncDocument(request: TexlabDocumentRequest, generation: number): Promise<string> {
     if (!(await this.enabled()))
       throw new ProjectError('TEXLAB_DISABLED', 'TexLab is disabled in Settings.');
     const absolute = await this.projects.resolvePath(request);
+    this.assertCurrent(generation);
     const root = this.projects.getRoot(request.projectId);
     if (this.currentProjectId !== request.projectId || !this.service.status.running) {
       const installation = await this.resolveInstallation();
+      this.assertCurrent(generation);
       if (!installation.path)
         throw new ProjectError('TOOL_MISSING', 'TexLab is not available for this platform.');
       if (this.currentProjectId !== request.projectId) this.diagnostics.clear();
       await this.service.start({ executable: installation.path, workspaceRoot: root });
+      this.assertCurrent(generation);
       this.currentProjectId = request.projectId;
     }
     await this.service.openDocument({
@@ -245,17 +261,31 @@ export class TexlabManager {
   }
 
   async stop(): Promise<void> {
-    await this.enqueue(async () => {
+    if (this.stopping) return this.stopping;
+    this.generation++;
+    const queued = this.syncQueue;
+    // Teardown has a reserved lane even when all user work slots are occupied.
+    this.stopping = (async () => {
+      await this.service.stop();
+      await queued;
       await this.service.stop();
       this.currentProjectId = null;
       this.diagnostics.clear();
+    })().finally(() => {
+      this.stopping = null;
     });
+    this.syncQueue = this.stopping.then(
+      () => undefined,
+      () => undefined,
+    );
+    return this.stopping;
   }
 
   async close(request: FileRef): Promise<void> {
-    await this.enqueue(async () => {
+    await this.enqueue(async (generation) => {
       // Closing a deleted buffer still needs to release the LSP document.
       const path = await this.projects.resolvePath(request, false, true);
+      this.assertCurrent(generation);
       if (this.currentProjectId !== request.projectId) return;
       this.service.closeDocument(path);
       this.diagnostics.delete(this.diagnosticKey(request));

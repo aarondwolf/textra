@@ -47,3 +47,19 @@ it('debounces rapid preference updates and flushes on preferencesSaved()', async
   expect(setCalls).toBe(1);
   expect(useUI.getState().preferences.sidebarWidth).toBe(280);
 });
+
+it('rejects the close persistence barrier when preferences cannot be written', async () => {
+  vi.resetModules();
+  vi.stubGlobal('window', {
+    textra: {
+      getPreferences: async () => ({ ok: true, value: { ...DEFAULT_PREFERENCES } }),
+      setPreferences: async () => ({ ok: false, error: 'disk full' }),
+    },
+  });
+  const { hydratePreferences, preferencesSaved, useUI } =
+    await import('../../src/renderer/src/state/ui');
+  await hydratePreferences();
+  useUI.getState().updatePreferences({ sidebarWidth: 280 });
+  await expect(preferencesSaved()).rejects.toThrow();
+  expect(useUI.getState().saveState).toBe('error');
+});

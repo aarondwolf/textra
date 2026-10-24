@@ -1,5 +1,25 @@
 # Current state
 
+2026-10-24 Development black-window regression:
+
+- Confirmed pre-React module failure: unified-latex's transitive `is-buffer` was
+  served as raw CommonJS and lacked a browser default export. Production builds
+  and TypeScript did not expose this dev-only failure.
+- Added renderer/shared runtime dependencies introduced by the refactor to the
+  explicit Vite optimizer list; retained noDiscovery and grouped Monaco entries.
+- Dev smoke attaches pageerror diagnostics and waits for initial navigation before
+  reloading to capture static import errors. Updated shell-test cmdk selectors
+  from textbox/button to combobox/option, matching installed declarations/runtime.
+- Normal native dev startup, interactive theme and CSS HMR PASS. Preload reload
+  also PASS in the extended run; main restart remains incomplete due to a Windows
+  old-process profile/debug-port lock race (old CDP connection stays alive).
+- Production build PASS. Broad suite: 726/727 passed, one storage-growth timeout;
+  isolated storage-growth rerun PASS 3/3. Focused parser/startup tests PASS 31/31.
+- Native shell/security/preferences/relaunch test PASS 1/1 (37.9s) after updating
+  the command-palette selectors to the refactored accessible roles.
+- Launch: `npm run dev`. Next gate remains Phase 1 cross-platform verification;
+  this fix does not complete any phase. Changes left uncommitted for review.
+
 2026-10-24 Phase 1 & Phase 2 Architecture & Performance Modernization:
 
 - Runtime Validation (`zod`) across IPC and Services (F-4.1):

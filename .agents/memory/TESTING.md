@@ -1,5 +1,25 @@
 # Test evidence
 
+2026-10-24 Development startup regression:
+
+- Original clean HEAD 7694481 reproduced with a blank renderer. Browser diagnostic
+  reported `is-buffer/index.js` does not provide a default export, before React
+  mounted. Explicit Vite optimization now covers new renderer/shared dependencies.
+- `node tests/dev-smoke.mjs` PASS: native dev window, no uncaught renderer errors,
+  interactive theme, CSS HMR without reload. Isolated disposable profile only.
+- `npm run test:dev` partial: startup/theme/HMR/preload reload PASS; main restart
+  FAIL (old browser remains connected, replacement reports Windows profile lock,
+  disk cache access and debug-port bind conflicts). Temporary probes removed.
+- `npm run build` PASS, with existing chunk-size warning. Native shell test PASS
+  1/1 (37.9s), covering bridge security, theme/sidebar/palette and saved preferences
+  across two launches. Updated cmdk roles to combobox/option after initial stale
+  textbox/button selectors failed; no product accessibility roles were changed.
+- `npm test` outside sandbox: 71 files, 726/727 PASS, one 15s storage-growth timeout
+  during broad run. Isolated storage-growth rerun PASS 3/3 (1.69s); focused bibliography,
+  tex-structure and workspace-startup tests PASS 31/31 (1.85s). No unit/runtime code
+  changed. Sandbox run had filesystem rename/local-network failures and was stopped.
+- No live AI calls, user-project edits or credential changes. No phase gates closed.
+
 2026-10-24 Electron architecture milestone:
 
 - Environment: Windows 10.0.26200, Electron 44.9.3, Node 24.14.0 and npm 11.9.0.

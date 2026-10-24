@@ -62,9 +62,19 @@ try {
   const context = browser.contexts()[0];
   await expect.poll(() => context.pages().length, { timeout: 15000 }).toBeGreaterThan(0);
   const page = context.pages()[0];
+  const rendererErrors = [];
+  page.on('pageerror', (error) => {
+    rendererErrors.push(error.message);
+    console.error(`Renderer startup error: ${error.message}`);
+  });
+  // Reload after installing diagnostics so static module failures are captured,
+  // even when Electron loaded the page before the CDP connection was established.
+  await page.waitForLoadState();
+  await page.reload();
   await expect(page.getByRole('main', { name: 'Document workspace' })).toBeVisible({
     timeout: 30000,
   });
+  expect(rendererErrors, 'Development renderer must load without uncaught errors').toEqual([]);
   await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
   await page.getByRole('button', { name: 'Theme', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Light', exact: true }).click();

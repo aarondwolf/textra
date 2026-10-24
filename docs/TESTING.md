@@ -8,6 +8,15 @@ Run `npm run format:check`, `npm run typecheck`, `npm run lint`, `npm test`,
 development smoke test without concurrent edits because it temporarily changes and
 restores probe files.
 
+The development smoke test reloads after attaching renderer error diagnostics so
+static module failures are reported even if they occurred before CDP connected.
+Run it after renderer dependency changes: production builds convert CommonJS, but
+development uses the explicit `optimizeDeps.include` list in `electron.vite.config.ts`
+with discovery disabled. Keep new renderer/shared runtime dependencies in that list,
+including ESM packages whose transitive dependencies use CommonJS. The 2026-10-24
+parser refactor otherwise served `is-buffer` unconverted, aborting before React mounted
+with a missing default export and leaving a blank native window.
+
 Unit tests cover validation and parsers. Service tests use temporary directories for
 real filesystem operations. Electron Playwright tests launch the built app; distinguish
 mocked provider calls and fixture builds from live AI provider or TeX integrations. The

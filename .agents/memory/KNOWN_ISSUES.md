@@ -1,5 +1,12 @@
 # Known issues
 
+- 2026-10-24 startup troubleshooting: fixed the development black window caused
+  by unoptimized CommonJS transitive parser dependencies. The extended native dev
+  smoke still exposes a separate main-restart race on Windows: electron-vite starts
+  a replacement while the old process holds its profile/debug port, and the old CDP
+  connection never disconnects within 15s. Fresh dev startup, CSS HMR and preload
+  reload work. Investigate process shutdown/restart ownership separately.
+
 - 2026-10-24 architecture follow-up:
   - Confirmed history containment, corrupt-index preservation, restore data loss,
     stale Monaco replacement, overlapping saves, watcher/process lifetime and framing

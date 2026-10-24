@@ -35,6 +35,27 @@ export default defineConfig({
         // useChat pulls in the AI SDK core, which fails to load as raw modules.
         '@ai-sdk/react',
         '@radix-ui/react-dialog',
+        '@radix-ui/react-context-menu',
+        '@radix-ui/react-dropdown-menu',
+        '@radix-ui/react-popover',
+        '@radix-ui/react-toast',
+        '@dnd-kit/core',
+        '@dnd-kit/sortable',
+        '@dnd-kit/utilities',
+        '@tanstack/react-virtual',
+        'cmdk',
+        'diff',
+        'jsonc-parser',
+        'zod',
+        'react-markdown',
+        'remark-gfm',
+        // Discovery is disabled: renderer/shared imports added during refactors must
+        // be listed here, including ESM packages with CommonJS transitive dependencies.
+        // Otherwise the browser rejects raw modules (for example unified's is-buffer).
+        '@retorquere/bibtex-parser',
+        '@unified-latex/unified-latex-util-parse',
+        '@unified-latex/unified-latex-util-to-string',
+        '@unified-latex/unified-latex-util-visit',
         '@phosphor-icons/react',
         // Every Monaco entry point must be pre-bundled together. Contributions imported
         // outside this list load as separate raw modules whose registrations the editor

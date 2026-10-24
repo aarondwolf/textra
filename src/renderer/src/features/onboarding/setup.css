@@ -69,15 +69,16 @@
 }
 .setup-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  align-items: center;
   flex-wrap: wrap;
   margin: 12px 0;
 }
 .setup-actions input[type='color'] {
   display: block;
   width: 76px;
-  height: 42px;
-  padding: 3px;
+  height: 28px;
+  padding: 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--raised);
@@ -94,20 +95,66 @@
   border: 0;
   border-radius: calc(var(--radius-surface) - 3px);
 }
-.setup-dialog button:not(.icon-button) {
+.setup-dialog
+  button:not(.icon-button):not(.settings-nav button):not(.dropdown-menu-item):not(
+    .dropdown-menu-trigger
+  ):not(.dropdown-menu-popup button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  box-sizing: border-box;
   font: inherit;
   font-size: 12px;
+  font-weight: 500;
   color: inherit;
   background: var(--hover);
   border: 1px solid var(--border);
-  padding: 8px 12px;
+  padding: 0 12px;
   border-radius: var(--radius-pill);
   cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
+.setup-dialog
+  button:not(.icon-button):not(.settings-nav button):not(.dropdown-menu-item):not(
+    .dropdown-menu-trigger
+  ):not(.dropdown-menu-popup button):hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.setup-dialog button.primary-button:not(.icon-button) {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: transparent;
+  font-weight: 600;
+}
+.setup-dialog button.primary-button:not(.icon-button):hover:not(:disabled) {
+  background: var(--accent-strong);
+  color: var(--bg);
+  border-color: transparent;
+}
+.setup-dialog button.danger-button:not(.icon-button) {
+  color: var(--alert-error, #efb4a9);
+  border-color: color-mix(in srgb, var(--alert-error, #efb4a9) 40%, var(--border));
+}
+.setup-dialog button.danger-button:not(.icon-button):hover:not(:disabled) {
+  border-color: var(--alert-error, #efb4a9);
+  background: color-mix(in srgb, var(--alert-error, #efb4a9) 15%, var(--hover));
+}
+.setup-dialog .dropdown-menu-container {
+  max-width: 100%;
+}
+.setup-dialog .dropdown-menu-trigger:not(.icon-button),
 .setup-dialog .editor-format-heading-trigger:not(.icon-button) {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   width: 100%;
   height: 26px;
   padding: 0 9px;
@@ -116,26 +163,57 @@
   background: var(--surface);
   color: var(--text);
   font-size: 11px;
+  font-weight: 400;
+  box-sizing: border-box;
 }
+.setup-dialog .dropdown-menu-trigger:not(.icon-button):hover:not(:disabled),
+.setup-dialog .dropdown-menu-trigger:not(.icon-button):focus-visible,
 .setup-dialog .editor-format-heading-trigger:not(.icon-button):hover:not(:disabled),
 .setup-dialog .editor-format-heading-trigger:not(.icon-button):focus-visible {
   background: var(--hover);
   border-color: var(--border);
   color: var(--text);
 }
+.setup-dialog .dropdown-menu-item,
+.setup-dialog .dropdown-menu-popup button,
 .setup-dialog .editor-format-heading-menu button:not(.icon-button) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
+  height: auto;
+  min-height: 24px;
   padding: 5px 8px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text);
   font-size: 11px;
+  font-weight: 400;
   text-align: left;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
+.setup-dialog .dropdown-menu-item:hover:not(:disabled),
+.setup-dialog .dropdown-menu-item:focus-visible,
+.setup-dialog .dropdown-menu-popup button:hover:not(:disabled),
+.setup-dialog .dropdown-menu-popup button:focus-visible,
 .setup-dialog .editor-format-heading-menu button:not(.icon-button):hover,
 .setup-dialog .editor-format-heading-menu button:not(.icon-button):focus-visible {
   background: var(--hover);
+  border-color: transparent;
+  color: var(--text);
+}
+.setup-dialog .dropdown-menu-item.selected {
+  font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+}
+.setup-dialog .dropdown-menu-item.selected:hover:not(:disabled),
+.setup-dialog .dropdown-menu-item.selected:focus-visible {
+  background: var(--hover);
+  border-color: transparent;
 }
 .setup-dialog button:disabled {
   opacity: 0.45;

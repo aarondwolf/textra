@@ -71,27 +71,100 @@
   font-size: 13px;
   font-weight: 600;
 }
-.ai-settings-dialog button {
+.ai-settings-dialog
+  button:not(.icon-button):not(.dropdown-menu-item):not(.dropdown-menu-trigger):not(
+    .dropdown-menu-popup button
+  ) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 11px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--hover);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 .ai-settings-dialog button.icon-button {
+  height: auto;
   padding: 3px;
   border-color: transparent;
   background: transparent;
   flex: none;
 }
-.ai-settings-dialog button:hover:not(:disabled) {
+.ai-settings-dialog
+  button:not(.icon-button):not(.dropdown-menu-item):not(.dropdown-menu-trigger):not(
+    .dropdown-menu-popup button
+  ):hover:not(:disabled) {
   border-color: var(--accent);
+}
+.ai-settings-dialog .dropdown-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ai-settings-dialog .dropdown-menu-trigger:hover:not(:disabled),
+.ai-settings-dialog .dropdown-menu-trigger:focus-visible {
+  background: var(--hover);
+  border-color: var(--border);
+  color: var(--text);
+  outline: none;
+}
+.ai-settings-dialog .dropdown-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.ai-settings-dialog .dropdown-menu-item:hover:not(:disabled),
+.ai-settings-dialog .dropdown-menu-item:focus-visible {
+  background: var(--hover);
+  border-color: transparent;
+  color: var(--text);
+  outline: none;
+}
+.ai-settings-dialog .dropdown-menu-item.selected {
+  font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+}
+.ai-settings-dialog .dropdown-menu-item.selected:hover:not(:disabled),
+.ai-settings-dialog .dropdown-menu-item.selected:focus-visible {
+  background: var(--hover);
+  border-color: transparent;
 }
 .ai-settings-dialog button:disabled {
   opacity: 0.45;

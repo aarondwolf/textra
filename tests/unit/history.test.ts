@@ -404,4 +404,32 @@ describe('flat-file compressed automatic file history', () => {
     expect(remainingIds.has('save-old-early')).toBe(false);
     expect(remainingIds.has('manual-old')).toBe(true);
   });
+
+  it('stores snapshots in userDataDir when provided and no project .textra/history exists', async () => {
+    const customUserData = join(directory, 'custom-user-data');
+    const isolatedHistory = new HistoryService(projects, customUserData);
+
+    const content = 'Test content in userDataDir.\n';
+    const snapshot = await isolatedHistory.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content,
+      trigger: 'save',
+    });
+
+    expect(snapshot).not.toBeNull();
+    // Snapshots must be in customUserData/history/<projectId>
+    const userHistoryDir = join(customUserData, 'history', project.id);
+    const files = await readdir(userHistoryDir);
+    expect(files).toContain('index.json');
+
+    // And read back successfully
+    const readBack = await isolatedHistory.read({
+      projectId: project.id,
+      path: 'main.tex',
+      snapshotId: snapshot!.id,
+    });
+    expect(readBack.content).toBe(content);
+    await isolatedHistory.flush();
+  });
 });

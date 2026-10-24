@@ -546,6 +546,7 @@ export interface TextraAPI {
   }): Promise<Result<CleanAuxiliaryResult>>;
   exportSettings(): Promise<Result<boolean>>;
   importSettings(): Promise<Result<Preferences | null>>;
+  openUserDataFolder(): Promise<Result<void>>;
   openSetupLink(target: SetupLink): Promise<Result<void>>;
   testDistribution(): Promise<Result<{ success: boolean; log: string }>>;
   getLanguageToolStatus(): Promise<Result<LanguageToolStatus>>;

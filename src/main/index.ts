@@ -11,6 +11,7 @@ import {
 } from 'electron';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import {
   lstat,
   mkdtemp,
@@ -74,8 +75,21 @@ if (testUserData) {
 
 let mainWindow: BrowserWindow | null = null;
 const preferences = new PreferencesStore(app.getPath('userData'));
+const aiUserDataDir = join(app.getPath('userData'), 'ai');
+if (!app.isPackaged && !testUserData) {
+  const legacyAiJson = join(app.getAppPath(), '.textra-local', 'ai.json');
+  const targetAiJson = join(aiUserDataDir, 'ai.json');
+  if (existsSync(legacyAiJson) && !existsSync(targetAiJson)) {
+    try {
+      mkdirSync(aiUserDataDir, { recursive: true });
+      copyFileSync(legacyAiJson, targetAiJson);
+    } catch {
+      // non-blocking migration
+    }
+  }
+}
 const ai = new AIService(
-  join(testUserData ?? app.getAppPath(), '.textra-local'),
+  aiUserDataDir,
   {
     available: () =>
       safeStorage.isEncryptionAvailable() &&
@@ -129,10 +143,35 @@ const aiChats = new AIChatStore(join(app.getPath('userData'), 'ai-chats'), (id) 
   projects.getRoot(id),
 );
 const externalEditor = new ExternalEditorService(projects);
-const history = new HistoryService(projects);
+const history = new HistoryService(projects, app.getPath('userData'));
 const builds = new BuildService((id) => projects.getRoot(id), 120_000, app.getPath('userData'));
 const config = new ConfigService(app.getPath('userData'), (id) => projects.getRoot(id));
-const language = new LanguageService(projects, () => preferences.get());
+const language = new LanguageService(
+  projects,
+  () => preferences.get(),
+  async (projectId, path) => {
+    const root = projects.getRoot(projectId);
+    const relDoc = path.replace(/\.tex$/i, '');
+    let buildDir = join(root, 'build', 'textra', ...relDoc.split(/[\\/]/));
+    try {
+      const rawConfig = await config.getProjectConfig(projectId);
+      const settings = validateRecipeSettings(rawConfig);
+      const recipeName =
+        rawConfig?.recipes?.[path] || settings['latex-workshop.latex.recipes']?.[0]?.name;
+      if (recipeName) {
+        const plan = await planRecipe(root, path, recipeName, settings).catch(() => null);
+        if (plan?.auxiliary) {
+          buildDir = plan.auxiliary;
+        } else if (plan?.output) {
+          buildDir = plan.output;
+        }
+      }
+    } catch {
+      /* Fall back to default build folder */
+    }
+    return buildDir;
+  },
+);
 const texlab = new TexlabManager(
   projects,
   app.isPackaged ? process.resourcesPath : join(process.cwd(), 'resources'),
@@ -328,42 +367,41 @@ function createWindow(): void {
   window.once('ready-to-show', () => window.show());
   window.on('close', (event) => {
     if (forceClose) return;
-    if (dirty || builds.getState().running) {
-      const answer = dialog.showMessageBoxSync(window, {
-        type: 'warning',
-        title: 'Close TeXtra?',
-        message: dirty
-          ? 'Discard unsaved edits and close TeXtra?'
-          : 'Stop the running build and close TeXtra?',
-        detail: 'Changes that have not been saved will be lost. Any running build will be stopped.',
-        buttons: ['Keep working', 'Close'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      });
-      if (answer !== 1) {
-        event.preventDefault();
-        return;
-      }
-    }
     event.preventDefault();
-    forceClose = true;
-    void Promise.all([
-      builds.cancel(),
-      healthBuild?.cancel(),
-      projects.flush(),
-      config.flush(),
-      aiChats.flush(),
-      history.flush(),
-    ])
-      .then(() => {
+    void (async () => {
+      if (dirty || builds.getState().running) {
+        const { response } = await dialog.showMessageBox(window, {
+          type: 'warning',
+          title: 'Close TeXtra?',
+          message: dirty
+            ? 'Discard unsaved edits and close TeXtra?'
+            : 'Stop the running build and close TeXtra?',
+          detail:
+            'Changes that have not been saved will be lost. Any running build will be stopped.',
+          buttons: ['Keep working', 'Close'],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        });
+        if (response !== 1) return;
+      }
+      forceClose = true;
+      try {
+        await Promise.all([
+          builds.cancel(),
+          healthBuild?.cancel(),
+          projects.flush(),
+          config.flush(),
+          aiChats.flush(),
+          history.flush(),
+        ]);
         dirty = false;
         if (!window.isDestroyed()) window.close();
-      })
-      .catch(() => {
+      } catch {
         forceClose = false;
         log('error', 'close-cleanup-failed');
-      });
+      }
+    })();
   });
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
@@ -999,6 +1037,9 @@ void app.whenReady().then(() => {
     setToolPaths(saved.toolPaths);
     syncTitleBarOverlay(saved);
     return saved;
+  });
+  handle('textra:appdata:open', 0, async () => {
+    await shell.openPath(app.getPath('userData'));
   });
   handle('textra:setup:link', 1, async (target) => {
     const links = {

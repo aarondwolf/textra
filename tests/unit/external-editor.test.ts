@@ -60,4 +60,24 @@ describe('external editor safety service', () => {
       'Changed by another editor.\n',
     );
   });
+
+  it('avoids re-reading full file content when stat mtime and size are unchanged during polling', async () => {
+    const ref = { projectId: project.id, path: 'chapter.tex' };
+    const projects = (service as unknown as { projects: ProjectService }).projects;
+    let readCount = 0;
+    const originalReadFile = projects.readFile.bind(projects);
+    projects.readFile = async (targetRef) => {
+      readCount++;
+      return originalReadFile(targetRef);
+    };
+
+    await service.watch({ ...ref, pollingOnly: true, quietPeriodMs: 2000 });
+    expect(readCount).toBe(1);
+
+    // Wait for at least one polling cycle (POLL_INTERVAL_MS = 750ms)
+    await new Promise((resolve) => setTimeout(resolve, 900));
+
+    // readCount must still be 1 because stat mtime and size did not change
+    expect(readCount).toBe(1);
+  });
 });

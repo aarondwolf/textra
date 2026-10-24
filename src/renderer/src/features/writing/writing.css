@@ -131,6 +131,93 @@
   background: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
+.writing-outline-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 1px 0;
+  border-radius: var(--radius-pill);
+}
+
+.writing-outline-row.is-dragging {
+  opacity: 0.35;
+}
+
+.writing-outline-row.drop-before::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 5;
+}
+
+.writing-outline-row.drop-after::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 5;
+}
+
+.writing-outline-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  background: var(--surface);
+  padding: 1px 2px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.writing-outline-row:hover .writing-outline-actions,
+.writing-outline-row:focus-within .writing-outline-actions {
+  display: inline-flex;
+}
+
+.writing-outline-row:hover .writing-outline-line,
+.writing-outline-row:focus-within .writing-outline-line {
+  opacity: 0;
+}
+
+.writing-outline-action-button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.writing-outline-action-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.writing-outline-action-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 .writing-outline-item,
 .writing-todo-item {
   display: flex;

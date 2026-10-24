@@ -28,7 +28,6 @@ import {
   BracketsCurly,
   Check,
   ChevronRight,
-  Code,
   Copy,
   Columns2,
   Broom,
@@ -50,6 +49,7 @@ import {
   Pencil,
   Save,
   TextraLogo,
+  VSCodeIcon,
   X,
 } from './icons';
 import { FileIcon } from './features/files/FileIcon';
@@ -96,7 +96,7 @@ import type { SectionId } from './features/onboarding/SetupDialog';
 import { useProjectAnalysis } from './features/writing/useProjectAnalysis';
 import { IconButton } from './components/Button';
 import { PaneHeader } from './components/Layout';
-import { extractPromptContext } from '../../shared/writing-analysis';
+import { extractPromptContext, moveSectionInLatex } from '../../shared/writing-analysis';
 
 const loadSourceEditor = () =>
   import('./features/editor/SourceEditor').then((module) => ({ default: module.SourceEditor }));
@@ -620,18 +620,16 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     path: string;
     index: number;
   } | null>(null);
-  const [tabOverflowOpen, setTabOverflowOpen] = useState(false);
 
   useEffect(() => {
-    if (!tabContextMenu && !tabOverflowOpen) return;
+    if (!tabContextMenu) return;
     const dismiss = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('.tab-context-menu, .tab-overflow-container')) return;
+      if ((e.target as HTMLElement).closest('.tab-context-menu')) return;
       setTabContextMenu(null);
-      setTabOverflowOpen(false);
     };
     window.addEventListener('mousedown', dismiss);
     return () => window.removeEventListener('mousedown', dismiss);
-  }, [tabContextMenu, tabOverflowOpen]);
+  }, [tabContextMenu]);
 
   const closeOtherTabs = (keepPath: string) => {
     const toClose = documents.filter((d) => d.path !== keepPath);
@@ -695,6 +693,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     externalContent: string | null;
   } | null>(null);
   const [compareWhenStable, setCompareWhenStable] = useState(false);
+  useEffect(() => {
+    const isDiffActive = Boolean(
+      (comparison && comparison.path === activePath) ||
+      (historyDiff && historyDiff.snapshot.path === activePath),
+    );
+    if (isDiffActive && preferences.previewVisible) {
+      updatePreferences({ previewVisible: false });
+    }
+  }, [comparison, historyDiff, activePath, preferences.previewVisible, updatePreferences]);
   const watchedDocumentRefs = useMemo(
     () => documents.map(({ projectId, path }) => ({ projectId, path })),
     // Editing changes document objects but must not tear down and recreate their filesystem watches.
@@ -831,15 +838,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       }
       return;
     }
-    if (preferences.previewTabs && previewPath && previewPath !== path) {
-      const previous = documents.find((document) => document.path === previewPath);
-      if (previous && !dirty(previous)) closeDocument(previous.path);
-    }
+    const replaceCandidate =
+      preferences.previewTabs && previewPath && previewPath !== path ? previewPath : null;
+    const previous = replaceCandidate
+      ? documents.find((document) => document.path === replaceCandidate)
+      : null;
+    const shouldReplace = previous && !dirty(previous);
     setPreviewPath(preferences.previewTabs ? path : null);
     if (/\.md(?:own)?$/i.test(path)) {
       setPanel('markdown');
     }
-    void openDocument(path);
+    void openDocument(path, undefined, {
+      replacePath: shouldReplace ? previous.path : undefined,
+    });
   }
   useEffect(() => {
     if (!previewPath) return;
@@ -1158,39 +1169,40 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const [logCopied, setLogCopied] = useState(false);
   const [tabsHost, setTabsHost] = useState<HTMLDivElement | null>(null);
   const [tabMode, setTabMode] = useState<'full' | 'icons' | 'menu'>('full');
-  const [tabMenuOpen, setTabMenuOpen] = useState(false);
   const [pdfMenuSlot, setPdfMenuSlot] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!tabsHost) return;
-    // Conservative thresholds: switch to icons, then to a menu, a little before things collide.
+    // Hysteresis thresholds: buffer state transitions so rapid oscillation between icons and menu is prevented.
     const measure = () => {
       const width = tabsHost.clientWidth;
-      const fullThreshold = hasMarkdown ? 310 : 250;
-      setTabMode(width >= fullThreshold ? 'full' : width >= 120 ? 'icons' : 'menu');
+      const fullCollapse = hasMarkdown ? 310 : 250;
+      const fullExpand = fullCollapse + 30;
+      const iconsCollapse = hasMarkdown ? 155 : 125;
+      const iconsExpand = iconsCollapse + 30;
+
+      setTabMode((current) => {
+        if (current === 'full') {
+          if (width < fullCollapse) {
+            return width < iconsCollapse ? 'menu' : 'icons';
+          }
+          return 'full';
+        }
+        if (current === 'icons') {
+          if (width >= fullExpand) return 'full';
+          if (width < iconsCollapse) return 'menu';
+          return 'icons';
+        }
+        // current === 'menu'
+        if (width >= fullExpand) return 'full';
+        if (width >= iconsExpand) return 'icons';
+        return 'menu';
+      });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(tabsHost);
     return () => observer.disconnect();
   }, [tabsHost, hasMarkdown]);
-  useEffect(() => {
-    if (tabMode !== 'menu') setTabMenuOpen(false);
-  }, [tabMode]);
-  useEffect(() => {
-    if (!tabMenuOpen) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!tabsHost?.contains(event.target as Node)) setTabMenuOpen(false);
-    };
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setTabMenuOpen(false);
-    };
-    document.addEventListener('mousedown', dismiss);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', dismiss);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [tabMenuOpen, tabsHost]);
   useEffect(() => {
     if (!headerNode) return;
     const measure = () => setHeaderCompact(headerNode.clientWidth < 560);
@@ -1556,6 +1568,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       const result = await window.textra.readFile({ projectId: project.id, path });
       const current = useWorkspace.getState().documents.find((document) => document.path === path);
       if (!current) return;
+      if (preferences.previewVisible) {
+        updatePreferences({ previewVisible: false });
+      }
       if (!result.ok) {
         setComparison({ path, localContent: current.content, externalContent: null });
         selectDocument(path);
@@ -1564,7 +1579,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       setComparison({ path, localContent: current.content, externalContent: result.value.content });
       selectDocument(path);
     },
-    [conflictPath, project],
+    [conflictPath, project, preferences.previewVisible, updatePreferences],
   );
   async function preserveConflictCopy(compare: boolean): Promise<void> {
     if (!conflictedDocument) return;
@@ -1933,6 +1948,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       snapshotId: snapshot.id,
     });
     if (res.ok) {
+      if (preferences.previewVisible) {
+        updatePreferences({ previewVisible: false });
+      }
+      if (snapshot.path !== activePath) {
+        selectDocument(snapshot.path);
+      }
       setHistoryDiff({
         snapshot,
         historicalContent: res.value.content,
@@ -2229,6 +2250,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         .toLowerCase();
       return !tools.some((tool) => tool.name === command && tool.path);
     });
+  const vscodeAvailable = tools.some((tool) => tool.name === 'vscode' && Boolean(tool.path));
 
   return (
     <>
@@ -2442,6 +2464,24 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 }}
                 onFormatDocument={() => void run(formatActive)}
                 formatAvailable={tools.some((tool) => tool.name === 'latexindent' && !!tool.path)}
+                onMoveSection={(fromIndex, toIndex, position) => {
+                  if (!active || !documentAnalysis?.outline) return;
+                  const newContent = moveSectionInLatex(
+                    active.content,
+                    fromIndex,
+                    toIndex,
+                    position,
+                    documentAnalysis.outline,
+                  );
+                  if (newContent !== active.content) {
+                    editDocument(active.path, newContent);
+                    window.dispatchEvent(
+                      new CustomEvent('textra:apply-document-content', {
+                        detail: { path: active.path, text: newContent },
+                      }),
+                    );
+                  }
+                }}
               />
             ) : sidebarView === 'snippets' || sidebarView === 'equations' ? (
               <>
@@ -2609,9 +2649,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                         <IconButton
                           small={true}
                           className="icon-button small"
-                          label="Open folder in VS Code"
-                          title="Open folder in VS Code"
-                          disabled={busy}
+                          label={
+                            vscodeAvailable
+                              ? 'Open folder in VS Code'
+                              : 'Visual Studio Code is not installed'
+                          }
+                          title={
+                            vscodeAvailable
+                              ? 'Open folder in VS Code'
+                              : 'Visual Studio Code is not installed'
+                          }
+                          disabled={busy || !vscodeAvailable}
                           onClick={() =>
                             void run(async () => {
                               unwrap(
@@ -2620,7 +2668,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             })
                           }
                         >
-                          <Code size={15} />
+                          <VSCodeIcon size={14} />
                         </IconButton>
                       </>
                     )}
@@ -2899,40 +2947,42 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   )}
                 </div>
                 {documents.length > 2 && (
-                  <div className="tab-overflow-container">
-                    <IconButton
-                      small={true}
-                      className="icon-button small"
-                      label="Open tabs list"
-                      title="Open tabs list"
-                      onClick={() => setTabOverflowOpen(!tabOverflowOpen)}
-                    >
-                      <ChevronDown size={13} />
-                    </IconButton>
-                    {tabOverflowOpen && (
-                      <div className="tab-overflow-menu" role="menu">
-                        <div className="tab-overflow-header">OPEN EDITORS ({documents.length})</div>
-                        {documents.map((doc) => (
-                          <button
-                            key={doc.path}
-                            className={`tab-overflow-item ${doc.path === activePath ? 'active' : ''}`}
-                            role="menuitem"
-                            onClick={() => {
-                              setTabOverflowOpen(false);
-                              if (/\.md(?:own)?$/i.test(doc.path)) {
-                                setPanel('markdown');
-                              }
-                              selectDocument(doc.path);
-                            }}
-                          >
-                            <FileText size={13} />
-                            <span>{doc.path.split('/').at(-1)}</span>
-                            {dirty(doc) && <span className="dirty-dot" />}
-                          </button>
-                        ))}
-                      </div>
+                  <DropdownMenu
+                    className="tab-overflow-dropdown"
+                    ariaLabel="Open tabs list"
+                    title="Open tabs list"
+                    align="right"
+                    fullWidth={false}
+                    value={activePath}
+                    customTrigger={(open) => (
+                      <IconButton
+                        small={true}
+                        className="icon-button small"
+                        label="Open tabs list"
+                        title="Open tabs list"
+                        aria-expanded={open}
+                      >
+                        <ChevronDown size={13} />
+                      </IconButton>
                     )}
-                  </div>
+                    items={[
+                      {
+                        group: `OPEN EDITORS (${documents.length})`,
+                        items: documents.map((doc) => ({
+                          value: doc.path,
+                          label: doc.path.split('/').at(-1) || '',
+                          icon: <FileText size={13} />,
+                          description: dirty(doc) ? <span className="dirty-dot" /> : undefined,
+                          onClick: () => {
+                            if (/\.md(?:own)?$/i.test(doc.path)) {
+                              setPanel('markdown');
+                            }
+                            selectDocument(doc.path);
+                          },
+                        })),
+                      },
+                    ]}
+                  />
                 )}
                 {active && (
                   <div className="editor-tab-actions">
@@ -3381,64 +3431,63 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 </div>
                 <div className="preview-tabs-host" ref={setTabsHost}>
                   {tabMode === 'menu' ? (
-                    <>
-                      <IconButton
-                        small={true}
-                        className="icon-button small"
-                        label="Preview menu"
-                        aria-haspopup="menu"
-                        aria-expanded={tabMenuOpen}
-                        title="Views and PDF controls"
-                        onClick={() => setTabMenuOpen((open) => !open)}
-                      >
-                        <Ellipsis size={17} />
-                      </IconButton>
-                      {tabMenuOpen && (
-                        <div className="preview-tabs-menu" role="menu" aria-label="Preview views">
-                          {(
-                            [
-                              'preview',
-                              'problems',
-                              'output',
-                              ...(hasMarkdown ? (['markdown'] as const) : []),
-                            ] as const
-                          ).map((name) => (
-                            <button
-                              key={name}
-                              role="menuitemradio"
-                              aria-checked={panel === name}
-                              onClick={() => {
-                                setPanel(name);
-                                setTabMenuOpen(false);
-                              }}
-                            >
-                              {name === 'preview' ? (
-                                <FilePdf size={15} />
-                              ) : name === 'problems' ? (
-                                <Warning size={15} />
-                              ) : name === 'output' ? (
-                                <Scroll size={15} />
-                              ) : (
-                                <MarkdownLogo size={15} />
-                              )}
-                              {name === 'preview'
-                                ? 'Preview'
-                                : name === 'problems'
-                                  ? 'Problems'
-                                  : name === 'output'
-                                    ? 'Output'
-                                    : 'Markdown'}
-                              {name === 'problems' && !!problemDiagnostics.length && (
-                                <span className="count">{problemDiagnostics.length}</span>
-                              )}
-                            </button>
-                          ))}
-                          {panel === 'preview' && (
-                            <div className="preview-menu-pdf" ref={setPdfMenuSlot} />
-                          )}
-                        </div>
+                    <DropdownMenu
+                      className="preview-tabs-dropdown"
+                      ariaLabel="Preview views"
+                      align="right"
+                      fullWidth={false}
+                      value={panel}
+                      customTrigger={(open) => (
+                        <IconButton
+                          small={true}
+                          className="icon-button small"
+                          label="Preview menu"
+                          aria-haspopup="menu"
+                          aria-expanded={open}
+                          title="Views and PDF controls"
+                        >
+                          <Ellipsis size={17} />
+                        </IconButton>
                       )}
-                    </>
+                      footer={
+                        panel === 'preview' ? (
+                          <div className="preview-menu-pdf" ref={setPdfMenuSlot} />
+                        ) : undefined
+                      }
+                      items={(
+                        [
+                          'preview',
+                          'problems',
+                          'output',
+                          ...(hasMarkdown ? (['markdown'] as const) : []),
+                        ] as const
+                      ).map((name) => ({
+                        value: name,
+                        label:
+                          name === 'preview'
+                            ? 'Preview'
+                            : name === 'problems'
+                              ? 'Problems'
+                              : name === 'output'
+                                ? 'Output'
+                                : 'Markdown',
+                        icon:
+                          name === 'preview' ? (
+                            <FilePdf size={15} />
+                          ) : name === 'problems' ? (
+                            <Warning size={15} />
+                          ) : name === 'output' ? (
+                            <Scroll size={15} />
+                          ) : (
+                            <MarkdownLogo size={15} />
+                          ),
+                        description:
+                          name === 'problems' && !!problemDiagnostics.length ? (
+                            <span className="count">{problemDiagnostics.length}</span>
+                          ) : undefined,
+                        onClick: () => setPanel(name),
+                      }))}
+                    />
                   ) : (
                     <div
                       className="preview-tabs"
@@ -3840,7 +3889,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           </button>
           <button
             role="menuitem"
-            disabled={busy}
+            disabled={busy || !vscodeAvailable}
+            title={vscodeAvailable ? undefined : 'Visual Studio Code is not installed'}
             onClick={() => {
               const path = fileMenu.path;
               setFileMenu(null);

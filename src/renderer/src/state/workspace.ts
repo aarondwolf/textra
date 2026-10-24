@@ -168,7 +168,12 @@ export async function setProject(
 export async function openDocument(
   path: string,
   location?: SourceLocation,
-  options: { restoring?: boolean; background?: boolean; quiet?: boolean } = {},
+  options: {
+    restoring?: boolean;
+    background?: boolean;
+    quiet?: boolean;
+    replacePath?: string;
+  } = {},
 ): Promise<void> {
   if (!options.restoring) cancelWorkspaceRestoration();
   const restoration = restorationGeneration;
@@ -176,8 +181,17 @@ export async function openDocument(
   const { project, documents } = useWorkspace.getState();
   if (!project) return;
   if (documents.some((document) => document.path === path)) {
-    if (!options.background)
-      useWorkspace.setState({ activePath: path, navigation: location ?? null });
+    if (!options.background) {
+      const nextDocs =
+        options.replacePath && options.replacePath !== path
+          ? documents.filter((doc) => doc.path !== options.replacePath || dirty(doc))
+          : documents;
+      useWorkspace.setState({
+        documents: nextDocs,
+        activePath: path,
+        navigation: location ?? null,
+      });
+    }
     return;
   }
   if (documents.length >= 50) {
@@ -201,18 +215,18 @@ export async function openDocument(
       const exists = state.documents.some((document) => document.path === path);
       if (!exists && state.documents.length >= 50)
         return { error: 'Close a tab before opening more than 50 files.' };
+      const newDoc: OpenDocument = {
+        ...result.value,
+        savedContent: result.value.content,
+        conflict: false,
+        externalState: null,
+      };
+      let nextDocs = exists ? state.documents : [...state.documents, newDoc];
+      if (options.replacePath && options.replacePath !== path) {
+        nextDocs = nextDocs.filter((doc) => doc.path !== options.replacePath || dirty(doc));
+      }
       return {
-        documents: exists
-          ? state.documents
-          : [
-              ...state.documents,
-              {
-                ...result.value,
-                savedContent: result.value.content,
-                conflict: false,
-                externalState: null,
-              },
-            ],
+        documents: nextDocs,
         ...(!options.background &&
         (selection === selectionGeneration ||
           !state.documents.some((document) => document.path === state.activePath))

@@ -397,6 +397,7 @@ export default function ProviderEditor({
                       ...catalog.map((model) => ({
                         value: model.id,
                         label: model.label,
+                        description: model.label !== model.id ? model.id : undefined,
                       })),
                     ]}
                   />

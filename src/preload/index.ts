@@ -125,6 +125,7 @@ const api: TextraAPI = {
   cleanAuxiliaryFiles: (request) => ipcRenderer.invoke('textra:build:clean-aux', request),
   exportSettings: () => ipcRenderer.invoke('textra:settings:export'),
   importSettings: () => ipcRenderer.invoke('textra:settings:import'),
+  openUserDataFolder: () => ipcRenderer.invoke('textra:appdata:open'),
   openSetupLink: (target) => ipcRenderer.invoke('textra:setup:link', target),
   testDistribution: () => ipcRenderer.invoke('textra:setup:test'),
   getLanguageToolStatus: () => ipcRenderer.invoke('textra:language:status'),

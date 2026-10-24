@@ -19,13 +19,33 @@ interface UIState {
 
 let pending: Preferences | null = null;
 let current: Promise<void> | null = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const SAVE_DEBOUNCE_MS = 250;
 
 /** Resolves once every queued preference change has been written (or has failed). */
 export function preferencesSaved(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    void savePreferences();
+  }
   return current ?? Promise.resolve();
 }
 
+function scheduleSavePreferences(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void savePreferences();
+  }, SAVE_DEBOUNCE_MS);
+}
+
 function savePreferences(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
   current ??= persistPending().finally(() => {
     current = null;
   });
@@ -49,6 +69,12 @@ async function persistPending(): Promise<void> {
   useUI.setState({ saveState: failed ? 'error' : 'saved' });
 }
 
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('beforeunload', () => {
+    void preferencesSaved();
+  });
+}
+
 export const useUI = create<UIState>((set, get) => ({
   preferences: { ...DEFAULT_PREFERENCES },
   hydrated: false,
@@ -62,7 +88,7 @@ export const useUI = create<UIState>((set, get) => ({
     const preferences = { ...get().preferences, ...patch };
     set({ preferences, saveState: 'saving' });
     pending = preferences;
-    void savePreferences();
+    scheduleSavePreferences();
   },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setPanel: (panel) => set({ panel }),

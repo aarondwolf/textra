@@ -177,6 +177,14 @@ function CommandPalette() {
       run: () => window.dispatchEvent(new Event('textra:open-settings')),
     },
     {
+      label: 'Open application data folder (AppData)',
+      shortcut: '',
+      icon: FolderOpen,
+      run: () => {
+        void window.textra.openUserDataFolder();
+      },
+    },
+    {
       label: 'View file history',
       shortcut: '',
       icon: History,
@@ -665,8 +673,9 @@ export function App() {
         <div className="window-titlebar-actions">
           <button
             type="button"
-            className="window-titlebar-action"
+            className={`window-titlebar-action ${preferences.sidebarVisible ? 'active' : ''}`}
             aria-label="Toggle sidebar"
+            aria-pressed={preferences.sidebarVisible}
             title={
               preferences.sidebarVisible ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'
             }
@@ -680,8 +689,9 @@ export function App() {
           </button>
           <button
             type="button"
-            className="window-titlebar-action"
+            className={`window-titlebar-action ${preferences.previewVisible ? 'active' : ''}`}
             aria-label="Toggle preview"
+            aria-pressed={preferences.previewVisible}
             title={
               preferences.previewVisible ? 'Collapse preview (Ctrl+J)' : 'Expand preview (Ctrl+J)'
             }

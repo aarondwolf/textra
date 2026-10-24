@@ -1,5 +1,188 @@
 # Current state
 
+2026-10-23 Code Quality Audit Priority 1 & 2 Optimizations & Bug Fixes:
+
+- Hot-Loop File I/O Short-Circuit in ExternalEditorService:
+  - In [src/main/services/external-editor.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/external-editor.ts), updated `signature(ref: FileRef, cached?: Signature | null)`.
+  - Performs `stat(target)` first: if `cached` signature exists and `info.size === cached.size && info.mtimeMs === cached.mtimeMs`, returns `cached` immediately without reading the file.
+  - Eliminates the previous 750ms polling loop spike that performed full-file disk reads, UTF-8 decodes, and SHA-256 hashes on every watched file even when idle.
+  - Added unit test in [tests/unit/external-editor.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/external-editor.test.ts) verifying `projects.readFile` is called on watch initialization and not re-invoked on subsequent polling ticks when file metadata is unchanged.
+- Preference Persistence Debounce in UI State:
+  - In [src/renderer/src/state/ui.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/state/ui.ts), debounced `savePreferences()` by 250ms (`SAVE_DEBOUNCE_MS`) when `updatePreferences()` is invoked.
+  - Dragging split pane dividers (sidebar, assistant, preview) now mutates in-memory state smoothly without firing continuous 60–240Hz IPC atomic writes and disk `fsync()` calls.
+  - `preferencesSaved()` cancels the debounce timer and flushes any pending preferences immediately before dialog closures, and a `beforeunload` listener flushes pending preferences on window exit.
+  - Added unit test in [tests/unit/ui-store.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/ui-store.test.ts) verifying rapid updates are coalesced into a single persist call and flushed by `preferencesSaved()`.
+- Non-Blocking Window Close Dialog:
+  - In [src/main/index.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/index.ts), replaced blocking `dialog.showMessageBoxSync(window, ...)` with asynchronous `await dialog.showMessageBox(window, ...)`.
+  - Prevents freezing the entire Electron main process event loop, IPC routing, file watchers, and child processes while waiting for user confirmation on dirty workspace close.
+- Reduced Buffer Allocation in ConfigService:
+  - In [src/main/services/settings.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/settings.ts), changed `Buffer.alloc(MAX_SETTINGS_BYTES + 1)` (1 MiB allocation) to `Buffer.alloc(info.size + 1)` in `ConfigService.read()`, avoiding large zeroed buffer allocations on every settings read.
+- Local Completion LaTeX Parsing Deduplication:
+  - In [src/renderer/src/features/editor/SourceEditor.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/editor/SourceEditor.tsx), restructured `localCompletion` so it evaluates `isCitation` first.
+  - Only scans for citations when `isCitation` is true, and only scans for labels when `isCitation` is false, eliminating redundant double-parses (`analyzeLatexDocument`) of every open document on every keystroke completion trigger.
+- Accessible Custom Trigger in DropdownMenu:
+  - In [src/renderer/src/components/DropdownMenu.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/DropdownMenu.tsx), added `role="button"`, `tabIndex={disabled || items.length === 0 ? -1 : 0}`, `aria-haspopup="menu"`, `aria-expanded={open}`, `aria-label={ariaLabel}`, and Enter/Space keyboard activation to custom trigger wrappers.
+- LaTeX-Aware Status Bar Word Count:
+  - In [src/renderer/src/features/editor/SourceEditor.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/editor/SourceEditor.tsx), updated status bar word count for `.tex` files to use `analyzeLatexDocument(doc.content).counts.words`, aligning with the Writing panel and ignoring preamble macros, comments, and commands.
+- Verification:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm run format:check` passed (all files match Prettier style).
+  - `npm test` passed (56/56 test files, 608/608 tests).
+  - `npm run build` passed (production build succeeded in 8.35s).
+
+2026-10-23 AI Provider Default Model Dropdown Styling & Editor File Switching Latency Resolution:
+
+- AI Provider Connection Default Model Dropdown:
+  - Resolved CSS specificity conflict in [ai-settings.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/ai-settings.css): Updated `.ai-settings-dialog button` to exclude `.dropdown-menu-item`, `.dropdown-menu-trigger`, and `.dropdown-menu-popup button`.
+  - Added explicit styles for `.ai-settings-dialog .dropdown-menu-trigger` and `.ai-settings-dialog .dropdown-menu-item`: items are transparent by default (even when selected), highlighting only on `:hover` and `:focus-visible`, with text left-aligned.
+  - In [styles.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/styles.css), set `align-self: flex-start` on `.dropdown-menu-container` and `align-self: stretch` on `.dropdown-menu-container.full-width` so non-full-width dropdowns inside flex column containers (such as `.field-label`) do not stretch full width, but size to the width of the widest item via the sizer.
+  - In [AIProviderEditor.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/AIProviderEditor.tsx), surfaced `description: model.label !== model.id ? model.id : undefined` in the catalog options matching [ModelPicker.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/ModelPicker.tsx).
+- Diagnosed & Fixed Editor File Switching Latency (~500ms -> Instantaneous):
+  - Root Cause Diagnosis:
+    1. In [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx), `openExplorerFile` was calling `closeDocument(previous.path)` synchronously before `openDocument(path)` resolved.
+    2. When a preview tab was the sole open tab, `closeDocument` immediately cleared `documents` (`[]`) and set `activePath: null`.
+    3. As a result, `active` in `Workspace` evaluated to `undefined`, causing the Welcome screen to flash and `<SourceEditor>` to unmount.
+    4. Unmounting `<SourceEditor>` invoked its cleanup effect, disposing the entire Monaco editor instance, all models, and view states.
+    5. Once `window.textra.readFile` completed across IPC, `<SourceEditor>` remounted and re-created the entire Monaco editor from scratch, taking 300–500ms.
+    6. Additionally, `projects.snapshot` in [src/main/services/projects.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/projects.ts) allocated a 5.24MB (`MAX_TEXT_BYTES + 1`) zeroed buffer on every single file read.
+  - Fix Implementation:
+    1. In [src/renderer/src/state/workspace.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/state/workspace.ts), extended `openDocument` with `replacePath?: string`. Replaces the candidate document atomically in the same single state update where the new document is added and activated.
+    2. In [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx), `openExplorerFile` no longer closes the previous document in advance. Instead, it passes `replacePath: shouldReplace ? previous.path : undefined` directly to `openDocument`.
+    3. The previous document remains mounted in `<SourceEditor>` during the read, preventing any unmount or Monaco teardown. Once the new file is read, Monaco simply swaps its model (`instance.setModel`) in < 1ms.
+    4. In [src/main/services/projects.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/projects.ts), optimized `snapshot` buffer allocation to `Math.min(Math.max(info.size + 1024, 4096), MAX_TEXT_BYTES + 1)`, avoiding multi-megabyte allocations for small files.
+    5. Added 2 unit tests in [tests/unit/workspace-state.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/workspace-state.test.ts) testing atomic preview replacement and dirty document preservation.
+- Verification:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm run format:check` passed (all files match Prettier style).
+  - `npm test` passed (56/56 suites, 606/606 tests).
+  - `npm run build` passed (production build succeeded in 8.55s).
+
+- Official VS Code Logo:
+  - In [icons.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/icons.tsx), upgraded `VSCodeIcon` to the official Microsoft Visual Studio Code vector graphic, including accurate multi-layered ribbon geometry and authentic brand colors (`#0065A9`, `#007ACC`, `#1F9CF0`), drop shadows, and overlay gradient.
+  - Dynamically scoped mask, filter, and gradient IDs using React's `useId()` to ensure zero ID collisions when multiple icons render simultaneously.
+  - Retained clean greyed-out visual (`filter: grayscale(1); opacity: 0.5`) in [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx) when VS Code is not installed on the host system.
+- DropdownMenu Hover Highlight & Width Sizing:
+  - Solved CSS specificity conflict in [setup.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/setup.css): Excluded `.dropdown-menu-item`, `.dropdown-menu-trigger`, and `.dropdown-menu-popup button` from `.setup-dialog button` default styling.
+  - Ensured menu items in [DropdownMenu.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/DropdownMenu.tsx) and [styles.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/styles.css) are transparent by default (even when selected), highlighting only on `:hover` and `:focus-visible`.
+  - Added intrinsic hidden sizer in [DropdownMenu.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/DropdownMenu.tsx) (`.dropdown-menu-sizer`) measuring all item labels, descriptions, and icon/caret spacing so the dropdown trigger and popup menu automatically size to the exact width of the widest item instead of stretching full-width.
+  - Set default `fullWidth = false` on `DropdownMenuProps`.
+- AI Models Dropdown Single-Line Display:
+  - Updated [ModelPicker.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/ModelPicker.tsx) and [model-picker.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/model-picker.css):
+    - Removed API endpoint URL from the display and title tooltip.
+    - Laid out model name and provider on a single horizontal line (`flex-direction: row; align-items: baseline; gap: 6px;`) with a standard button height of 28px.
+    - Preserved text formatting differences: primary font weight/color for the model name, and muted `<small>` styling for the provider name.
+- Transient Windows Filesystem Lock Resilience:
+  - Added `retryTransient` with exponential backoff to `AIService.write` in [src/main/services/ai-service.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/ai-service.ts) to eliminate Windows file indexer and Dropbox sync race conditions during atomic `ai.json` renames.
+- Verification:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm run format:check` passed (all files match Prettier style).
+  - `npm test` passed (56/56 test files, 604/604 tests).
+  - `npm run build` passed (production build succeeded in 8.36s).
+
+2026-10-23 latexindent Log Redirection, Writing Outline Section Reordering, Taskbar Icon, Settings Icons & VS Code Status:
+
+- latexindent Log Destination Redirection:
+  - Updated `LanguageService` constructor in [src/main/services/language.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/language.ts) to accept `getBuildDirectory?: (projectId: string, path: string) => Promise<string>`.
+  - In `format()`, computed `fileBase = basename(resolved, extname(resolved))` and `logFileName = `${fileBase}-indent.log``.
+  - Resolved `cruftDir` from project recipe configuration via `getBuildDirectory` or fallback `join(root, 'build', 'textra')`, ensuring directory creation with `mkdir(cruftDir, { recursive: true })`.
+  - Passed `['-c', cruftDir, '-g', logFileName, '-']` to `latexindent`, ensuring no `indent.log` or cruft files are written into the document directory.
+  - Wired in [src/main/index.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/index.ts) using project config and active recipe build directory resolution. Auxiliary file cleanup in `index.ts` already purges `<fileBase>-indent.log`.
+- Writing Outline Section Drag-and-Drop & Reordering:
+  - Added outline range and movement helpers in [src/shared/writing-analysis.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/writing-analysis.ts):
+    - `computeOutlineSectionRange(outline, index, totalLines, lines)`: computes 0-based `[startLine, endLine]` for a section and its descendants until the next section of equal/higher hierarchy, `\end{document}`, or EOF.
+    - `moveSectionInLatex(source, fromIndex, toIndex, position, outline)`: extracts section block, inserts before/after destination, detects/rejects invalid moves into descendant child sections, and preserves exact CRLF/LF line endings.
+  - Added 5 unit tests in [tests/unit/writing-analysis.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/writing-analysis.test.ts) covering moving before, moving after, nested subsection preservation, sibling subsection movement, child move prevention, and CRLF preservation.
+  - Updated [WritingPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/writing/WritingPanel.tsx) with HTML5 drag-and-drop (`draggable`, `onDragStart`, `onDragOver`, `onDragLeave`, `onDrop`, `onDragEnd`) with visual guide lines (`drop-before`, `drop-after`), plus accessible Move Up and Move Down chevron buttons.
+  - Updated [writing.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/writing/writing.css) for action buttons and drop insertion indicators.
+  - Added `textra:apply-document-content` listener in [SourceEditor.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/editor/SourceEditor.tsx) using Monaco `instance.executeEdits(...)` bracketed by `pushUndoStop()` for single-step Ctrl+Z undo/redo.
+  - Wired in [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx) to execute section moves seamlessly.
+- Taskbar Squircle Icon Padding & Scaling:
+  - Adjusted scale transform in [resources/icons/textra-logo-template.svg](file:///c:/Users/aaron/Dropbox/repos/textra/resources/icons/textra-logo-template.svg) from `scale(0.84)` (padding 81.92px) to `scale(0.91)` (padding 46.08px), enlarging the inner logo mark ~8.3% inside the squircle boundary.
+  - Regenerated all 6 icon variants (light, dark, light-squircle, dark-squircle, safe-white, safe-dark) across SVG, PNG, and ICO presets via `npm run generate:icons`, and updated `resources/icon.ico`, `resources/icon.png`, `resources/icon.svg`.
+- Settings Navigation Icons:
+  - In [SetupDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/SetupDialog.tsx), replaced the repeated `Article` icon across Editor, Files, and Shortcuts with distinct icons:
+    - Editor: `Code` icon
+    - Files: `Files` icon
+    - Shortcuts: `Keyboard` icon (imported from `@phosphor-icons/react` via [icons.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/icons.tsx))
+- Files Tab VS Code Icon & Detection:
+  - Added official VS Code ribbon SVG icon `VSCodeIcon` to [icons.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/icons.tsx).
+  - In [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx), checked `vscodeAvailable = tools.some(tool => tool.name === 'vscode' && Boolean(tool.path))`.
+  - Replaced the generic code icon with `<VSCodeIcon size={14} />` in the Files panel header and context menu, applying disabled styling (`opacity: 0.5; pointer-events: none`) and explanatory tooltip ("Visual Studio Code not detected on system") when VS Code is not installed.
+- Verification:
+  - 56/56 test files and 604/604 tests pass (`npm test`).
+  - `npm run typecheck` passes with zero errors.
+  - `npm run lint` passes with zero errors and warnings.
+  - `npm run format:check` passes with all files formatted.
+  - `npm run build` passes with zero errors.
+
+2026-10-23 UI Polish, Settings State Isolation, Hysteresis, Auto-Close Diffs & Button Sizing:
+
+- Settings latexindent Connection & Tool Lifecycle:
+  - Settings Tool Detection: Added `void refreshTools()` to the `open` effect in [SetupDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/SetupDialog.tsx) so opening Settings always scans for installed tools immediately, ensuring latexindent and other compiler tools reflect real system PATH and configured paths.
+  - Formatter Custom Path Support: Updated `findLanguageTool` in [language.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/language.ts) to check `getToolPath(canonicalName)` first, ensuring custom executable overrides set in Settings for `latexindent` or `chktex` are properly respected by the formatter and linter.
+  - Action Clarification: Updated the Document formatting section in `SetupDialog.tsx` to provide a "Check latexindent" verification action when available and "Install latexindent" link when missing.
+- Settings Status Message State Isolation:
+  - Added `useEffect(() => { setMessage(null); setLog(''); }, [section, open])` in [SetupDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/SetupDialog.tsx) ensuring transient actions (such as "Cleanup cancelled or the TeXtra build folder was already empty.") and compiler test output do not persist across different settings sections or dialog reopenings.
+- Preview Tab Overflow Hysteresis:
+  - Implemented directional hysteresis buffers in `measure()` in [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx) for `.preview-tabs-host` mode switching:
+    - `full` to `icons` collapses at `< 250px` (or `< 310px` with Markdown), but requires `>= 280px` (`340px`) to expand back to `full`.
+    - `icons` to `menu` collapses at `< 125px` (or `< 155px` with Markdown), but requires `>= 155px` (`185px`) to expand back to `icons`.
+    - The 30px hysteresis buffer eliminates tab layout oscillation and rapid flickering when resizing the preview pane.
+- Auto-Close Preview Pane on Diffs:
+  - In [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx), added an automatic effect and explicit triggers in `compareHistorySnapshot` and `refreshConflictComparison` to automatically close the preview pane (`updatePreferences({ previewVisible: false })`) when a history diff or conflict diff is displayed, allowing diffs to occupy the full available width.
+- AI Chat Privacy Notice Banner:
+  - Redesigned `.ai-chat-privacy` in [styles.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/styles.css):
+    - Made the container a crisp rectangle (`border-radius: 0`).
+    - Added mixed-in accent tint background (`color-mix(in srgb, var(--accent) 9%, var(--surface))`), subtle tinted border, and a 3px accent left callout edge.
+    - Expanded right padding (`padding: 10px 38px 10px 14px`) and nestled the dismiss button (`top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 0`) to keep the X icon cleanly separated from the banner text.
+- IDE-Wide Button Sizing Hierarchy:
+  - Standard Action Buttons: Unified all regular buttons in Settings (`.setup-dialog button:not(.icon-button)`), AI settings (`.ai-settings-dialog button`), and dialogs (`.dialog-actions > button`) to a standard height of 28px, 12px font size, 500 font weight, `0 12px` padding, and `var(--radius-pill)` border radius.
+  - Primary Action Buttons: Styled `.primary-button` with accent background, contrast text, and prominent weight.
+  - Danger Buttons: Styled `.danger-button` with alert-error hue and hover tinting.
+  - Icon Buttons: Retained standard 24x24px small and 28x28px regular icon button sizing.
+
+2026-10-23 Long-term Settings & Storage Architecture (AppData vs .textra):
+
+- Settings & AppData Storage Architecture:
+  - Resolved packaged Electron application storage: Replaced `join(testUserData ?? app.getAppPath(), '.textra-local')` with `join(app.getPath('userData'), 'ai')` in [src/main/index.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/index.ts), preventing runtime failure inside read-only `resources/app.asar` when packaged.
+  - Automatic Development Migration: Added startup migration in `index.ts` so in development, any existing `.textra-local/ai.json` is safely copied to `%APPDATA%\TeXtra\ai\ai.json` if the target does not yet exist.
+  - History Snapshots Storage Routing:
+    - Updated [HistoryService](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/history.ts) to accept `userDataDir`.
+    - If a project already has a `.textra/history` directory, snapshots remain local for backward compatibility.
+    - If `.textra/history` does not exist, snapshots and `index.json` are placed under `%APPDATA%\TeXtra\history\<projectId>`, preventing user LaTeX repositories from accumulating ephemeral `.gz` snapshot files.
+  - Native AppData Inspection:
+    - Added `textra:appdata:open` IPC handler in `src/main/index.ts` invoking `shell.openPath(app.getPath('userData'))`.
+    - Added `openUserDataFolder(): Promise<Result<void>>` to `TextraAPI` in [src/shared/api.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/api.ts) and exposed via [src/preload/index.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/preload/index.ts).
+    - Added "Application data (AppData)" section in the Import & export tab in [SetupDialog.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/onboarding/SetupDialog.tsx) with an "Open AppData folder" button.
+    - Added "Open application data folder (AppData)" to the Command Palette in [App.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/App.tsx).
+- Verification: 56/56 test files and 599/599 tests pass. `npm run typecheck`, `npm run lint`, and `npm run format:check` pass with zero errors.
+
+2026-10-23 Dropdown/Pullup Audit & Mirrored Titlebar Panel Icons:
+
+- Mirrored Titlebar Panel Icons:
+  - Fixed panel toggle icon orientations in [icons.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/icons.tsx):
+    - `PanelLeft`: Window box with left divider line (`x=9`).
+    - `PanelLeftClose`: Left divider line with leftward collapse arrow (`m16 15-3-3 3-3`).
+    - `PanelLeftOpen`: Left divider line with rightward expand arrow (`m14 9 3 3-3 3`).
+    - `PanelRight`: Window box with right divider line (`x=15`), the exact horizontal reflection of `PanelLeft`.
+    - `PanelRightClose`: Right divider line with rightward collapse arrow (`m8 9 3 3-3 3`), the exact horizontal reflection of `PanelLeftClose`.
+    - `PanelRightOpen`: Right divider line with leftward expand arrow (`m10 15-3-3 3-3`), the exact horizontal reflection of `PanelLeftOpen`.
+  - Updated title bar action buttons in [App.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/App.tsx) and [styles.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/styles.css) with `aria-pressed` and `.active` state styling.
+- Comprehensive Dropdown / Pullup Component Audit:
+  - Audited all popup, pullup, and dropdown menus across the codebase and migrated custom implementations to `<DropdownMenu>`:
+    - [FormattingToolbar.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/editor/FormattingToolbar.tsx): Converted Heading dropdown to `<DropdownMenu preventFocusSteal={true}>`, removing redundant timeout refs and blur handlers while preserving Monaco editor text selection on mousedown.
+    - [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx): Converted Tab Overflow menu (`documents.length > 2`) to `<DropdownMenu>`, removing custom click-outside and open state management.
+    - [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx): Converted Preview Views menu (`tabMode === 'menu'`) to `<DropdownMenu footer={...}>`, removing custom dismiss listeners and leveraging unified popup styling.
+  - Enhanced [DropdownMenu.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/DropdownMenu.tsx) to support:
+    - `preventFocusSteal?: boolean`: Prevents focus loss from Monaco editor when clicking triggers or menu items.
+    - `customTrigger?: ReactNode | ((open: boolean) => ReactNode)`: Enables custom icon triggers while retaining standard menu lifecycle, keyboard escape handling, and floating surface.
+    - `footer?: ReactNode`: Renders an optional footer/controls section at the bottom of the popup.
+    - Automatic popup sizing: `min-width: 100%; width: max-content; max-width: 340px;` ensuring compact triggers have ample room for menu items without squishing.
+- Verification: Full TypeScript check (`tsc --noEmit`), ESLint (`eslint .`), and Prettier check (`npm run format:check`) pass with 0 errors. Unit tests pass cleanly.
+
 2026-10-23 Titlebar Controls, Rail Reordering, Dynamic Version & DropdownMenu Migration:
 
 - Titlebar Layout & Window Actions:

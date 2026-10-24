@@ -264,6 +264,10 @@
   display: flex;
   align-items: center;
 }
+.tab-overflow-dropdown .dropdown-menu-popup {
+  min-width: 200px;
+  max-width: 340px;
+}
 .tab-overflow-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -486,17 +490,53 @@
 .dropdown-menu-container {
   position: relative;
   display: inline-flex;
+  flex-direction: column;
+  width: fit-content;
+  max-width: 100%;
+  vertical-align: middle;
+  align-self: flex-start;
 }
 .dropdown-menu-container.full-width {
   display: flex;
   width: 100%;
+  align-self: stretch;
+}
+.dropdown-menu-sizer {
+  height: 0;
+  max-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.dropdown-menu-sizer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 0;
+  padding: 0 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.dropdown-menu-sizer-caret {
+  display: inline-block;
+  width: 11px;
+  flex-shrink: 0;
+}
+.dropdown-menu-sizer-check {
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
 }
 .dropdown-menu-trigger {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   width: 100%;
+  min-width: 0;
   height: 26px;
   padding: 0 9px;
   border: 1px solid var(--border);
@@ -506,9 +546,15 @@
   font-size: 11px;
   cursor: pointer;
   user-select: none;
+  box-sizing: border-box;
+  white-space: nowrap;
   transition:
     background var(--duration-fast),
     border-color var(--duration-fast);
+}
+.editor-format-toolbar .dropdown-menu-trigger {
+  height: 24px;
+  padding: 0 7px;
 }
 .dropdown-menu-trigger:hover:not(:disabled),
 .dropdown-menu-trigger:focus-visible {
@@ -536,12 +582,19 @@
 .dropdown-menu-container.open .dropdown-menu-trigger-caret {
   transform: rotate(180deg);
 }
+.dropdown-menu-custom-trigger {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
 .dropdown-menu-popup {
   position: absolute;
   z-index: 50;
   top: calc(100% + 4px);
   left: 0;
   min-width: 100%;
+  width: max-content;
+  max-width: 420px;
   max-height: 240px;
   overflow-y: auto;
   padding: 4px;
@@ -565,28 +618,39 @@
   gap: 8px;
   width: 100%;
   padding: 5px 8px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text);
   font-size: 11px;
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
   user-select: none;
   box-sizing: border-box;
+  white-space: nowrap;
 }
 .dropdown-menu-item:hover:not(:disabled),
 .dropdown-menu-item:focus-visible {
   background: var(--hover);
+  border-color: transparent;
   color: var(--text);
   outline: none;
 }
 .dropdown-menu-item:disabled {
   opacity: 0.45;
   cursor: default;
+  background: transparent;
 }
 .dropdown-menu-item.selected {
   font-weight: 500;
+  background: transparent;
+  border-color: transparent;
+}
+.dropdown-menu-item.selected:hover:not(:disabled),
+.dropdown-menu-item.selected:focus-visible {
+  background: var(--hover);
+  border-color: transparent;
 }
 .dropdown-menu-item-content {
   display: flex;
@@ -903,11 +967,21 @@
   margin-top: 24px;
 }
 .dialog-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  box-sizing: border-box;
   border-radius: var(--radius-pill);
-  padding: 8px 14px;
-  font-size: 11px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
   background: var(--hover);
+  border: 1px solid var(--border);
   color: var(--text);
+  white-space: nowrap;
 }
 .dialog-actions > .primary-button {
   width: auto;
@@ -1246,6 +1320,11 @@ kbd {
 .window-titlebar-action:hover {
   background: var(--hover);
   border-color: var(--border);
+  color: var(--text);
+}
+
+.window-titlebar-action.active,
+.window-titlebar-action[aria-pressed='true'] {
   color: var(--text);
 }
 
@@ -3102,12 +3181,13 @@ select option {
 /* Dismissible assistant notice */
 .ai-chat-privacy {
   position: relative;
-  padding: 8px 30px 8px 12px;
+  padding: 10px 38px 10px 14px;
   margin: 8px 12px 0;
-  border-radius: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--muted);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-left: 3px solid var(--accent);
+  color: var(--text);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -3116,21 +3196,21 @@ select option {
 }
 .ai-chat-privacy-dismiss {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 18px;
-  height: 18px;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--faint);
+  color: var(--muted);
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 0;
 }
 .ai-chat-privacy-dismiss:hover {
   color: var(--text);
-  background: var(--hover);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }

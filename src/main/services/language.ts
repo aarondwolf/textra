@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { access, realpath, stat } from 'node:fs/promises';
+import { access, mkdir, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { basename, delimiter, isAbsolute, join } from 'node:path';
+import { basename, delimiter, extname, isAbsolute, join } from 'node:path';
 import type {
   Diagnostic,
   FormatResult,
@@ -10,6 +10,7 @@ import type {
   Preferences,
 } from '../../shared/api';
 import { ProjectError, type ProjectService } from './projects';
+import { getToolPath } from './tool-paths';
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const PROCESS_TIMEOUT_MS = 15_000;
@@ -19,6 +20,16 @@ const LANGUAGE_TOOLS = ['texlab', 'chktex', 'latexindent', 'latexindent.pl'] as 
 /** Resolve only the optional language tools, never a renderer-provided executable name. */
 async function findLanguageTool(name: (typeof LANGUAGE_TOOLS)[number]): Promise<string | null> {
   if (!(LANGUAGE_TOOLS as readonly string[]).includes(name)) return null;
+  const canonicalName = name === 'latexindent.pl' ? 'latexindent' : name;
+  const custom = getToolPath(canonicalName);
+  if (custom) {
+    try {
+      if ((await stat(custom)).isFile()) return await realpath(custom);
+    } catch {
+      /* Tool path is invalid */
+    }
+    return null;
+  }
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     const clean = directory.replace(/^"|"$/g, '');
     if (!isAbsolute(clean)) continue;
@@ -109,6 +120,7 @@ export class LanguageService {
   constructor(
     private readonly projects: ProjectService,
     private readonly getPreferences: () => Promise<Preferences>,
+    private readonly getBuildDirectory?: (projectId: string, path: string) => Promise<string>,
   ) {}
 
   async status(): Promise<LanguageToolStatus> {
@@ -173,7 +185,29 @@ export class LanguageService {
         'latexindent was not found on PATH. Install it to format LaTeX.',
       );
     const root = this.projects.getRoot(request.projectId);
-    const result = await runProcess(executable, ['-'], root, request.content);
+    const resolved = await this.projects.resolvePath({
+      projectId: request.projectId,
+      path: request.path,
+    });
+    const fileBase = basename(resolved, extname(resolved));
+    const logFileName = `${fileBase}-indent.log`;
+
+    let cruftDir = join(root, 'build', 'textra');
+    if (this.getBuildDirectory) {
+      try {
+        cruftDir = await this.getBuildDirectory(request.projectId, request.path);
+      } catch {
+        /* Fall back to default build folder */
+      }
+    }
+    await mkdir(cruftDir, { recursive: true });
+
+    const result = await runProcess(
+      executable,
+      ['-c', cruftDir, '-g', logFileName, '-'],
+      root,
+      request.content,
+    );
     if (result.code !== 0 || !result.stdout)
       throw new ProjectError('FORMAT_FAILED', 'latexindent could not format this document.');
     return { content: result.stdout, formatter: 'latexindent' };

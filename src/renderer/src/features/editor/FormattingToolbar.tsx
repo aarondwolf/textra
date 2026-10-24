@@ -1,6 +1,4 @@
-import { useRef, useState } from 'react';
 import {
-  CaretDown,
   EyeSlash,
   FilePdf,
   ImageSquare,
@@ -11,6 +9,7 @@ import {
   TextItalic,
 } from '@phosphor-icons/react';
 import { MarkdownLogo } from '../../icons';
+import { DropdownMenu } from '../../components/DropdownMenu';
 
 type FormatCommand = 'bold' | 'italic' | 'enumerate' | 'itemize' | 'figure' | 'table' | 'heading';
 
@@ -38,15 +37,6 @@ export default function FormattingToolbar({
   onOpenMarkdown?: () => void;
   onHide: () => void;
 }) {
-  const [headingMenuOpen, setHeadingMenuOpen] = useState(false);
-  const closeMenuTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelCloseMenu = () => {
-    if (closeMenuTimer.current) clearTimeout(closeMenuTimer.current);
-  };
-  const scheduleCloseMenu = () => {
-    cancelCloseMenu();
-    closeMenuTimer.current = setTimeout(() => setHeadingMenuOpen(false), 140);
-  };
   return (
     <div className="editor-format-toolbar" role="toolbar" aria-label="LaTeX formatting">
       <button
@@ -112,52 +102,41 @@ export default function FormattingToolbar({
         <Table size={15} />
       </button>
       <span className="editor-format-separator" aria-hidden="true" />
-      <div
-        className="editor-format-heading"
-        onMouseEnter={cancelCloseMenu}
-        onMouseLeave={scheduleCloseMenu}
-        onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) setHeadingMenuOpen(false);
-        }}
-      >
-        <button
-          type="button"
-          className="editor-format-heading-trigger"
-          aria-label="Insert heading"
-          aria-haspopup="menu"
-          aria-expanded={headingMenuOpen}
-          title="Insert heading"
-          disabled={disabled}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => setHeadingMenuOpen((open) => !open)}
-        >
-          Heading <CaretDown size={11} aria-hidden="true" />
-        </button>
-        {headingMenuOpen && (
-          <div className="editor-format-heading-menu" role="menu" aria-label="Heading levels">
-            {[
-              ['Section', 1],
-              ['Subsection', 2],
-              ['Subsubsection', 3],
-              ['Paragraph', 4],
-              ['Subparagraph', 5],
-            ].map(([label, level]) => (
-              <button
-                key={label}
-                type="button"
-                role="menuitem"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  dispatch({ command: 'heading', level: level as 1 | 2 | 3 | 4 | 5 });
-                  setHeadingMenuOpen(false);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <DropdownMenu
+        ariaLabel="Insert heading"
+        title="Insert heading"
+        placeholder="Heading"
+        fullWidth={false}
+        disabled={disabled}
+        preventFocusSteal={true}
+        items={[
+          {
+            value: '1',
+            label: 'Section',
+            onClick: () => dispatch({ command: 'heading', level: 1 }),
+          },
+          {
+            value: '2',
+            label: 'Subsection',
+            onClick: () => dispatch({ command: 'heading', level: 2 }),
+          },
+          {
+            value: '3',
+            label: 'Subsubsection',
+            onClick: () => dispatch({ command: 'heading', level: 3 }),
+          },
+          {
+            value: '4',
+            label: 'Paragraph',
+            onClick: () => dispatch({ command: 'heading', level: 4 }),
+          },
+          {
+            value: '5',
+            label: 'Subparagraph',
+            onClick: () => dispatch({ command: 'heading', level: 5 }),
+          },
+        ]}
+      />
       <span className="editor-format-spacer" />
       {isMarkdown ? (
         <button

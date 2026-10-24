@@ -782,6 +782,19 @@ export function SourceEditor({
       if (applied) event.preventDefault();
     };
     window.addEventListener('textra:apply-agent-edit', applyAgentEdit);
+    const applyDocumentContent = (event: Event) => {
+      const detail = (event as CustomEvent<{ path: string; text: string }>).detail;
+      if (!detail || !current.current || current.current !== detail.path) return;
+      const model = models.current.get(detail.path) ?? instance.getModel();
+      if (!model) return;
+      instance.pushUndoStop();
+      instance.executeEdits('textra-reorder-section', [
+        { range: model.getFullModelRange(), text: detail.text },
+      ]);
+      instance.pushUndoStop();
+      event.preventDefault();
+    };
+    window.addEventListener('textra:apply-document-content', applyDocumentContent);
     const replaceSource = () => {
       if (!instance.getModel()) return;
       instance.focus();
@@ -942,15 +955,6 @@ export function SourceEditor({
       });
       const match = /\\([A-Za-z@]+)\*?(?:\[[^\]]*\])?\{[^}]*$/.exec(before);
       if (!match || !/^(?:ref|eqref|pageref|autoref|cite)/i.test(match[1])) return [];
-      const labels = documentsRef.current.flatMap((document) =>
-        analyzeLatexDocument(document.content).labels.map((label) => ({
-          ...label,
-          path: document.path,
-        })),
-      );
-      const citations = documentsRef.current.flatMap((document) =>
-        analyzeLatexDocument(document.content).citations.map((citation) => citation.value),
-      );
       const isCitation = /cite/i.test(match[1]);
       const suggestions = isCitation
         ? [
@@ -958,12 +962,19 @@ export function SourceEditor({
               value: entry.key,
               detail: bibliographyDetail(entry),
             })),
-            ...citations.map((value) => ({
-              value,
-              detail: 'Citation key already used in this project',
-            })),
+            ...documentsRef.current.flatMap((document) =>
+              analyzeLatexDocument(document.content).citations.map((citation) => ({
+                value: citation.value,
+                detail: 'Citation key already used in this project',
+              })),
+            ),
           ]
-        : labels.map((label) => ({ value: label.value, detail: `Label in ${label.path}` }));
+        : documentsRef.current.flatMap((document) =>
+            analyzeLatexDocument(document.content).labels.map((label) => ({
+              value: label.value,
+              detail: `Label in ${document.path}`,
+            })),
+          );
       const word = model.getWordUntilPosition(position);
       const range = new monaco.Range(
         position.lineNumber,
@@ -1282,6 +1293,7 @@ export function SourceEditor({
       aiCompletion.current = null;
       window.removeEventListener('textra:replace-source', replaceSource);
       window.removeEventListener('textra:apply-agent-edit', applyAgentEdit);
+      window.removeEventListener('textra:apply-document-content', applyDocumentContent);
       window.removeEventListener('textra:insert-source', insertSource);
       window.removeEventListener('textra:format-source', formatSource);
       hostElem?.removeEventListener('pointerenter', handleFindPointerOver, true);
@@ -1427,7 +1439,11 @@ export function SourceEditor({
     const doc = documents.find((d) => d.path === activePath);
     const timer = window.setTimeout(() => {
       if (doc) {
-        const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+        const words = isTexPath(doc.path)
+          ? analyzeLatexDocument(doc.content).counts.words
+          : doc.content.trim()
+            ? doc.content.trim().split(/\s+/).length
+            : 0;
         setWordCount(words);
         setLineEnding(doc.content.includes('\r\n') ? 'CRLF' : 'LF');
       }

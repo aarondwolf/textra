@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -58,7 +59,10 @@ function getIsoWeek(date: Date): string {
 export class HistoryService {
   private pending: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly projects: ProjectService) {}
+  constructor(
+    private readonly projects: ProjectService,
+    private readonly userDataDir?: string,
+  ) {}
 
   async flush(): Promise<void> {
     await this.pending.catch(() => undefined);
@@ -70,12 +74,19 @@ export class HistoryService {
     return result;
   }
 
-  private historyDirectory(root: string): string {
-    return join(root, '.textra', 'history');
+  private historyDirectory(root: string, projectId?: string): string {
+    const localDir = join(root, '.textra', 'history');
+    if (existsSync(localDir)) {
+      return localDir;
+    }
+    if (this.userDataDir && projectId) {
+      return join(this.userDataDir, 'history', projectId);
+    }
+    return localDir;
   }
 
-  private indexFilePath(root: string): string {
-    return join(this.historyDirectory(root), 'index.json');
+  private indexFilePath(root: string, projectId?: string): string {
+    return join(this.historyDirectory(root, projectId), 'index.json');
   }
 
   private snapshotDirAndFilename(
@@ -91,8 +102,8 @@ export class HistoryService {
     return { dir, filename, filePath: join(dir, filename) };
   }
 
-  private async loadIndex(root: string): Promise<HistoryIndexFile> {
-    const indexPath = this.indexFilePath(root);
+  private async loadIndex(root: string, projectId?: string): Promise<HistoryIndexFile> {
+    const indexPath = this.indexFilePath(root, projectId);
     try {
       const raw = await readFile(indexPath, 'utf8');
       const parsed = JSON.parse(raw) as unknown;
@@ -113,10 +124,14 @@ export class HistoryService {
     return { version: 1, snapshots: [] };
   }
 
-  private async saveIndex(root: string, index: HistoryIndexFile): Promise<void> {
-    const historyDir = this.historyDirectory(root);
+  private async saveIndex(
+    root: string,
+    index: HistoryIndexFile,
+    projectId?: string,
+  ): Promise<void> {
+    const historyDir = this.historyDirectory(root, projectId);
     await mkdir(historyDir, { recursive: true });
-    const indexPath = this.indexFilePath(root);
+    const indexPath = this.indexFilePath(root, projectId);
     const tempPath = join(historyDir, `.index-${randomUUID()}.tmp`);
     const serialized = JSON.stringify(index, null, 2) + '\n';
     try {
@@ -142,7 +157,7 @@ export class HistoryService {
         throw new ProjectError('INVALID_ARGUMENT', 'Invalid project identifier.');
       const path = validateRelativePath(request.path);
       const root = this.projects.getRoot(request.projectId);
-      const index = await this.loadIndex(root);
+      const index = await this.loadIndex(root, request.projectId);
       return index.snapshots
         .filter((s) => s.path === path)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -158,12 +173,12 @@ export class HistoryService {
         throw new ProjectError('INVALID_ARGUMENT', 'Invalid snapshot identifier.');
       const path = validateRelativePath(request.path);
       const root = this.projects.getRoot(request.projectId);
-      const index = await this.loadIndex(root);
+      const index = await this.loadIndex(root, request.projectId);
       const summary = index.snapshots.find((s) => s.path === path && s.id === request.snapshotId);
       if (!summary) {
         throw new ProjectError('NOT_FOUND', 'Historical snapshot not found.');
       }
-      const historyRoot = this.historyDirectory(root);
+      const historyRoot = this.historyDirectory(root, request.projectId);
       const { filePath } = this.snapshotDirAndFilename(historyRoot, path, summary.id);
       let compressedBytes: Buffer;
       try {
@@ -208,7 +223,7 @@ export class HistoryService {
 
       const root = this.projects.getRoot(request.projectId);
       const revision = sha256(content);
-      const index = await this.loadIndex(root);
+      const index = await this.loadIndex(root, request.projectId);
 
       // Check the latest snapshot for this file
       const existing = index.snapshots
@@ -224,7 +239,7 @@ export class HistoryService {
       const now = new Date();
       const id = now.toISOString().replace(/:/g, '-');
       const createdAt = now.toISOString();
-      const historyRoot = this.historyDirectory(root);
+      const historyRoot = this.historyDirectory(root, request.projectId);
       const { dir, filePath } = this.snapshotDirAndFilename(historyRoot, path, id);
 
       await mkdir(dir, { recursive: true });
@@ -259,7 +274,7 @@ export class HistoryService {
       };
 
       index.snapshots.push(summary);
-      await this.saveIndex(root, index);
+      await this.saveIndex(root, index, request.projectId);
       return summary;
     });
   }
@@ -303,14 +318,14 @@ export class HistoryService {
         typeof request.label === 'string' && request.label.trim() ? request.label.trim() : null;
 
       const root = this.projects.getRoot(request.projectId);
-      const index = await this.loadIndex(root);
+      const index = await this.loadIndex(root, request.projectId);
       const snapshot = index.snapshots.find((s) => s.path === path && s.id === request.snapshotId);
       if (!snapshot) throw new ProjectError('NOT_FOUND', 'Historical snapshot not found.');
 
       snapshot.pinned = request.pinned || Boolean(label);
       snapshot.label = label;
 
-      await this.saveIndex(root, index);
+      await this.saveIndex(root, index, request.projectId);
       return snapshot;
     });
   }
@@ -383,8 +398,8 @@ export class HistoryService {
 
       const root = this.projects.getRoot(req.projectId);
       const path = validateRelativePath(req.path);
-      const index = await this.loadIndex(root);
-      const historyRoot = this.historyDirectory(root);
+      const index = await this.loadIndex(root, req.projectId);
+      const historyRoot = this.historyDirectory(root, req.projectId);
 
       const snapshot = index.snapshots.find((s) => s.path === path && s.id === req.snapshotId);
       if (!snapshot) throw new ProjectError('NOT_FOUND', 'Historical snapshot not found.');
@@ -397,15 +412,15 @@ export class HistoryService {
       index.snapshots = index.snapshots.filter(
         (s) => !(s.path === path && s.id === req.snapshotId),
       );
-      await this.saveIndex(root, index);
+      await this.saveIndex(root, index, req.projectId);
     });
   }
 
   async prune(projectId: string, nowMs = Date.now()): Promise<number> {
     return this.serialize(async () => {
       const root = this.projects.getRoot(projectId);
-      const index = await this.loadIndex(root);
-      const historyRoot = this.historyDirectory(root);
+      const index = await this.loadIndex(root, projectId);
+      const historyRoot = this.historyDirectory(root, projectId);
 
       // Group unpinned, unlabeled snapshots by file path
       const byFile = new Map<string, HistorySnapshotSummary[]>();
@@ -489,7 +504,7 @@ export class HistoryService {
       }
 
       index.snapshots = index.snapshots.filter((s) => toKeep.has(s.id));
-      await this.saveIndex(root, index);
+      await this.saveIndex(root, index, projectId);
       return toPrune.length;
     });
   }

@@ -4,6 +4,7 @@ import {
   analyzeMarkdownDocument,
   extractPromptContext,
   maskLatexComments,
+  moveSectionInLatex,
 } from '../../src/shared/writing-analysis';
 
 describe('analyzeLatexDocument', () => {
@@ -179,5 +180,89 @@ describe('analyzeMarkdownDocument', () => {
     expect(result.counts.sections).toBe(7);
     expect(result.counts.equations).toBe(1);
     expect(result.counts.words).toBeGreaterThan(15);
+  });
+
+  describe('moveSectionInLatex', () => {
+    const doc = [
+      '\\documentclass{article}',
+      '\\begin{document}',
+      '\\section{First}',
+      'Content 1',
+      '\\subsection{Sub 1A}',
+      'Sub content',
+      '\\section{Second}',
+      'Content 2',
+      '\\section{Third}',
+      'Content 3',
+      '\\end{document}',
+    ].join('\n');
+
+    it('moves a section and its subsections before another section', () => {
+      const { outline } = analyzeLatexDocument(doc);
+      // Items: 0: First, 1: Sub 1A, 2: Second, 3: Third
+      const reordered = moveSectionInLatex(doc, 2, 0, 'before', outline);
+      const newAnalysis = analyzeLatexDocument(reordered);
+      expect(newAnalysis.outline.map((o) => o.title)).toEqual([
+        'Second',
+        'First',
+        'Sub 1A',
+        'Third',
+      ]);
+      expect(reordered).toContain('\\section{Second}\nContent 2\n\\section{First}');
+      expect(reordered).toContain('\\end{document}');
+    });
+
+    it('moves a section with its child subsections after another section', () => {
+      const { outline } = analyzeLatexDocument(doc);
+      // Move 'First' (idx 0) after 'Third' (idx 3)
+      const reordered = moveSectionInLatex(doc, 0, 3, 'after', outline);
+      const newAnalysis = analyzeLatexDocument(reordered);
+      expect(newAnalysis.outline.map((o) => o.title)).toEqual([
+        'Second',
+        'Third',
+        'First',
+        'Sub 1A',
+      ]);
+      expect(reordered.indexOf('\\section{Second}')).toBeLessThan(
+        reordered.indexOf('\\section{Third}'),
+      );
+      expect(reordered.indexOf('\\section{Third}')).toBeLessThan(
+        reordered.indexOf('\\section{First}'),
+      );
+      expect(reordered.indexOf('\\subsection{Sub 1A}')).toBeGreaterThan(
+        reordered.indexOf('\\section{First}'),
+      );
+    });
+
+    it('moves a subsection within or between sections', () => {
+      const multiSubDoc = [
+        '\\section{A}',
+        '\\subsection{A1}',
+        'Text A1',
+        '\\subsection{A2}',
+        'Text A2',
+        '\\section{B}',
+      ].join('\n');
+      const { outline } = analyzeLatexDocument(multiSubDoc);
+      // Move A2 (idx 2) before A1 (idx 1)
+      const reordered = moveSectionInLatex(multiSubDoc, 2, 1, 'before', outline);
+      const newAnalysis = analyzeLatexDocument(reordered);
+      expect(newAnalysis.outline.map((o) => o.title)).toEqual(['A', 'A2', 'A1', 'B']);
+    });
+
+    it('rejects moving a parent section into its own child subsection', () => {
+      const { outline } = analyzeLatexDocument(doc);
+      // Move 'First' (idx 0) into 'Sub 1A' (idx 1) -> invalid
+      const unchanged = moveSectionInLatex(doc, 0, 1, 'before', outline);
+      expect(unchanged).toBe(doc);
+    });
+
+    it('preserves CRLF line endings when present', () => {
+      const crlfDoc = doc.replaceAll('\n', '\r\n');
+      const { outline } = analyzeLatexDocument(crlfDoc);
+      const reordered = moveSectionInLatex(crlfDoc, 2, 0, 'before', outline);
+      expect(reordered).toContain('\r\n');
+      expect(reordered).not.toMatch(/[^\r]\n/);
+    });
   });
 });

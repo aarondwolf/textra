@@ -40,6 +40,9 @@ export interface DropdownMenuProps<T extends string = string> {
   direction?: 'down' | 'up';
   fullWidth?: boolean;
   title?: string;
+  preventFocusSteal?: boolean;
+  customTrigger?: ReactNode | ((open: boolean) => ReactNode);
+  footer?: ReactNode;
 }
 
 function isGroup<T extends string>(item: DropdownItemOrGroup<T>): item is DropdownMenuGroup<T> {
@@ -66,12 +69,15 @@ export function DropdownMenu<T extends string = string>({
   triggerStyle,
   align = 'left',
   direction = 'down',
-  fullWidth = true,
+  fullWidth = false,
   title,
+  preventFocusSteal = false,
+  customTrigger,
+  footer,
 }: DropdownMenuProps<T>) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | HTMLDivElement>(null);
 
   // Close when clicking outside
   useEffect(() => {
@@ -115,6 +121,7 @@ export function DropdownMenu<T extends string = string>({
         role="menuitem"
         className={['dropdown-menu-item', isSelected ? 'selected' : ''].filter(Boolean).join(' ')}
         disabled={item.disabled}
+        onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
         onClick={() => {
           if (item.onClick) {
             item.onClick();
@@ -162,21 +169,71 @@ export function DropdownMenu<T extends string = string>({
       style={style}
       onKeyDown={handleKeyDown}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="dropdown-menu-trigger editor-format-heading-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        title={title}
-        disabled={disabled || items.length === 0}
-        onClick={() => setOpen((prev) => !prev)}
-        style={triggerStyle}
-      >
-        <span className="dropdown-menu-trigger-text">{displayLabel}</span>
-        <CaretDown size={11} aria-hidden="true" className="dropdown-menu-trigger-caret" />
-      </button>
+      {!fullWidth && !customTrigger && (
+        <div className="dropdown-menu-sizer" aria-hidden="true">
+          <div className="dropdown-menu-sizer-item">
+            <span>{displayLabel}</span>
+            <span className="dropdown-menu-sizer-caret" />
+          </div>
+          {flatItems.map((item) => (
+            <div key={item.value} className="dropdown-menu-sizer-item">
+              <span className="dropdown-menu-item-content">
+                {item.icon}
+                <span>{item.label}</span>
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {item.description && (
+                  <span className="dropdown-menu-item-description">{item.description}</span>
+                )}
+                <span className="dropdown-menu-sizer-check" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {customTrigger ? (
+        <div
+          ref={triggerRef as React.RefObject<HTMLDivElement>}
+          role="button"
+          tabIndex={disabled || items.length === 0 ? -1 : 0}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          title={title}
+          className="dropdown-menu-custom-trigger"
+          onClick={() => {
+            if (!disabled && items.length > 0) setOpen((prev) => !prev);
+          }}
+          onKeyDown={(e) => {
+            if (!disabled && items.length > 0 && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              setOpen((prev) => !prev);
+            }
+          }}
+          onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
+          style={triggerStyle}
+        >
+          {typeof customTrigger === 'function' ? customTrigger(open) : customTrigger}
+        </div>
+      ) : (
+        <button
+          ref={triggerRef as React.RefObject<HTMLButtonElement>}
+          type="button"
+          className="dropdown-menu-trigger editor-format-heading-trigger"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          title={title}
+          disabled={disabled || items.length === 0}
+          onClick={() => setOpen((prev) => !prev)}
+          onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
+          style={triggerStyle}
+        >
+          <span className="dropdown-menu-trigger-text">{displayLabel}</span>
+          <CaretDown size={11} aria-hidden="true" className="dropdown-menu-trigger-caret" />
+        </button>
+      )}
 
       {open && (
         <div
@@ -203,6 +260,7 @@ export function DropdownMenu<T extends string = string>({
             }
             return renderItem(itemOrGroup);
           })}
+          {footer && <div className="dropdown-menu-footer">{footer}</div>}
         </div>
       )}
     </div>

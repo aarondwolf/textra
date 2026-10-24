@@ -163,7 +163,7 @@ export class ProjectService {
     const file = await open(target, 'r');
     let bytes: Buffer;
     try {
-      const buffer = Buffer.alloc(MAX_TEXT_BYTES + 1);
+      const buffer = Buffer.alloc(Math.min(Math.max(info.size + 1024, 4096), MAX_TEXT_BYTES + 1));
       let size = 0;
       while (size < buffer.length) {
         const result = await file.read(buffer, size, buffer.length - size, null);

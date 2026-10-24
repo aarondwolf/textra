@@ -17,7 +17,8 @@
   cursor: pointer;
 }
 .model-picker-field .model-picker-button {
-  padding: 7px 12px;
+  height: 28px;
+  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--raised);
@@ -49,7 +50,7 @@
 .model-picker-value {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 .model-picker-name {
@@ -64,14 +65,20 @@
 .model-picker-value small {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .model-picker-field .model-picker-value {
   flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
   overflow: hidden;
+}
+.model-picker-field .model-picker-provider {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
 }
 .model-picker-field .model-picker-value > * {
   max-width: 100%;

@@ -455,3 +455,99 @@ export function extractPromptContext(
     environment: null,
   };
 }
+
+export interface OutlineHeadingRef {
+  line: number;
+  level: number;
+}
+
+/**
+ * Computes the 0-based inclusive line range [startLine, endLine] of a section in LaTeX source.
+ * A section includes its body and any child subsections up until the next section
+ * of equal or higher hierarchy (level <= current), \end{document}, or end of file.
+ */
+export function computeOutlineSectionRange(
+  outline: OutlineHeadingRef[],
+  index: number,
+  totalLines: number,
+  lines?: string[],
+): { startLine: number; endLine: number } | null {
+  if (index < 0 || index >= outline.length) return null;
+  const item = outline[index];
+  const startLine = Math.max(0, item.line - 1);
+  if (startLine >= totalLines) return null;
+
+  let nextBoundaryLine = totalLines;
+  for (let j = index + 1; j < outline.length; j++) {
+    if (outline[j].level <= item.level) {
+      nextBoundaryLine = Math.max(startLine, outline[j].line - 1);
+      break;
+    }
+  }
+
+  if (lines) {
+    for (let l = startLine; l < nextBoundaryLine; l++) {
+      if (/^\s*\\end\{document\}/i.test(lines[l])) {
+        nextBoundaryLine = l;
+        break;
+      }
+    }
+  }
+
+  const endLine = Math.max(startLine, nextBoundaryLine - 1);
+  return { startLine, endLine };
+}
+
+/**
+ * Reorders a section (and all its nested subsections) in LaTeX source based on
+ * outline indices, preserving line endings and whitespace.
+ */
+export function moveSectionInLatex(
+  source: string,
+  fromIndex: number,
+  toIndex: number,
+  position: 'before' | 'after',
+  outline: OutlineHeadingRef[],
+): string {
+  if (fromIndex === toIndex) return source;
+  if (fromIndex < 0 || fromIndex >= outline.length) return source;
+  if (toIndex < 0 || toIndex >= outline.length) return source;
+
+  const newline = source.includes('\r\n') ? '\r\n' : '\n';
+  const lines = source.split(/\r\n|\n/);
+
+  const sourceRange = computeOutlineSectionRange(outline, fromIndex, lines.length, lines);
+  const targetRange = computeOutlineSectionRange(outline, toIndex, lines.length, lines);
+  if (!sourceRange || !targetRange) return source;
+
+  // Cannot move a parent section into itself or one of its child subsections
+  const targetStart = targetRange.startLine;
+  if (targetStart >= sourceRange.startLine && targetStart <= sourceRange.endLine) {
+    return source;
+  }
+
+  const movingCount = sourceRange.endLine - sourceRange.startLine + 1;
+  const movingLines = lines.slice(sourceRange.startLine, sourceRange.endLine + 1);
+
+  const remaining = [
+    ...lines.slice(0, sourceRange.startLine),
+    ...lines.slice(sourceRange.endLine + 1),
+  ];
+
+  const targetOriginalInsertPoint =
+    position === 'before' ? targetRange.startLine : targetRange.endLine + 1;
+
+  let insertIndex: number;
+  if (targetOriginalInsertPoint <= sourceRange.startLine) {
+    insertIndex = targetOriginalInsertPoint;
+  } else if (targetOriginalInsertPoint > sourceRange.endLine) {
+    insertIndex = targetOriginalInsertPoint - movingCount;
+  } else {
+    return source;
+  }
+
+  insertIndex = Math.max(0, Math.min(insertIndex, remaining.length));
+  remaining.splice(insertIndex, 0, ...movingLines);
+
+  return remaining.join(newline);
+}

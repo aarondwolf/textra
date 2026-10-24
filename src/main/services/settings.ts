@@ -242,7 +242,7 @@ export class ConfigService {
     try {
       const info = await file.stat();
       if (!info.isFile() || info.size > MAX_SETTINGS_BYTES) return invalid();
-      const bytes = Buffer.alloc(MAX_SETTINGS_BYTES + 1);
+      const bytes = Buffer.alloc(info.size + 1);
       let size = 0;
       while (size < bytes.length) {
         const chunk = await file.read(bytes, size, bytes.length - size, null);

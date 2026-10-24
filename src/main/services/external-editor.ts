@@ -97,12 +97,14 @@ export class ExternalEditorService {
     for (const listener of this.listeners) listener(event);
   }
 
-  private async signature(ref: FileRef): Promise<Signature | null> {
+  private async signature(ref: FileRef, cached?: Signature | null): Promise<Signature | null> {
     try {
-      const [snapshot, info] = await Promise.all([
-        this.projects.readFile(ref),
-        this.projects.resolvePath(ref).then((path) => stat(path)),
-      ]);
+      const target = await this.projects.resolvePath(ref);
+      const info = await stat(target);
+      if (cached && info.size === cached.size && info.mtimeMs === cached.mtimeMs) {
+        return cached;
+      }
+      const snapshot = await this.projects.readFile(ref);
       return { revision: snapshot.revision, size: info.size, mtimeMs: info.mtimeMs };
     } catch (error) {
       if (isProjectMissing(error) || missing(error)) return null;
@@ -120,7 +122,7 @@ export class ExternalEditorService {
 
   private async sample(entry: WatchedFile, fromRenameEvent: boolean): Promise<void> {
     if (this.watched.get(key(entry.ref)) !== entry) return;
-    const next = await this.signature(entry.ref);
+    const next = await this.signature(entry.ref, entry.signature);
     if (!next) {
       const nextState: ExternalWatchState['state'] = fromRenameEvent ? 'renamed' : 'deleted';
       if (entry.state !== nextState || entry.signature !== null) {

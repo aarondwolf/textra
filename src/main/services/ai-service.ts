@@ -519,6 +519,25 @@ export class AIService {
     if (chosen) settings.roleDefaults.completion = { provider: 'ollama-local', model: chosen.id };
   }
 
+  private static async retryTransient<T>(action: () => Promise<T>): Promise<T> {
+    const delays = [50, 100, 200, 400, 800];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await action();
+      } catch (error) {
+        if (
+          attempt >= delays.length ||
+          !error ||
+          typeof error !== 'object' ||
+          !('code' in error) ||
+          !['EPERM', 'EBUSY', 'EACCES'].includes(String(error.code))
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      }
+    }
+  }
+
   private async write(settings: StoredSettings): Promise<void> {
     await this.checkPaths();
     const serialized = JSON.stringify(settings);
@@ -537,7 +556,7 @@ export class AIService {
         await file.close();
       }
       await this.checkPaths();
-      await rename(temporary, join(this.directory, 'ai.json'));
+      await AIService.retryTransient(() => rename(temporary, join(this.directory, 'ai.json')));
     } finally {
       await unlink(temporary).catch(() => undefined);
     }

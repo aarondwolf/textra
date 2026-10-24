@@ -2,8 +2,10 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   AIChat,
-  Article,
+  Code,
+  Files,
   Hammer,
+  Keyboard,
   Palette,
   Pencil,
   Plus,
@@ -57,9 +59,9 @@ export type SectionId =
   'appearance' | 'editor' | 'preferences' | 'shortcuts' | 'tools' | 'compilation' | 'backup' | 'ai';
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'editor', label: 'Editor', icon: Article },
-  { id: 'preferences', label: 'Files', icon: Article },
-  { id: 'shortcuts', label: 'Shortcuts', icon: Article },
+  { id: 'editor', label: 'Editor', icon: Code },
+  { id: 'preferences', label: 'Files', icon: Files },
+  { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
   { id: 'ai', label: 'AI Settings', icon: AIChat },
@@ -361,6 +363,7 @@ export default function SetupDialog({
   }, [projectConfig]);
   useEffect(() => {
     if (open) {
+      void refreshTools();
       void window.textra.getAppInfo().then((result) => {
         if (result.ok) setPlatform(result.value.platform);
       });
@@ -369,6 +372,10 @@ export default function SetupDialog({
       });
     }
   }, [open]);
+  useEffect(() => {
+    setMessage(null);
+    setLog('');
+  }, [section, open]);
   async function perform(action: () => Promise<string | void>) {
     setBusy(true);
     setMessage(null);
@@ -505,11 +512,10 @@ export default function SetupDialog({
                   {(preferences.customThemes ?? []).some((ct) => ct.id === preferences.theme) && (
                     <button
                       type="button"
-                      className="text-button"
+                      className="danger-button"
                       style={{
                         alignSelf: 'start',
                         marginTop: '4px',
-                        color: 'var(--alert-error)',
                       }}
                       onClick={() => {
                         const remaining = (preferences.customThemes ?? []).filter(
@@ -758,7 +764,7 @@ export default function SetupDialog({
                       </div>
                       <button
                         type="button"
-                        className="text-button primary-button"
+                        className="primary-button"
                         style={{ alignSelf: 'start', marginTop: '6px' }}
                         disabled={!newThemeName.trim()}
                         onClick={() => {
@@ -972,12 +978,6 @@ export default function SetupDialog({
                       <div style={{ marginTop: 8 }}>
                         <button
                           type="button"
-                          className="ghost-button"
-                          style={{
-                            padding: '4px 10px',
-                            fontSize: '11px',
-                            borderRadius: 'var(--radius-pill)',
-                          }}
                           onClick={() =>
                             updatePreferences({
                               historyEnabled: true,
@@ -1094,13 +1094,6 @@ export default function SetupDialog({
                     <h3>Shortcuts</h3>
                     <button
                       type="button"
-                      className="text-button"
-                      style={{
-                        whiteSpace: 'nowrap',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
                       onClick={() => {
                         setRecordingShortcutId(null);
                         updatePreferences({
@@ -1688,13 +1681,25 @@ export default function SetupDialog({
                       ? 'latexindent is available.'
                       : 'latexindent was not found on PATH.'}
                   </p>
-                  {!tools.some((tool) => tool.name === 'latexindent' && tool.path) && (
-                    <div className="setup-actions">
+                  <div className="setup-actions">
+                    {!tools.some((tool) => tool.name === 'latexindent' && tool.path) ? (
                       <button onClick={() => void perform(() => setupLink('latexindent'))}>
                         Install latexindent
                       </button>
-                    </div>
-                  )}
+                    ) : (
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          void perform(async () => {
+                            await refreshTools();
+                            return 'latexindent status verified.';
+                          })
+                        }
+                      >
+                        Check latexindent
+                      </button>
+                    )}
+                  </div>
                 </>
               )}
               {section === 'backup' && (
@@ -1730,6 +1735,26 @@ export default function SetupDialog({
                       }
                     >
                       Import settings
+                    </button>
+                  </div>
+
+                  <h3>Application data (AppData)</h3>
+                  <p className="setup-hint">
+                    Global preferences, encrypted AI credentials, logs, and local file history
+                    snapshots are stored securely in your user application data folder.
+                  </p>
+                  <div className="setup-actions">
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void perform(async () => {
+                          const result = await window.textra.openUserDataFolder();
+                          if (!result.ok) throw new Error(result.error);
+                          return 'Opened application data folder.';
+                        })
+                      }
+                    >
+                      Open AppData folder
                     </button>
                   </div>
                 </>

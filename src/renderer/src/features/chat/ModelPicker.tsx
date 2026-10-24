@@ -2,7 +2,6 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import type { AISettings } from '../../../../shared/api';
 import {
   AI_PROVIDERS,
-  AI_DEFAULT_ENDPOINTS,
   sameModel,
   supportsAIRole,
   type AIRole,
@@ -165,7 +164,7 @@ export function ModelPicker({
         aria-label={`${label}: ${display}`}
         title={
           current && value
-            ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label}) · ${settings?.providers.find((provider) => provider.id === value.provider)?.endpoint ?? AI_DEFAULT_ENDPOINTS[value.provider]}`
+            ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label})`
             : (modelUnavailableReason(settings, value, role) ?? placeholder)
         }
         onClick={() => (open ? setOpen(false) : show())}
@@ -179,12 +178,9 @@ export function ModelPicker({
         <span className="model-picker-value">
           <span className="model-picker-name">{display}</span>
           {variant === 'field' && value && current && !only && (
-            <small>
+            <small className="model-picker-provider">
               {settings?.providers.find((provider) => provider.id === value.provider)
-                ?.displayName || AI_PROVIDERS[value.provider].label}{' '}
-              ·{' '}
-              {settings?.providers.find((provider) => provider.id === value.provider)?.endpoint ??
-                AI_DEFAULT_ENDPOINTS[value.provider]}
+                ?.displayName || AI_PROVIDERS[value.provider].label}
             </small>
           )}
         </span>

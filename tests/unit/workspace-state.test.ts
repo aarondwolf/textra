@@ -112,6 +112,42 @@ describe('editor state preserves concurrent work', () => {
     expect(useWorkspace.getState().activePath).toBe('one.tex');
     expect(useWorkspace.getState().error).toContain('50');
   });
+  it('atomically replaces an unedited preview tab when opening a new document', async () => {
+    const read = deferred<Result<FileSnapshot>>();
+    vi.stubGlobal('window', { textra: { readFile: () => read.promise } });
+    useWorkspace.setState({
+      documents: [document('preview.tex')],
+      activePath: 'preview.tex',
+    });
+    const opening = openDocument('chapter.tex', undefined, { replacePath: 'preview.tex' });
+    // While loading, preview.tex remains open so the editor does not unmount
+    expect(useWorkspace.getState().documents.map((d) => d.path)).toEqual(['preview.tex']);
+    expect(useWorkspace.getState().activePath).toBe('preview.tex');
+
+    read.resolve(snapshot('chapter.tex'));
+    await opening;
+
+    // Atomically replaced in a single state transition
+    expect(useWorkspace.getState().documents.map((d) => d.path)).toEqual(['chapter.tex']);
+    expect(useWorkspace.getState().activePath).toBe('chapter.tex');
+  });
+  it('does not replace a dirty document during atomic tab open', async () => {
+    const read = deferred<Result<FileSnapshot>>();
+    vi.stubGlobal('window', { textra: { readFile: () => read.promise } });
+    useWorkspace.setState({
+      documents: [{ ...document('dirty.tex'), content: 'unsaved modifications' }],
+      activePath: 'dirty.tex',
+    });
+    const opening = openDocument('chapter.tex', undefined, { replacePath: 'dirty.tex' });
+    read.resolve(snapshot('chapter.tex'));
+    await opening;
+
+    expect(useWorkspace.getState().documents.map((d) => d.path)).toEqual([
+      'dirty.tex',
+      'chapter.tex',
+    ]);
+    expect(useWorkspace.getState().activePath).toBe('chapter.tex');
+  });
   it('retains typing performed during a save and marks only the saved revision clean', async () => {
     const write = deferred<Result<FileSnapshot>>();
     vi.stubGlobal('window', { textra: { saveFile: () => write.promise } });

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   ListChecks,
   NotePencil,
   Scroll,
@@ -47,6 +48,8 @@ export interface WritingPanelProps {
   /** Opens a safe latexindent preview; the workspace owns formatting and applying changes. */
   onFormatDocument?: () => void;
   formatAvailable?: boolean;
+  /** Reorders a section in the document source by moving it before or after another section. */
+  onMoveSection?: (fromIndex: number, toIndex: number, position: 'before' | 'after') => void;
 }
 
 function activeOutlineId(outline: WritingOutlineItem[], line: number | null): string | null {
@@ -69,11 +72,17 @@ export function WritingPanel({
   onJumpToLine,
   onFormatDocument,
   formatAvailable = false,
+  onMoveSection,
 }: WritingPanelProps) {
   const activeId = activeOutlineId(summary.outline, activeLine);
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [notesOpen, setNotesOpen] = useState(true);
   const [notesHeight, setNotesHeight] = useState(130);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    index: number;
+    position: 'before' | 'after';
+  } | null>(null);
   const isDragging = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
@@ -161,21 +170,100 @@ export function WritingPanel({
                 <p className="writing-empty">No section headings yet.</p>
               ) : (
                 <ul className="writing-list">
-                  {summary.outline.map((item) => {
+                  {summary.outline.map((item, index) => {
                     const depth = Math.min(Math.max(0, item.level - 1), 4);
+                    const isDropBefore =
+                      dropTarget?.index === index && dropTarget.position === 'before';
+                    const isDropAfter =
+                      dropTarget?.index === index && dropTarget.position === 'after';
+                    const isDraggingItem = draggedIndex === index;
+
                     return (
-                      <li key={item.id}>
+                      <li
+                        key={item.id}
+                        className={`writing-outline-row ${isDraggingItem ? 'is-dragging' : ''} ${isDropBefore ? 'drop-before' : ''} ${isDropAfter ? 'drop-after' : ''}`}
+                        draggable={Boolean(onMoveSection)}
+                        onDragStart={(e) => {
+                          if (!onMoveSection) return;
+                          e.dataTransfer.setData('text/plain', String(index));
+                          e.dataTransfer.effectAllowed = 'move';
+                          setDraggedIndex(index);
+                        }}
+                        onDragOver={(e) => {
+                          if (!onMoveSection || draggedIndex === null || draggedIndex === index)
+                            return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const midY = rect.top + rect.height / 2;
+                          const position = e.clientY < midY ? 'before' : 'after';
+                          if (dropTarget?.index !== index || dropTarget?.position !== position) {
+                            setDropTarget({ index, position });
+                          }
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            if (dropTarget?.index === index) setDropTarget(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (onMoveSection && draggedIndex !== null && dropTarget) {
+                            onMoveSection(draggedIndex, dropTarget.index, dropTarget.position);
+                          }
+                          setDraggedIndex(null);
+                          setDropTarget(null);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedIndex(null);
+                          setDropTarget(null);
+                        }}
+                      >
                         <button
                           type="button"
                           className="writing-outline-item"
                           aria-current={item.id === activeId ? 'location' : undefined}
                           style={{ paddingLeft: 10 + depth * 12 }}
-                          title={`Go to line ${item.line}`}
+                          title={`Go to line ${item.line}${onMoveSection ? ' (drag to reorder)' : ''}`}
                           onClick={() => onJumpToLine(item.line)}
                         >
                           <span>{item.title}</span>
-                          <small>Ln {item.line}</small>
+                          <small className="writing-outline-line">Ln {item.line}</small>
                         </button>
+                        {onMoveSection && (
+                          <div
+                            className="writing-outline-actions"
+                            role="group"
+                            aria-label="Reorder section"
+                          >
+                            <button
+                              type="button"
+                              className="writing-outline-action-button"
+                              title="Move section up"
+                              aria-label="Move section up"
+                              disabled={index === 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMoveSection(index, index - 1, 'before');
+                              }}
+                            >
+                              <ChevronUp size={11} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="writing-outline-action-button"
+                              title="Move section down"
+                              aria-label="Move section down"
+                              disabled={index === summary.outline.length - 1}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMoveSection(index, index + 1, 'after');
+                              }}
+                            >
+                              <ChevronDown size={11} aria-hidden="true" />
+                            </button>
+                          </div>
+                        )}
                       </li>
                     );
                   })}

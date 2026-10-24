@@ -127,7 +127,9 @@
 }
 
 .writing-resizer:hover,
-.writing-resizer:active {
+.writing-resizer:active,
+.writing-resizer:focus-visible {
+  outline: none;
   background: color-mix(in srgb, var(--accent) 50%, transparent);
 }
 

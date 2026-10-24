@@ -1,3 +1,4 @@
+import { emitTextraEvent } from './services/events';
 import {
   Fragment,
   useCallback,
@@ -1127,15 +1128,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         latestDocument?.conflict === current?.conflict
       )
         setAgentContext(synced?.ok ? synced.value : null);
-      window.dispatchEvent(
-        new CustomEvent('textra:notify', {
-          detail: {
-            message:
-              'The file changed during review. Your current text is safe; ask again to review fresh changes.',
-            tone: 'error',
-          },
-        }),
-      );
+      emitTextraEvent('textra:notify', {
+        message:
+          'The file changed during review. Your current text is safe; ask again to review fresh changes.',
+        tone: 'error',
+      });
       throw cause;
     }
     setAgentContext(result.context);
@@ -1971,15 +1968,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     if (useWorkspace.getState().project?.id !== project.id) return;
     if (res.ok) {
       setHistoryDiff(null);
-      window.dispatchEvent(new CustomEvent('textra:history:updated'));
-      window.dispatchEvent(
-        new CustomEvent('textra:notify', {
-          detail: {
-            message: `Restored ${snapshot.path} from history`,
-            tone: 'success',
-          },
-        }),
-      );
+      emitTextraEvent('textra:history:updated');
+      emitTextraEvent('textra:notify', {
+        message: `Restored ${snapshot.path} from history`,
+        tone: 'success',
+      });
     } else {
       showError(res.error);
     }
@@ -1993,14 +1986,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       snapshotId: snapshot.id,
     });
     if (res.ok && res.value) {
-      window.dispatchEvent(
-        new CustomEvent('textra:notify', {
-          detail: {
-            message: 'Snapshot exported successfully',
-            tone: 'success',
-          },
-        }),
-      );
+      emitTextraEvent('textra:notify', {
+        message: 'Snapshot exported successfully',
+        tone: 'success',
+      });
     } else if (!res.ok) {
       showError(res.error);
     }
@@ -2026,7 +2015,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           snapshot: res.value,
         });
       }
-      window.dispatchEvent(new CustomEvent('textra:history:updated'));
+      emitTextraEvent('textra:history:updated');
     } else {
       showError(res.error);
     }
@@ -2043,7 +2032,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       if (historyDiff?.snapshot.id === snapshot.id) {
         setHistoryDiff(null);
       }
-      window.dispatchEvent(new CustomEvent('textra:history:updated'));
+      emitTextraEvent('textra:history:updated');
       notify('Deleted historical snapshot.', 'info');
     } else {
       showError(res.error);
@@ -2064,15 +2053,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       label,
     });
     if (res.ok) {
-      window.dispatchEvent(new CustomEvent('textra:history:updated'));
-      window.dispatchEvent(
-        new CustomEvent('textra:notify', {
-          detail: {
-            message: `Created snapshot for ${activePath}`,
-            tone: 'success',
-          },
-        }),
-      );
+      emitTextraEvent('textra:history:updated');
+      emitTextraEvent('textra:notify', {
+        message: `Created snapshot for ${activePath}`,
+        tone: 'success',
+      });
     } else {
       showError(res.error);
     }
@@ -2097,7 +2082,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           })
           .then((res) => {
             if (res.ok && res.value) {
-              window.dispatchEvent(new CustomEvent('textra:history:updated'));
+              emitTextraEvent('textra:history:updated');
             }
           })
           .catch(() => undefined);
@@ -2145,16 +2130,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           recipe: engine,
         });
         if (res.ok) {
-          window.dispatchEvent(
-            new CustomEvent('textra:notify', {
-              detail: {
-                message: res.value.removedCount
-                  ? `Cleaned ${res.value.removedCount} auxiliary file${res.value.removedCount === 1 ? '' : 's'}`
-                  : 'No auxiliary files to clean',
-                tone: 'success',
-              },
-            }),
-          );
+          emitTextraEvent('textra:notify', {
+            message: res.value.removedCount
+              ? `Cleaned ${res.value.removedCount} auxiliary file${res.value.removedCount === 1 ? '' : 's'}`
+              : 'No auxiliary files to clean',
+            tone: 'success',
+          });
         } else {
           showError(res.error);
         }
@@ -2518,16 +2499,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                             recipe: engine,
                           });
                           if (res.ok) {
-                            window.dispatchEvent(
-                              new CustomEvent('textra:notify', {
-                                detail: {
-                                  message: res.value.removedCount
-                                    ? `Cleaned ${res.value.removedCount} auxiliary file${res.value.removedCount === 1 ? '' : 's'}`
-                                    : 'No auxiliary files to clean',
-                                  tone: 'success',
-                                },
-                              }),
-                            );
+                            emitTextraEvent('textra:notify', {
+                              message: res.value.removedCount
+                                ? `Cleaned ${res.value.removedCount} auxiliary file${res.value.removedCount === 1 ? '' : 's'}`
+                                : 'No auxiliary files to clean',
+                              tone: 'success',
+                            });
                           } else {
                             showError(res.error);
                           }
@@ -3396,11 +3373,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       <button
                         onClick={() => {
                           setRecipeOpen(false);
-                          window.dispatchEvent(
-                            new CustomEvent('textra:open-settings', {
-                              detail: { section: 'compilation' },
-                            }),
-                          );
+                          emitTextraEvent('textra:open-settings', { section: 'compilation' });
                         }}
                       >
                         Manage recipes…

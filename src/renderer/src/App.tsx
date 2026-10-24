@@ -1,3 +1,4 @@
+import { emitTextraEvent } from './services/events';
 import { useEffect, useRef, useState } from 'react';
 import { lazyFeature } from './features/startup/LazyFeature';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -70,73 +71,73 @@ function CommandPalette() {
       label: 'Compile active document',
       shortcut: 'Ctrl Enter',
       icon: Play,
-      run: () => window.dispatchEvent(new Event('textra:compile')),
+      run: () => emitTextraEvent('textra:compile'),
     },
     {
       label: 'Save current file',
       shortcut: 'Ctrl S',
       icon: Save,
-      run: () => window.dispatchEvent(new Event('textra:save-active')),
+      run: () => emitTextraEvent('textra:save-active'),
     },
     {
       label: 'Save all open files',
       shortcut: '',
       icon: Save,
-      run: () => window.dispatchEvent(new Event('textra:save-all')),
+      run: () => emitTextraEvent('textra:save-all'),
     },
     {
       label: 'Open project folder',
       shortcut: 'Ctrl O',
       icon: FolderOpen,
-      run: () => window.dispatchEvent(new Event('textra:open-folder')),
+      run: () => emitTextraEvent('textra:open-folder'),
     },
     {
       label: 'New file',
       shortcut: '',
       icon: FilePlus2,
-      run: () => window.dispatchEvent(new Event('textra:new-file')),
+      run: () => emitTextraEvent('textra:new-file'),
     },
     {
       label: 'New folder',
       shortcut: '',
       icon: FolderPlus,
-      run: () => window.dispatchEvent(new Event('textra:new-folder')),
+      run: () => emitTextraEvent('textra:new-folder'),
     },
     {
       label: 'Find in PDF preview',
       shortcut: 'Ctrl F',
       icon: FilePdf,
-      run: () => window.dispatchEvent(new Event('textra:find-pdf')),
+      run: () => emitTextraEvent('textra:find-pdf'),
     },
     {
       label: 'Find and replace in editor',
       shortcut: 'Ctrl H',
       icon: Search,
-      run: () => window.dispatchEvent(new Event('textra:replace-source')),
+      run: () => emitTextraEvent('textra:replace-source'),
     },
     {
       label: 'Go to line',
       shortcut: 'Ctrl G',
       icon: LocateFixed,
-      run: () => window.dispatchEvent(new Event('textra:goto-line')),
+      run: () => emitTextraEvent('textra:goto-line'),
     },
     {
       label: 'Format document with latexindent',
       shortcut: '',
       icon: Pencil,
-      run: () => window.dispatchEvent(new Event('textra:format-document')),
+      run: () => emitTextraEvent('textra:format-document'),
     },
     {
       label: 'Clean generated build files',
       shortcut: '',
       icon: Trash2,
-      run: () => window.dispatchEvent(new Event('textra:clean-artifacts')),
+      run: () => emitTextraEvent('textra:clean-artifacts'),
     },
     {
       label: 'Toggle word wrap',
       shortcut: '',
       icon: Scroll,
-      run: () => window.dispatchEvent(new Event('textra:toggle-wrap')),
+      run: () => emitTextraEvent('textra:toggle-wrap'),
     },
     {
       label: 'Toggle formatting toolbar',
@@ -166,16 +167,13 @@ function CommandPalette() {
       label: 'Configure keyboard shortcuts',
       shortcut: '',
       icon: Article,
-      run: () =>
-        window.dispatchEvent(
-          new CustomEvent('textra:open-settings', { detail: { section: 'shortcuts' } }),
-        ),
+      run: () => emitTextraEvent('textra:open-settings', { section: 'shortcuts' }),
     },
     {
       label: 'Open settings',
       shortcut: '',
       icon: Settings,
-      run: () => window.dispatchEvent(new Event('textra:open-settings')),
+      run: () => emitTextraEvent('textra:open-settings'),
     },
     {
       label: 'Open application data folder (AppData)',
@@ -189,13 +187,13 @@ function CommandPalette() {
       label: 'View file history',
       shortcut: '',
       icon: History,
-      run: () => window.dispatchEvent(new Event('textra:view-history')),
+      run: () => emitTextraEvent('textra:view-history'),
     },
     {
       label: 'Create history snapshot',
       shortcut: '',
       icon: Plus,
-      run: () => window.dispatchEvent(new Event('textra:create-snapshot')),
+      run: () => emitTextraEvent('textra:create-snapshot'),
     },
     {
       label: 'Toggle sidebar',
@@ -535,16 +533,16 @@ export function App() {
     const ui = useUI.getState();
     switch (id) {
       case 'save':
-        window.dispatchEvent(new Event('textra:save-active'));
+        emitTextraEvent('textra:save-active');
         break;
       case 'saveCopy':
-        window.dispatchEvent(new Event('textra:save-copy'));
+        emitTextraEvent('textra:save-copy');
         break;
       case 'saveAll':
-        window.dispatchEvent(new Event('textra:save-all'));
+        emitTextraEvent('textra:save-all');
         break;
       case 'compile':
-        window.dispatchEvent(new Event('textra:compile'));
+        emitTextraEvent('textra:compile');
         break;
       case 'commandPalette':
         ui.setPaletteOpen(!ui.paletteOpen);
@@ -558,57 +556,55 @@ export function App() {
         break;
       case 'find':
       case 'findPdf':
-        window.dispatchEvent(new Event('textra:find-pdf'));
+        emitTextraEvent('textra:find-pdf');
         break;
       case 'replace':
-        window.dispatchEvent(new Event('textra:replace-source'));
+        emitTextraEvent('textra:replace-source');
         break;
       case 'gotoLine':
-        window.dispatchEvent(new Event('textra:goto-line'));
+        emitTextraEvent('textra:goto-line');
         break;
       case 'formatDocument':
-        window.dispatchEvent(new Event('textra:format-document'));
+        emitTextraEvent('textra:format-document');
         break;
       case 'cleanArtifacts':
-        window.dispatchEvent(new Event('textra:clean-artifacts'));
+        emitTextraEvent('textra:clean-artifacts');
         break;
       case 'cleanAux':
-        window.dispatchEvent(new Event('textra:clean-aux'));
+        emitTextraEvent('textra:clean-aux');
         break;
       case 'openFolder':
-        window.dispatchEvent(new Event('textra:open-folder'));
+        emitTextraEvent('textra:open-folder');
         break;
       case 'newFile':
-        window.dispatchEvent(new Event('textra:new-file'));
+        emitTextraEvent('textra:new-file');
         break;
       case 'newFolder':
-        window.dispatchEvent(new Event('textra:new-folder'));
+        emitTextraEvent('textra:new-folder');
         break;
       case 'toggleWrap':
-        window.dispatchEvent(new Event('textra:toggle-wrap'));
+        emitTextraEvent('textra:toggle-wrap');
         break;
       case 'toggleFormatToolbar':
         ui.updatePreferences({ formatToolbarVisible: !ui.preferences.formatToolbarVisible });
         break;
       case 'switchModel':
-        window.dispatchEvent(new Event('textra:switch-model'));
+        emitTextraEvent('textra:switch-model');
         break;
       case 'inlineEdit':
-        window.dispatchEvent(new Event('textra:inline-edit'));
+        emitTextraEvent('textra:inline-edit');
         break;
       case 'openSettings':
-        window.dispatchEvent(new Event('textra:open-settings'));
+        emitTextraEvent('textra:open-settings');
         break;
       case 'openAiSettings':
-        window.dispatchEvent(
-          new CustomEvent('textra:open-settings', { detail: { section: 'ai' } }),
-        );
+        emitTextraEvent('textra:open-settings', { section: 'ai' });
         break;
       case 'escape':
         if (ui.paletteOpen) ui.setPaletteOpen(false);
         break;
       default:
-        window.dispatchEvent(new CustomEvent('textra:custom-shortcut', { detail: { action: id } }));
+        emitTextraEvent('textra:custom-shortcut', { action: id });
         break;
     }
   }

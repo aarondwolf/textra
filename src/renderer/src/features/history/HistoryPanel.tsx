@@ -807,8 +807,29 @@ export function HistoryPanel({
             className="writing-resizer"
             onMouseDown={onMouseDown}
             role="separator"
+            aria-label="Recent projects height"
             aria-orientation="horizontal"
-            title="Drag to resize File History and Recent Projects"
+            aria-valuemin={70}
+            aria-valuemax={450}
+            aria-valuenow={recentsHeight}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setRecentsHeight((prev) => Math.min(450, prev + 16));
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setRecentsHeight((prev) => Math.max(70, prev - 16));
+              } else if (e.key === 'Home') {
+                e.preventDefault();
+                setRecentsHeight(70);
+              } else if (e.key === 'End') {
+                e.preventDefault();
+                setRecentsHeight(450);
+              }
+            }}
+            onDoubleClick={() => setRecentsHeight(160)}
+            title="Drag or use arrow keys to resize File History and Recent Projects"
           />
         )}
 

@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  access,
   lstat,
   mkdir,
   open,
@@ -14,7 +13,6 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { constants } from 'node:fs';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   BuildRequest,
@@ -29,6 +27,8 @@ import type {
 } from '../../shared/api';
 import { parseDiagnostics } from './diagnostics';
 import { getToolPath } from './tool-paths';
+import { terminateProcessTree } from './owned-process';
+import which from 'which';
 import type { RecipeSettings } from '../../shared/recipes';
 import { planRecipe, recipeArguments, recipeDirectory, type RecipePlan } from './recipe-plan';
 
@@ -78,8 +78,6 @@ export async function findExecutable(name: string): Promise<string | null> {
   if (!(names as readonly string[]).includes(name)) throw new BuildError('Unsupported tool.');
   const custom = getToolPath(name);
   if (custom) {
-    // A user override replaces PATH lookup. If it is stale, report the tool as missing
-    // instead of silently running a different installation.
     try {
       if ((await stat(custom)).isFile()) return await realpath(custom);
     } catch {
@@ -87,21 +85,15 @@ export async function findExecutable(name: string): Promise<string | null> {
     }
     return null;
   }
-  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-    const clean = directory.replace(/^"|"$/g, '');
-    if (!isAbsolute(clean)) continue;
-    const candidates = [join(clean, process.platform === 'win32' ? `${name}.exe` : name)];
+  try {
+    const resolved = await which(name, { nothrow: true });
+    if (resolved && (await stat(resolved)).isFile()) return await realpath(resolved);
     if (name === 'latexindent') {
-      candidates.push(join(clean, 'latexindent.pl'), join(clean, 'latexindent'));
+      const pl = await which('latexindent.pl', { nothrow: true });
+      if (pl && (await stat(pl)).isFile()) return await realpath(pl);
     }
-    for (const file of candidates) {
-      try {
-        await access(file, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
-        if ((await stat(file)).isFile()) return await realpath(file);
-      } catch {
-        /* Try the next candidate or PATH entry. */
-      }
-    }
+  } catch {
+    /* Tool not found */
   }
   return null;
 }
@@ -357,35 +349,7 @@ export class BuildService {
   private async terminate(): Promise<void> {
     const child = this.child;
     if (!child || child.exitCode !== null) return;
-    if (process.platform === 'win32' && child.pid) {
-      await new Promise<void>((done) => {
-        const killer = spawn(
-          join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe'),
-          ['/PID', String(child.pid), '/T', '/F'],
-          { shell: false, windowsHide: true, stdio: 'ignore' },
-        );
-        const timer = setTimeout(() => {
-          killer.kill();
-          child.kill();
-          done();
-        }, 5000);
-        killer.on('error', () => {
-          clearTimeout(timer);
-          child.kill();
-          done();
-        });
-        killer.on('close', () => {
-          clearTimeout(timer);
-          done();
-        });
-      });
-    } else if (child.pid) {
-      try {
-        process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        child.kill('SIGKILL');
-      }
-    }
+    await terminateProcessTree(child);
   }
   async cancel(): Promise<void> {
     if (!this.state.running) return;

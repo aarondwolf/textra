@@ -1,5 +1,45 @@
 # Current state
 
+2026-10-24 Architectural Modernization & Codebase Audit Implementations:
+
+- AsyncMutex Consolidation (F-13):
+  - Created [src/main/services/mutex.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/mutex.ts) exporting `AsyncMutex` providing sequential FIFO execution (`run`) and barrier synchronization (`flush`).
+  - Unified promise mutexes across [src/main/services/projects.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/projects.ts), [src/main/services/history.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/history.ts), [src/main/services/preferences.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/preferences.ts), [src/main/services/settings.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/settings.ts), and [src/main/services/ai-chats.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/ai-chats.ts).
+  - Added unit test in [tests/unit/mutex.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/mutex.test.ts).
+- Clean Process Tree Termination Consolidation (F-14):
+  - In [src/main/services/latex.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/latex.ts), eliminated hand-rolled process killer and shared `terminateProcessTree` from [src/main/services/owned-process.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/owned-process.ts).
+  - Cleanly terminates child processes and compiler process trees across Windows and POSIX without leaking background processes. Verified with real LaTeX process cancellation and timeout integration tests.
+- Strongly Typed In-Renderer Event Bus (F-09):
+  - Created [src/renderer/src/services/events.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/services/events.ts) with typed event registry `TextraEvents`, `emitTextraEvent`, and `onTextraEvent`.
+  - Replaced untyped `window.dispatchEvent` calls across [src/renderer/src/App.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/App.tsx) and [src/renderer/src/Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx).
+  - Added unit test in [tests/unit/events.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/events.test.ts).
+- Myers Line Diffing Engine in AI Edits (F-05):
+  - In [src/shared/ai-edits.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/ai-edits.ts), replaced the custom quadratic matrix table with Myers line diffing via `diff` (`diffLines`), with prefix/suffix line trimming and bounds protection.
+  - Added unit test in [tests/unit/ai-edits.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/ai-edits.test.ts).
+- BibTeX Nested Braces & Date Fallback (F-02):
+  - In [src/shared/bibliography.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/bibliography.ts), replaced fragile single-character regex with a balanced brace extractor supporting nested braces, unquoted values, and BibLaTeX `date` fallback.
+  - Added test coverage in [tests/unit/bibliography.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/bibliography.test.ts).
+- Cross-Platform Executable Resolution via `which` (F-14):
+  - Adopted `which` across [src/main/services/texlab-manager.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/texlab-manager.ts), [src/main/services/latex.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/latex.ts), [src/main/services/language.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/language.ts), and [src/main/services/ai-service.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/ai-service.ts).
+  - Respects Windows `PATHEXT` and POSIX `X_OK` binaries without hand-rolled delimiter loops.
+- TeX Diagnostics Deduplication (F-15):
+  - In [src/main/services/diagnostics.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/diagnostics.ts), replaced `O(N^2)` `findIndex(JSON.stringify)` deduplication with `O(N)` deterministic key set deduplication.
+- Safe LaTeX Section Movement (F-01):
+  - In [src/shared/writing-analysis.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/writing-analysis.ts), ensured moving sections never appends content past \end{document}.
+- Centralized Transient Retry Helper for Atomic Writes (F-10):
+  - Created [src/main/services/retry.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/retry.ts) exporting `retryTransient`.
+  - Applied consistently across [src/main/services/projects.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/projects.ts) (`saveFile` and `writeRecent`), [src/main/services/history-storage.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/history-storage.ts), [src/main/services/settings.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/settings.ts), [src/main/services/ai-service.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/ai-service.ts), [src/main/services/preferences.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/preferences.ts), and [src/main/services/ai-chats.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/ai-chats.ts).
+  - Added unit test in [tests/unit/retry.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/retry.test.ts).
+- Zod Validation Adoption (F-08):
+  - Defined reusable Zod schemas in [src/shared/recipes.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/recipes.ts) and [src/main/services/settings.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/main/services/settings.ts) for recipe and project config validation.
+- Accessible Splitters & DropdownMenu Keyboard Navigation (F-12):
+  - In [src/renderer/src/components/DropdownMenu.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/DropdownMenu.tsx) and [styles.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/styles.css), implemented full keyboard navigation (`ArrowDown`, `ArrowUp`, `Home`, `End`, `Enter`, `Space`, `Escape`, `Tab`), roving tabIndex / `aria-activedescendant`, and auto-scroll into view.
+  - In [src/renderer/src/features/writing/WritingPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/writing/WritingPanel.tsx), [src/renderer/src/features/history/HistoryPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/history/HistoryPanel.tsx), and [writing.css](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/writing/writing.css), added WCAG `role="separator"`, `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, arrow key resize handling, and `:focus-visible` highlights.
+- Verification:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm test` passed (all 70 test files, 715/715 tests passed).
+
 2026-10-24 Electron audit milestone (branch codex/electron-architecture, base 81298e0):
 
 - Implemented the user-approved comprehensive architecture plan. Findings and source

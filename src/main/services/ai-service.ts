@@ -1,3 +1,4 @@
+import { retryTransient } from './retry';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -12,7 +13,8 @@ import {
   stat,
   unlink,
 } from 'node:fs/promises';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
+import which from 'which';
 import type { AIProviderSettings, AISettings, OllamaLocalStatus } from '../../shared/api';
 import {
   AI_ROLES,
@@ -310,12 +312,14 @@ function sanitize(detail: string, key: string | null): string {
 
 const ollamaLauncher: OllamaLauncher = {
   async find() {
+    try {
+      const onPath = await which('ollama', { nothrow: true });
+      if (onPath && (await stat(onPath)).isFile()) return await realpath(onPath);
+    } catch {
+      /* Try standard locations */
+    }
     const name = process.platform === 'win32' ? 'ollama.exe' : 'ollama';
     const candidates: string[] = [];
-    for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-      const clean = directory.replace(/^"|"$/g, '');
-      if (isAbsolute(clean)) candidates.push(join(clean, name));
-    }
     if (process.platform === 'win32' && process.env.LOCALAPPDATA)
       candidates.push(join(process.env.LOCALAPPDATA, 'Programs', 'Ollama', name));
     if (process.platform === 'darwin')
@@ -519,24 +523,7 @@ export class AIService {
     if (chosen) settings.roleDefaults.completion = { provider: 'ollama-local', model: chosen.id };
   }
 
-  private static async retryTransient<T>(action: () => Promise<T>): Promise<T> {
-    const delays = [50, 100, 200, 400, 800];
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await action();
-      } catch (error) {
-        if (
-          attempt >= delays.length ||
-          !error ||
-          typeof error !== 'object' ||
-          !('code' in error) ||
-          !['EPERM', 'EBUSY', 'EACCES'].includes(String(error.code))
-        )
-          throw error;
-        await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
-      }
-    }
-  }
+  
 
   private async write(settings: StoredSettings): Promise<void> {
     await this.checkPaths();
@@ -556,7 +543,7 @@ export class AIService {
         await file.close();
       }
       await this.checkPaths();
-      await AIService.retryTransient(() => rename(temporary, join(this.directory, 'ai.json')));
+      await retryTransient(() => rename(temporary, join(this.directory, 'ai.json')));
     } finally {
       await unlink(temporary).catch(() => undefined);
     }

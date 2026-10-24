@@ -1,3 +1,5 @@
+import { AsyncMutex } from './mutex';
+import { retryTransient } from './retry';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -357,7 +359,7 @@ function isMissing(error: unknown): boolean {
 /** User preferences only. Document contents and credentials never belong here. */
 export class PreferencesStore {
   private readonly filename: string;
-  private pending: Promise<void> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
 
   constructor(private readonly directory: string) {
     this.filename = join(directory, 'preferences.json');
@@ -373,40 +375,36 @@ export class PreferencesStore {
   }
 
   async get(): Promise<Preferences> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
     return this.read();
   }
 
   async flush(): Promise<void> {
-    await this.pending;
+    await this.mutex.flush();
   }
 
   async set(value: unknown): Promise<Preferences> {
     const preferences = validatePreferences(value);
-    const write = this.pending
-      .catch(() => undefined)
-      .then(async () => {
-        // Do not silently replace corrupt settings or an unknown future version.
-        await this.read();
-        await mkdir(this.directory, { recursive: true });
-        const temporary = join(this.directory, `.preferences-${randomUUID()}.tmp`);
+    await this.mutex.run(async () => {
+      // Do not silently replace corrupt settings or an unknown future version.
+      await this.read();
+      await mkdir(this.directory, { recursive: true });
+      const temporary = join(this.directory, `.preferences-${randomUUID()}.tmp`);
+      try {
+        const file = await open(temporary, 'wx', 0o600);
         try {
-          const file = await open(temporary, 'wx', 0o600);
-          try {
-            await file.writeFile(`${JSON.stringify(preferences, null, 2)}\n`, 'utf8');
-            await file.sync();
-          } finally {
-            await file.close();
-          }
-          await rename(temporary, this.filename);
+          await file.writeFile(`${JSON.stringify(preferences, null, 2)}\n`, 'utf8');
+          await file.sync();
         } finally {
-          await unlink(temporary).catch((error: unknown) => {
-            if (!isMissing(error)) throw error;
-          });
+          await file.close();
         }
-      });
-    this.pending = write;
-    await write;
+        await retryTransient(() => rename(temporary, this.filename));
+      } finally {
+        await unlink(temporary).catch((error: unknown) => {
+          if (!isMissing(error)) throw error;
+        });
+      }
+    });
     return { ...preferences };
   }
 }

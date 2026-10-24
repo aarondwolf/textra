@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export const RECIPE_COMMANDS = [
   'pdflatex',
   'xelatex',
@@ -6,6 +8,7 @@ export const RECIPE_COMMANDS = [
   'bibtex',
   'biber',
 ] as const;
+
 export interface RecipeTool {
   name: string;
   command: string;
@@ -13,10 +16,12 @@ export interface RecipeTool {
   env?: Record<string, string>;
   cwd?: string;
 }
+
 export interface BuildRecipe {
   name: string;
   tools: string[];
 }
+
 export interface RecipeSettings {
   'latex-workshop.latex.recipes': BuildRecipe[];
   'latex-workshop.latex.tools': RecipeTool[];
@@ -24,6 +29,48 @@ export interface RecipeSettings {
   'latex-workshop.latex.auxDir': string;
   'latex-workshop.latex.recipe.default': string;
 }
+
+export const recipeNameSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((val) => val.trim().length > 0 && ![...val].some((c) => c.charCodeAt(0) < 32));
+
+export const recipeTextSchema = z
+  .string()
+  .max(8192)
+  .refine((val) => ![...val].some((c) => [0, 10, 13].includes(c.charCodeAt(0))));
+
+export const recipeToolEnvSchema = z.record(z.string(), recipeTextSchema).refine(
+  (env) => {
+    const allowed = ['TEXINPUTS', 'BIBINPUTS', 'BSTINPUTS', 'TEXMFHOME'];
+    const keys = Object.keys(env);
+    return keys.length <= 20 && keys.every((k) => allowed.includes(k));
+  },
+  { message: 'Tool env supports only TEXINPUTS, BIBINPUTS, BSTINPUTS and TEXMFHOME.' },
+);
+
+export const recipeToolSchema = z
+  .object({
+    name: recipeNameSchema,
+    command: recipeTextSchema.refine((cmd) =>
+      RECIPE_COMMANDS.includes(
+        cmd.replace(/\.exe$/i, '').toLowerCase() as (typeof RECIPE_COMMANDS)[number],
+      ),
+    ),
+    args: z.array(recipeTextSchema).max(128),
+    env: recipeToolEnvSchema.optional(),
+    cwd: recipeTextSchema.optional(),
+  })
+  .strict();
+
+export const buildRecipeSchema = z
+  .object({
+    name: recipeNameSchema,
+    tools: z.array(recipeNameSchema).min(1).max(32),
+  })
+  .strict();
+
 export function createDefaultRecipeSettings(): RecipeSettings {
   return {
     'latex-workshop.latex.recipes': [
@@ -76,15 +123,7 @@ export function validateRecipeSettings(value: unknown): RecipeSettings {
   const settings = { ...createDefaultRecipeSettings(), ...value } as RecipeSettings;
   const recipes = settings['latex-workshop.latex.recipes'];
   const tools = settings['latex-workshop.latex.tools'];
-  const name = (value: unknown): value is string =>
-    typeof value === 'string' &&
-    value.trim().length > 0 &&
-    value.length <= 128 &&
-    ![...value].some((character) => character.charCodeAt(0) < 32);
-  const text = (value: unknown): value is string =>
-    typeof value === 'string' &&
-    value.length <= 8192 &&
-    ![...value].some((character) => [0, 10, 13].includes(character.charCodeAt(0)));
+
   if (
     !Array.isArray(recipes) ||
     !recipes.length ||
@@ -94,67 +133,66 @@ export function validateRecipeSettings(value: unknown): RecipeSettings {
     tools.length > 200
   )
     throw new Error('Provide 1–100 recipes and 1–200 tools.');
+
   for (const tool of tools) {
     if (
-      !tool ||
-      !name(tool.name) ||
-      !text(tool.command) ||
-      !RECIPE_COMMANDS.includes(
-        tool.command.replace(/\.exe$/i, '').toLowerCase() as (typeof RECIPE_COMMANDS)[number],
-      ) ||
-      !Array.isArray(tool.args) ||
-      tool.args.length > 128 ||
-      !tool.args.every(text) ||
-      (tool.cwd !== undefined && !text(tool.cwd)) ||
-      Object.keys(tool).some((key) => !['name', 'command', 'args', 'env', 'cwd'].includes(key))
-    )
-      throw new Error(
-        'Tools require a name, an installed TeX command and an argument array. Supported commands: ' +
-          RECIPE_COMMANDS.join(', ') +
-          '.',
-      );
-    if (
+      tool &&
+      typeof tool === 'object' &&
       tool.env !== undefined &&
       (!tool.env ||
         typeof tool.env !== 'object' ||
         Array.isArray(tool.env) ||
         Object.keys(tool.env).length > 20 ||
         Object.entries(tool.env).some(
-          ([key, value]) =>
-            !['TEXINPUTS', 'BIBINPUTS', 'BSTINPUTS', 'TEXMFHOME'].includes(key) || !text(value),
+          ([key, val]) =>
+            !['TEXINPUTS', 'BIBINPUTS', 'BSTINPUTS', 'TEXMFHOME'].includes(key) ||
+            !recipeTextSchema.safeParse(val).success,
         ))
-    )
+    ) {
       throw new Error('Tool env supports only TEXINPUTS, BIBINPUTS, BSTINPUTS and TEXMFHOME.');
+    }
+
+    const toolResult = recipeToolSchema.safeParse(tool);
+    if (!toolResult.success) {
+      throw new Error(
+        'Tools require a name, an installed TeX command and an argument array. Supported commands: ' +
+          RECIPE_COMMANDS.join(', ') +
+          '.',
+      );
+    }
   }
+
   if (
     new Set(tools.map((tool) => tool.name)).size !== tools.length ||
     new Set(recipes.map((recipe) => recipe?.name)).size !== recipes.length
   )
     throw new Error('Recipe and tool names must be unique.');
+
   for (const recipe of recipes) {
-    if (
-      !recipe ||
-      !name(recipe.name) ||
-      !Array.isArray(recipe.tools) ||
-      !recipe.tools.length ||
-      recipe.tools.length > 32 ||
-      recipe.tools.some((step) => !name(step) || !tools.some((tool) => tool.name === step)) ||
-      Object.keys(recipe).some((key) => !['name', 'tools'].includes(key))
-    )
+    const recipeResult = buildRecipeSchema.safeParse(recipe);
+    if (!recipeResult.success || recipe.tools.some((step) => !tools.some((t) => t.name === step))) {
       throw new Error(
         'Each recipe needs a unique name and 1–32 steps referencing existing tool names.',
       );
+    }
   }
-  for (const key of ['latex-workshop.latex.outDir', 'latex-workshop.latex.auxDir'] as const)
-    if (!text(settings[key]) || !settings[key].trim())
+
+  for (const key of ['latex-workshop.latex.outDir', 'latex-workshop.latex.auxDir'] as const) {
+    const val = settings[key];
+    const textResult = recipeTextSchema.safeParse(val);
+    if (!textResult.success || !val.trim())
       throw new Error('Output and auxiliary directories are required.');
+  }
+
   const selected = settings['latex-workshop.latex.recipe.default'];
+  const nameResult = recipeNameSchema.safeParse(selected);
   if (
-    !name(selected) ||
+    !nameResult.success ||
     (!['first', 'lastUsed'].includes(selected) &&
       !recipes.some((recipe) => recipe.name === selected))
   )
     throw new Error('Default recipe must be first, lastUsed, or an existing recipe name.');
+
   return structuredClone({
     'latex-workshop.latex.recipes': recipes,
     'latex-workshop.latex.tools': tools,

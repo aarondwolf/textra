@@ -1,3 +1,5 @@
+import { AsyncMutex } from './mutex';
+import { retryTransient } from './retry';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   link,
@@ -86,7 +88,7 @@ function missing(error: unknown): boolean {
 
 export class ProjectService {
   private active: { id: string; root: string } | null = null;
-  private pending: Promise<unknown> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
   private readonly recentFile: string;
 
   constructor(private readonly userData: string) {
@@ -94,13 +96,11 @@ export class ProjectService {
   }
 
   async flush(): Promise<void> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
   }
 
   private serialize<T>(action: () => Promise<T>): Promise<T> {
-    const result = this.pending.catch(() => undefined).then(action);
-    this.pending = result;
-    return result;
+    return this.mutex.run(action);
   }
 
   getRoot(projectId: string): string {
@@ -260,7 +260,7 @@ export class ProjectService {
             'The file changed while saving. Your edits are still open.',
           );
         await this.resolvePath(ref);
-        await rename(temporary, target);
+        await retryTransient(() => rename(temporary, target));
       } finally {
         await unlink(temporary).catch((error: unknown) => {
           if (!missing(error)) throw error;
@@ -531,7 +531,7 @@ export class ProjectService {
       } finally {
         await file.close();
       }
-      await rename(temporary, this.recentFile);
+      await retryTransient(() => rename(temporary, this.recentFile));
     } finally {
       await unlink(temporary).catch((error: unknown) => {
         if (!missing(error)) throw error;
@@ -540,7 +540,7 @@ export class ProjectService {
   }
 
   async getRecentProjects(): Promise<RecentProject[]> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
     return this.loadRecent();
   }
 

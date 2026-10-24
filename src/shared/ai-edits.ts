@@ -1,3 +1,5 @@
+import { diffLines } from 'diff';
+
 export interface AIEditHunk {
   id: string;
   start: number;
@@ -24,44 +26,58 @@ export function agentEditHunks(original: string, modified: string): AIEditHunk[]
     lastBefore--;
     lastAfter--;
   }
+
   const offsets = [0];
   for (const line of before) offsets.push(offsets[offsets.length - 1] + line.length);
   const rows = lastBefore - prefix;
   const columns = lastAfter - prefix;
   const hunks: AIEditHunk[] = [];
+
   const add = (start: number, end: number, text: string) => {
     if (start !== end || text) hunks.push({ id: `hunk-${hunks.length + 1}`, start, end, text });
   };
+
   if ((rows + 1) * (columns + 1) > 250_000) {
     add(offsets[prefix], offsets[lastBefore], after.slice(prefix, lastAfter).join(''));
     return hunks;
   }
-  const width = columns + 1;
-  const table = new Uint32Array((rows + 1) * width);
-  for (let i = rows - 1; i >= 0; i--)
-    for (let j = columns - 1; j >= 0; j--)
-      table[i * width + j] =
-        before[prefix + i] === after[prefix + j]
-          ? 1 + table[(i + 1) * width + j + 1]
-          : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
-  let i = 0;
-  let j = 0;
-  while (i < rows || j < columns) {
-    if (i < rows && j < columns && before[prefix + i] === after[prefix + j]) {
-      i++;
-      j++;
-      continue;
+
+  const trimmedBefore = before.slice(prefix, lastBefore).join('');
+  const trimmedAfter = after.slice(prefix, lastAfter).join('');
+  const changes = diffLines(trimmedBefore, trimmedAfter);
+
+  let currentOffset = offsets[prefix];
+  let currentStart = -1;
+  let currentRemovedLength = 0;
+  let currentAddedText = '';
+
+  for (const part of changes) {
+    if (part.added) {
+      if (currentStart === -1) {
+        currentStart = currentOffset;
+      }
+      currentAddedText += part.value;
+    } else if (part.removed) {
+      if (currentStart === -1) {
+        currentStart = currentOffset;
+      }
+      currentRemovedLength += part.value.length;
+      currentOffset += part.value.length;
+    } else {
+      if (currentStart !== -1) {
+        add(currentStart, currentStart + currentRemovedLength, currentAddedText);
+        currentStart = -1;
+        currentRemovedLength = 0;
+        currentAddedText = '';
+      }
+      currentOffset += part.value.length;
     }
-    const start = i;
-    const inserted: string[] = [];
-    while (i < rows || j < columns) {
-      if (i < rows && j < columns && before[prefix + i] === after[prefix + j]) break;
-      if (j < columns && (i === rows || table[i * width + j + 1] >= table[(i + 1) * width + j]))
-        inserted.push(after[prefix + j++]);
-      else i++;
-    }
-    add(offsets[prefix + start], offsets[prefix + i], inserted.join(''));
   }
+
+  if (currentStart !== -1) {
+    add(currentStart, currentStart + currentRemovedLength, currentAddedText);
+  }
+
   return hunks;
 }
 

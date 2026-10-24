@@ -1,7 +1,7 @@
+import { retryTransient } from './retry';
 import { randomUUID } from 'node:crypto';
 import { link, lstat, mkdir, open, opendir, realpath, rename, unlink } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { readBounded } from './bounded-read';
 import { ProjectError, validateRelativePath } from './projects';
 
@@ -16,25 +16,7 @@ function unsafe(): never {
   );
 }
 
-/** Sharing locks are transient; every retry must repeat its caller's authority checks. */
-async function retryTransient<T>(action: () => Promise<T>): Promise<T> {
-  const delays = [50, 100, 200, 400, 800];
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await action();
-    } catch (error) {
-      if (
-        attempt >= delays.length ||
-        !error ||
-        typeof error !== 'object' ||
-        !('code' in error) ||
-        !['EPERM', 'EBUSY', 'EACCES'].includes(String(error.code))
-      )
-        throw error;
-      await delay(delays[attempt]);
-    }
-  }
-}
+
 
 /** All history paths, including persisted paths, pass this authority before filesystem access. */
 export class HistoryStorage {

@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useMemo,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -54,7 +56,7 @@ function isGroup<T extends string>(item: DropdownItemOrGroup<T>): item is Dropdo
  *
  * Unified dropdown and select component matching the styling of the formatting toolbar
  * and setup dialogs. Provides pill-styled trigger, floating shadow menu, checkmarks on active
- * items, keyboard escape handling, and outside-click dismissal.
+ * items, keyboard arrow navigation, roving tabIndex/aria-activedescendant, and outside-click dismissal.
  */
 export function DropdownMenu<T extends string = string>({
   value,
@@ -76,8 +78,11 @@ export function DropdownMenu<T extends string = string>({
   footer,
 }: DropdownMenuProps<T>) {
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const menuId = useId();
 
   // Close when clicking outside
   useEffect(() => {
@@ -91,47 +96,141 @@ export function DropdownMenu<T extends string = string>({
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, [open]);
 
-  // Flatten items to locate selected item label
-  const flatItems: DropdownMenuItem<T>[] = [];
-  for (const item of items) {
-    if (isGroup(item)) {
-      flatItems.push(...item.items);
-    } else {
-      flatItems.push(item);
+  // Flatten items to locate selected item label and index navigation
+  const flatItems = useMemo(() => {
+    const list: DropdownMenuItem<T>[] = [];
+    for (const item of items) {
+      if (isGroup(item)) {
+        list.push(...item.items);
+      } else {
+        list.push(item);
+      }
     }
-  }
+    return list;
+  }, [items]);
 
-  const selectedItem = flatItems.find((item) => item.value === value);
+  const selectedIndex = flatItems.findIndex((item) => item.value === value);
+  const selectedItem = selectedIndex >= 0 ? flatItems[selectedIndex] : undefined;
   const displayLabel = selectedItem ? selectedItem.label : placeholder;
 
+  // Initialize or reset highlightedIndex when open changes
+  useEffect(() => {
+    if (open) {
+      if (selectedIndex >= 0 && !flatItems[selectedIndex]?.disabled) {
+        setHighlightedIndex(selectedIndex);
+      } else {
+        const firstEnabled = flatItems.findIndex((item) => !item.disabled);
+        setHighlightedIndex(firstEnabled);
+      }
+    } else {
+      setHighlightedIndex(-1);
+    }
+  }, [open, selectedIndex, flatItems]);
+
+  // Auto-scroll highlighted item into view
+  useEffect(() => {
+    if (open && highlightedIndex >= 0 && itemRefs.current[highlightedIndex]) {
+      itemRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [open, highlightedIndex]);
+
+  const selectItemAt = (index: number) => {
+    const item = flatItems[index];
+    if (!item || item.disabled) return;
+    if (item.onClick) {
+      item.onClick();
+    }
+    if (onChange) {
+      onChange(item.value);
+    }
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const findNextEnabledIndex = (fromIndex: number, direction: 1 | -1): number => {
+    const total = flatItems.length;
+    if (total === 0) return -1;
+    for (let step = 1; step <= total; step++) {
+      const idx = (fromIndex + direction * step + total) % total;
+      if (!flatItems[idx]?.disabled) return idx;
+    }
+    return fromIndex;
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape' && open) {
+    if (disabled || items.length === 0) return;
+
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
       e.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => findNextEnabledIndex(prev, 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => findNextEnabledIndex(prev, -1));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      const first = flatItems.findIndex((item) => !item.disabled);
+      if (first >= 0) setHighlightedIndex(first);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      for (let i = flatItems.length - 1; i >= 0; i--) {
+        if (!flatItems[i]?.disabled) {
+          setHighlightedIndex(i);
+          break;
+        }
+      }
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      if (highlightedIndex >= 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        selectItemAt(highlightedIndex);
+      }
+    } else if (e.key === 'Tab') {
+      setOpen(false);
     }
   };
 
-  const renderItem = (item: DropdownMenuItem<T>) => {
+  const renderItem = (item: DropdownMenuItem<T>, flatIndex: number) => {
     const isSelected = item.value === value;
+    const isHighlighted = flatIndex === highlightedIndex;
+    const itemId = `${menuId}-item-${flatIndex}`;
+
     return (
       <button
         key={item.value}
+        id={itemId}
+        ref={(el) => {
+          itemRefs.current[flatIndex] = el;
+        }}
         type="button"
         role="menuitem"
-        className={['dropdown-menu-item', isSelected ? 'selected' : ''].filter(Boolean).join(' ')}
+        aria-selected={isSelected}
+        tabIndex={isHighlighted ? 0 : -1}
+        className={[
+          'dropdown-menu-item',
+          isSelected ? 'selected' : '',
+          isHighlighted ? 'highlighted' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         disabled={item.disabled}
-        onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
-        onClick={() => {
-          if (item.onClick) {
-            item.onClick();
-          }
-          if (onChange) {
-            onChange(item.value);
-          }
-          setOpen(false);
-          triggerRef.current?.focus();
+        onMouseEnter={() => {
+          if (!item.disabled) setHighlightedIndex(flatIndex);
         }}
+        onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
+        onClick={() => selectItemAt(flatIndex)}
       >
         <span className="dropdown-menu-item-content">
           {item.icon}
@@ -153,6 +252,8 @@ export function DropdownMenu<T extends string = string>({
       </button>
     );
   };
+
+  let flatIndexCounter = 0;
 
   return (
     <div
@@ -199,17 +300,15 @@ export function DropdownMenu<T extends string = string>({
           tabIndex={disabled || items.length === 0 ? -1 : 0}
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-controls={open ? `${menuId}-popup` : undefined}
+          aria-activedescendant={
+            open && highlightedIndex >= 0 ? `${menuId}-item-${highlightedIndex}` : undefined
+          }
           aria-label={ariaLabel}
           title={title}
           className="dropdown-menu-custom-trigger"
           onClick={() => {
             if (!disabled && items.length > 0) setOpen((prev) => !prev);
-          }}
-          onKeyDown={(e) => {
-            if (!disabled && items.length > 0 && (e.key === 'Enter' || e.key === ' ')) {
-              e.preventDefault();
-              setOpen((prev) => !prev);
-            }
           }}
           onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
           style={triggerStyle}
@@ -223,6 +322,10 @@ export function DropdownMenu<T extends string = string>({
           className="dropdown-menu-trigger editor-format-heading-trigger"
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-controls={open ? `${menuId}-popup` : undefined}
+          aria-activedescendant={
+            open && highlightedIndex >= 0 ? `${menuId}-item-${highlightedIndex}` : undefined
+          }
           aria-label={ariaLabel}
           title={title}
           disabled={disabled || items.length === 0}
@@ -237,6 +340,7 @@ export function DropdownMenu<T extends string = string>({
 
       {open && (
         <div
+          id={`${menuId}-popup`}
           className={[
             'dropdown-menu-popup',
             'editor-format-heading-menu',
@@ -247,6 +351,9 @@ export function DropdownMenu<T extends string = string>({
             .join(' ')}
           role="menu"
           aria-label={ariaLabel}
+          aria-activedescendant={
+            highlightedIndex >= 0 ? `${menuId}-item-${highlightedIndex}` : undefined
+          }
           style={menuStyle}
         >
           {items.map((itemOrGroup, idx) => {
@@ -254,11 +361,15 @@ export function DropdownMenu<T extends string = string>({
               return (
                 <div key={`group-${itemOrGroup.group}-${idx}`}>
                   <div className="dropdown-menu-group-header">{itemOrGroup.group}</div>
-                  {itemOrGroup.items.map((item) => renderItem(item))}
+                  {itemOrGroup.items.map((item) => {
+                    const currentIdx = flatIndexCounter++;
+                    return renderItem(item, currentIdx);
+                  })}
                 </div>
               );
             }
-            return renderItem(itemOrGroup);
+            const currentIdx = flatIndexCounter++;
+            return renderItem(itemOrGroup, currentIdx);
           })}
           {footer && <div className="dropdown-menu-footer">{footer}</div>}
         </div>

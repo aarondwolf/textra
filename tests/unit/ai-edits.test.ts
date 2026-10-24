@@ -41,6 +41,14 @@ describe('bounded agent review hunks', () => {
     expect(hunks).toHaveLength(1);
     expect(applyAgentHunks(before, hunks, [hunks[0].id])).toBe(after);
   });
+  it('preserves separate hunks even when changes are separated by many lines', () => {
+    const filler = 'unchanged line\n'.repeat(200);
+    const before = `first\n${filler}second\n`;
+    const modified = `FIRST\n${filler}SECOND\n`;
+    const hunks = agentEditHunks(before, modified);
+    expect(hunks).toHaveLength(2);
+    expect(applyAgentHunks(before, hunks, [hunks[0].id])).toBe(`FIRST\n${filler}second\n`);
+  });
   it('finds no changes in identical documents', () =>
     expect(agentEditHunks('same', 'same')).toEqual([]));
 });

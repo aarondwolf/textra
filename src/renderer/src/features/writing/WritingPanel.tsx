@@ -279,8 +279,29 @@ export function WritingPanel({
             className="writing-resizer"
             onMouseDown={onMouseDown}
             role="separator"
+            aria-label="Notes height"
             aria-orientation="horizontal"
-            title="Drag to resize Outline and Notes"
+            aria-valuemin={70}
+            aria-valuemax={450}
+            aria-valuenow={notesHeight}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setNotesHeight((prev) => Math.min(450, prev + 16));
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setNotesHeight((prev) => Math.max(70, prev - 16));
+              } else if (e.key === 'Home') {
+                e.preventDefault();
+                setNotesHeight(70);
+              } else if (e.key === 'End') {
+                e.preventDefault();
+                setNotesHeight(450);
+              }
+            }}
+            onDoubleClick={() => setNotesHeight(130)}
+            title="Drag or use arrow keys to resize Outline and Notes"
           />
         )}
 

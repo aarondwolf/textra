@@ -631,7 +631,8 @@
   white-space: nowrap;
 }
 .dropdown-menu-item:hover:not(:disabled),
-.dropdown-menu-item:focus-visible {
+.dropdown-menu-item:focus-visible,
+.dropdown-menu-item.highlighted:not(:disabled) {
   background: var(--hover);
   border-color: transparent;
   color: var(--text);

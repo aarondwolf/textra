@@ -1,3 +1,5 @@
+import { AsyncMutex } from './mutex';
+import { retryTransient } from './retry';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -57,7 +59,7 @@ function validateChat(value: unknown): AIStoredChat {
 /** Local user-data history keyed by canonical workspace, independent of ephemeral project tokens. */
 export class AIChatStore {
   private readonly scopes = new Map<string, string>();
-  private pending: Promise<unknown> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
   constructor(
     private readonly directory: string,
     private readonly getRoot: (id: string) => string,
@@ -86,7 +88,7 @@ export class AIChatStore {
     return path;
   }
   private async read(scope: string, waitForWrites = true): Promise<AIStoredChat[]> {
-    if (waitForWrites) await this.pending.catch(() => undefined);
+    if (waitForWrites) await this.mutex.flush();
     const path = await this.check(scope);
     try {
       const value: unknown = JSON.parse(await readFile(path, 'utf8'));
@@ -118,14 +120,14 @@ export class AIChatStore {
         await file.close();
       }
       const path = await this.check(scope);
-      await rename(temporary, path);
+      await retryTransient(() => rename(temporary, path));
     } finally {
       await unlink(temporary).catch(() => undefined);
     }
   }
   async list(projectId: unknown): Promise<AIStoredChat[]> {
     const scope = this.scope(projectId);
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
     return this.read(scope, false);
   }
   save(value: unknown): Promise<void> {
@@ -133,19 +135,15 @@ export class AIChatStore {
       return Promise.reject(new AIError('AI_CHAT_STORAGE', 'Provide a workspace chat.'));
     const scope = this.scope(value.projectId);
     const chat = validateChat(value.chat);
-    const operation = this.pending
-      .catch(() => undefined)
-      .then(async () => {
-        const existing = await this.read(scope, false);
-        const previous = existing.find((item) => item.id === chat.id);
-        if (previous && previous.updatedAt > chat.updatedAt) return;
-        const chats = [chat, ...existing.filter((item) => item.id !== chat.id)]
-          .sort((a, b) => b.updatedAt - a.updatedAt)
-          .slice(0, 100);
-        await this.write(scope, chats);
-      });
-    this.pending = operation;
-    return operation;
+    return this.mutex.run(async () => {
+      const existing = await this.read(scope, false);
+      const previous = existing.find((item) => item.id === chat.id);
+      if (previous && previous.updatedAt > chat.updatedAt) return;
+      const chats = [chat, ...existing.filter((item) => item.id !== chat.id)]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 100);
+      await this.write(scope, chats);
+    });
   }
   deleteChat(value: unknown): Promise<boolean> {
     if (
@@ -159,19 +157,15 @@ export class AIChatStore {
       return Promise.reject(new AIError('AI_CHAT_STORAGE', 'Provide a valid workspace chat ID.'));
     const scope = this.scope(value.projectId);
     const chatId = value.chatId;
-    const operation = this.pending
-      .catch(() => undefined)
-      .then(async () => {
-        const existing = await this.read(scope, false);
-        const chats = existing.filter((chat) => chat.id !== chatId);
-        if (chats.length === existing.length) return false;
-        await this.write(scope, chats);
-        return true;
-      });
-    this.pending = operation;
-    return operation;
+    return this.mutex.run(async () => {
+      const existing = await this.read(scope, false);
+      const chats = existing.filter((chat) => chat.id !== chatId);
+      if (chats.length === existing.length) return false;
+      await this.write(scope, chats);
+      return true;
+    });
   }
   async flush(): Promise<void> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
   }
 }

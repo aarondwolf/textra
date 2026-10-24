@@ -547,6 +547,10 @@ export function moveSectionInLatex(
   }
 
   insertIndex = Math.max(0, Math.min(insertIndex, remaining.length));
+  const endDocIndex = remaining.findIndex((l) => /^\s*\\end\{document\}/i.test(l));
+  if (endDocIndex !== -1 && insertIndex > endDocIndex) {
+    insertIndex = endDocIndex;
+  }
   remaining.splice(insertIndex, 0, ...movingLines);
 
   return remaining.join(newline);

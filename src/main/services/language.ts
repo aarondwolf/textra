@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { access, realpath, stat } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { basename, delimiter, extname, isAbsolute, join } from 'node:path';
+import { realpath, stat } from 'node:fs/promises';
+import { basename, extname, join } from 'node:path';
 import type {
   Diagnostic,
   FormatResult,
@@ -13,6 +12,7 @@ import { ProjectError, type ProjectService } from './projects';
 import { getToolPath } from './tool-paths';
 import { OwnedProcessError, runOwnedProcess } from './owned-process';
 import { recipeDirectory } from './recipe-plan';
+import which from 'which';
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const PROCESS_TIMEOUT_MS = 15_000;
@@ -32,21 +32,15 @@ async function findLanguageTool(name: (typeof LANGUAGE_TOOLS)[number]): Promise<
     }
     return null;
   }
-  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-    const clean = directory.replace(/^"|"$/g, '');
-    if (!isAbsolute(clean)) continue;
-    const candidates =
-      process.platform === 'win32' && !name.endsWith('.pl')
-        ? [join(clean, `${name}.exe`), join(clean, name)]
-        : [join(clean, name)];
-    for (const candidate of candidates) {
-      try {
-        await access(candidate, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
-        if ((await stat(candidate)).isFile()) return await realpath(candidate);
-      } catch {
-        // Continue through the explicit, fixed executable list.
-      }
+  try {
+    const resolved = await which(name, { nothrow: true });
+    if (resolved && (await stat(resolved)).isFile()) return await realpath(resolved);
+    if (name === 'latexindent') {
+      const pl = await which('latexindent.pl', { nothrow: true });
+      if (pl && (await stat(pl)).isFile()) return await realpath(pl);
     }
+  } catch {
+    /* Tool not found */
   }
   return null;
 }

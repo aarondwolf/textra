@@ -24,7 +24,9 @@ describe('external editor safety service', () => {
     service.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(
+      () => undefined,
+    );
   });
 
   it('allows only the newest concurrent watch to own timers', async () => {

@@ -1,3 +1,4 @@
+import { AsyncMutex } from './mutex';
 import { createHash, randomUUID } from 'node:crypto';
 import { open, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -165,18 +166,16 @@ function getIsoWeek(date: Date): string {
 }
 
 export class HistoryService {
-  private pending: Promise<unknown> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
   constructor(
     private readonly projects: ProjectService,
     private readonly userDataDir?: string,
   ) {}
   async flush(): Promise<void> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
   }
   private serialize<T>(action: () => Promise<T>): Promise<T> {
-    const result = this.pending.catch(() => undefined).then(action);
-    this.pending = result;
-    return result;
+    return this.mutex.run(action);
   }
   private scope(projectId: string): Scope {
     return {

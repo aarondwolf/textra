@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
-import { access, realpath } from 'node:fs/promises';
-import { delimiter, isAbsolute, join, relative } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import which from 'which';
 import type {
   Diagnostic,
   FileRef,
@@ -39,19 +40,14 @@ function texlabPlatformDirectory(): string {
 }
 
 async function executableOnPath(): Promise<string | null> {
-  const executable = process.platform === 'win32' ? 'texlab.exe' : 'texlab';
-  for (const entry of (process.env.PATH ?? '').split(delimiter)) {
-    if (!entry) continue;
-    const candidate = join(entry, executable);
-    try {
-      await access(candidate);
-      return await realpath(candidate);
-    } catch {
-      // Continue through the user's PATH. No shell lookup is used.
-    }
+  try {
+    const resolved = await which('texlab', { nothrow: true });
+    return resolved ? await realpath(resolved) : null;
+  } catch {
+    return null;
   }
-  return null;
 }
+
 
 function parseVersion(output: string): string | null {
   const match = /(?:texlab\s+)?v?(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/i.exec(output);

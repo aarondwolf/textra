@@ -62,10 +62,15 @@ export function parseDiagnostics(
   }
   // Root is used by callers for context, never as a guessed location.
   void rootFile;
-  return issues
-    .filter(
-      (issue, index) =>
-        issues.findIndex((other) => JSON.stringify(other) === JSON.stringify(issue)) === index,
-    )
-    .slice(0, 500);
+  const seen = new Set<string>();
+  const deduplicated: Diagnostic[] = [];
+  for (const issue of issues) {
+    const key = `${issue.severity}\u001f${issue.file ?? ''}\u001f${issue.line ?? ''}\u001f${issue.message}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicated.push(issue);
+      if (deduplicated.length >= 500) break;
+    }
+  }
+  return deduplicated;
 }

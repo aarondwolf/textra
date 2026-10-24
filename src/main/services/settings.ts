@@ -1,8 +1,10 @@
+import { AsyncMutex } from './mutex';
+import { retryTransient } from './retry';
 import { randomUUID } from 'node:crypto';
 import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import type { BuildEngine, Preferences, ProjectConfig } from '../../shared/api';
+import { z } from 'zod';
 import { parse, type ParseError } from 'jsonc-parser';
 import { createDefaultRecipeSettings, validateRecipeSettings } from '../../shared/recipes';
 import { validatePreferences } from './preferences';
@@ -17,6 +19,23 @@ const engines = new Set<BuildEngine>([
   'latexmk',
   'bibtex-pipeline',
 ]);
+
+export const buildEngineZodSchema = z.enum([
+  'pdflatex',
+  'xelatex',
+  'lualatex',
+  'latexmk',
+  'bibtex-pipeline',
+]);
+
+export const projectConfigZodSchema = z
+  .object({
+    schemaVersion: z.literal(1).optional(),
+    rootFile: z.string().nullable().optional(),
+    engine: buildEngineZodSchema.optional(),
+    recipes: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
 
 export type { ProjectConfig } from '../../shared/api';
 
@@ -167,7 +186,7 @@ function missing(error: unknown): boolean {
 
 /** Owns canonical project settings separately from portable application preferences. */
 export class ConfigService {
-  private pending: Promise<unknown> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
 
   constructor(
     _userData: string,
@@ -175,7 +194,7 @@ export class ConfigService {
   ) {}
 
   async flush(): Promise<void> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
   }
 
   private root(projectId: string): string {
@@ -263,20 +282,16 @@ export class ConfigService {
   }
 
   async getProjectConfig(projectId: string): Promise<ProjectConfig> {
-    await this.pending.catch(() => undefined);
+    await this.mutex.flush();
     return (await this.read(projectId)).config;
   }
 
   ensureProjectConfig(projectId: string): Promise<ProjectConfig> {
-    const write = this.pending
-      .catch(() => undefined)
-      .then(async () => {
-        const before = await this.read(projectId);
-        if ((await this.paths(projectId)).fileExists) return (await this.read(projectId)).config;
-        return this.write(projectId, before.config, before);
-      });
-    this.pending = write;
-    return write;
+    return this.mutex.run(async () => {
+      const before = await this.read(projectId);
+      if ((await this.paths(projectId)).fileExists) return (await this.read(projectId)).config;
+      return this.write(projectId, before.config, before);
+    });
   }
 
   setProjectConfig(value: {
@@ -284,30 +299,26 @@ export class ConfigService {
     config: ProjectConfig;
     expectedConfig?: ProjectConfig;
   }): Promise<ProjectConfig> {
-    const write = this.pending
-      .catch(() => undefined)
-      .then(async () => {
-        const hasExpected =
-          !!value && typeof value === 'object' && Object.hasOwn(value, 'expectedConfig');
-        const request = exactRecord(value, [
-          'projectId',
-          'config',
-          ...(hasExpected ? ['expectedConfig'] : []),
-        ]);
-        if (typeof request.projectId !== 'string')
-          throw new ProjectError('INVALID_ARGUMENT', 'Invalid project identifier.');
-        const projectId = request.projectId;
-        const config = validateProjectConfig(request.config);
-        const before = await this.read(projectId);
-        if (
-          hasExpected &&
-          !sameConfig(validateProjectConfig(request.expectedConfig), before.config)
-        )
-          conflict();
-        return this.write(projectId, config, before);
-      });
-    this.pending = write;
-    return write;
+    return this.mutex.run(async () => {
+      const hasExpected =
+        !!value && typeof value === 'object' && Object.hasOwn(value, 'expectedConfig');
+      const request = exactRecord(value, [
+        'projectId',
+        'config',
+        ...(hasExpected ? ['expectedConfig'] : []),
+      ]);
+      if (typeof request.projectId !== 'string')
+        throw new ProjectError('INVALID_ARGUMENT', 'Invalid project identifier.');
+      const projectId = request.projectId;
+      const config = validateProjectConfig(request.config);
+      const before = await this.read(projectId);
+      if (
+        hasExpected &&
+        !sameConfig(validateProjectConfig(request.expectedConfig), before.config)
+      )
+        conflict();
+      return this.write(projectId, config, before);
+    });
   }
 
   private async write(
@@ -359,25 +370,6 @@ export class ConfigService {
       });
     }
     return config;
-  }
-}
-
-async function retryTransient<T>(action: () => Promise<T>): Promise<T> {
-  const delays = [50, 100, 200, 400, 800];
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await action();
-    } catch (error) {
-      if (
-        attempt >= delays.length ||
-        !error ||
-        typeof error !== 'object' ||
-        !('code' in error) ||
-        !['EPERM', 'EBUSY', 'EACCES'].includes(String(error.code))
-      )
-        throw error;
-      await delay(delays[attempt]);
-    }
   }
 }
 

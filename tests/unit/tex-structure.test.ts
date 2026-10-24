@@ -49,6 +49,34 @@ describe('parseTexStructure sections', () => {
     expect(parseTexStructure('\\sectionmark{x}\\subsectionfoo{y}').sections).toEqual([]);
   });
 
+  it('tolerates unclosed braces and malformed inputs during active typing', () => {
+    const { sections, references } = parseTexStructure(
+      '\\section{Unfinished\n\n\\section{Completed}\n\\input{chapters/a}',
+    );
+    expect(sections).toEqual([
+      expect.objectContaining({ command: 'section', line: 1 }),
+      expect.objectContaining({ command: 'section', title: 'Completed', line: 3 }),
+    ]);
+    expect(references).toEqual([
+      expect.objectContaining({ kind: 'tex', target: 'chapters/a', line: 4 }),
+    ]);
+  });
+
+  it('ignores macro-like content inside minted and lstlisting environments', () => {
+    const { sections } = parseTexStructure(
+      [
+        '\\section{Real}',
+        '\\begin{minted}{latex}',
+        '\\section{Fake in minted}',
+        '\\end{minted}',
+        '\\begin{lstlisting}',
+        '\\section{Fake in listing}',
+        '\\end{lstlisting}',
+      ].join('\n'),
+    );
+    expect(sections.map((s) => s.title)).toEqual(['Real']);
+  });
+
   it('cleans headings', () => {
     expect(cleanTitle('Results\\label{sec:r}')).toBe('Results');
     expect(cleanTitle('On \\emph{FMNE}\\footnote{note} entry~effects')).toBe(

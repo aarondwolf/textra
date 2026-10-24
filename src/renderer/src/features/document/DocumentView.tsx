@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import {
   buildDocumentModel,
@@ -18,6 +18,7 @@ import {
   WarningCircle,
 } from '../../icons';
 import { openDocument, useWorkspace } from '../../state/workspace';
+import { ResizableSeparator } from '../../components/ResizableSeparator';
 import './document.css';
 
 const TEX_FILE = /\.(tex|ltx)$/i;
@@ -111,49 +112,21 @@ function Splitter({
   container: React.RefObject<HTMLDivElement | null>;
   onChange: (height: number) => void;
 }) {
-  const dragging = useRef(false);
   const total = () => container.current?.getBoundingClientRect().height ?? 0;
-  const resizeTo = (clientY: number) => {
-    const box = container.current?.getBoundingClientRect();
-    if (box) onChange(clampFilesHeight(box.bottom - clientY, box.height));
-  };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const changes: Record<string, number> = {
-      ArrowUp: height + 16,
-      ArrowDown: height - 16,
-      Home: Number.MAX_SAFE_INTEGER,
-      End: FILES_HEIGHT_MIN,
-    };
-    if (event.key in changes) {
-      event.preventDefault();
-      onChange(clampFilesHeight(changes[event.key], total()));
-    }
-  };
   return (
-    <div
+    <ResizableSeparator
+      orientation="horizontal"
       className="doc-splitter"
-      role="separator"
-      aria-label="Outline and files height"
-      aria-orientation="horizontal"
-      aria-valuemin={FILES_HEIGHT_MIN}
-      aria-valuenow={height}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      onDoubleClick={() => onChange(clampFilesHeight(FILES_HEIGHT_DEFAULT, total()))}
-      onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
-        dragging.current = true;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        resizeTo(event.clientY);
-      }}
-      onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
-        if (dragging.current) resizeTo(event.clientY);
-      }}
-      onPointerUp={(event: PointerEvent<HTMLDivElement>) => {
-        dragging.current = false;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
-      onLostPointerCapture={() => {
-        dragging.current = false;
+      label="Outline and files height"
+      value={height}
+      min={FILES_HEIGHT_MIN}
+      max={clampFilesHeight(Number.MAX_SAFE_INTEGER, total())}
+      defaultValue={clampFilesHeight(FILES_HEIGHT_DEFAULT, total())}
+      step={16}
+      onResize={(newHeight) => onChange(clampFilesHeight(newHeight, total()))}
+      computeValueFromPointer={(event) => {
+        const box = container.current?.getBoundingClientRect();
+        return box ? clampFilesHeight(box.bottom - event.clientY, box.height) : height;
       }}
     />
   );

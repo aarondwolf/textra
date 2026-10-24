@@ -335,9 +335,11 @@
 }
 
 .history-menu-item:hover:not(:disabled),
-.history-menu-item:focus-visible {
+.history-menu-item:focus-visible,
+.history-menu-item[data-highlighted]:not([data-disabled]) {
   background: var(--hover);
   color: var(--text);
+  outline: none;
 }
 
 .history-menu-item:disabled {

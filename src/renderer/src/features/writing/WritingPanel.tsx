@@ -1,4 +1,21 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { ResizableSeparator } from '../../components/ResizableSeparator';
 import {
   ChevronDown,
   ChevronRight,
@@ -62,6 +79,88 @@ function activeOutlineId(outline: WritingOutlineItem[], line: number | null): st
   return active?.id ?? null;
 }
 
+interface SortableOutlineItemProps {
+  item: WritingOutlineItem;
+  index: number;
+  total: number;
+  activeId: string | null;
+  onMoveSection?: (fromIndex: number, toIndex: number, position: 'before' | 'after') => void;
+  onJumpToLine: (line: number) => void;
+}
+
+function SortableOutlineItem({
+  item,
+  index,
+  total,
+  activeId,
+  onMoveSection,
+  onJumpToLine,
+}: SortableOutlineItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.id,
+    disabled: !onMoveSection,
+  });
+
+  const depth = Math.min(Math.max(0, item.level - 1), 4);
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={`writing-outline-row ${isDragging ? 'is-dragging' : ''}`}
+      {...attributes}
+      {...listeners}
+    >
+      <button
+        type="button"
+        className="writing-outline-item"
+        aria-current={item.id === activeId ? 'location' : undefined}
+        style={{ paddingLeft: 10 + depth * 12 }}
+        title={`Go to line ${item.line}${onMoveSection ? ' (drag or use arrow keys to reorder)' : ''}`}
+        onClick={() => onJumpToLine(item.line)}
+      >
+        <span>{item.title}</span>
+        <small className="writing-outline-line">Ln {item.line}</small>
+      </button>
+      {onMoveSection && (
+        <div className="writing-outline-actions" role="group" aria-label="Reorder section">
+          <button
+            type="button"
+            className="writing-outline-action-button"
+            title="Move section up"
+            aria-label="Move section up"
+            disabled={index === 0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveSection(index, index - 1, 'before');
+            }}
+          >
+            <ChevronUp size={11} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="writing-outline-action-button"
+            title="Move section down"
+            aria-label="Move section down"
+            disabled={index === total - 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveSection(index, index + 1, 'after');
+            }}
+          >
+            <ChevronDown size={11} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 /**
  * Compact, source-agnostic writing utilities for an active LaTeX document.
  * Includes Outline and Notes in two collapsible, vertically-resizable panes.
@@ -78,44 +177,22 @@ export function WritingPanel({
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [notesOpen, setNotesOpen] = useState(true);
   const [notesHeight, setNotesHeight] = useState(130);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [dropTarget, setDropTarget] = useState<{
-    index: number;
-    position: 'before' | 'after';
-  } | null>(null);
-  const isDragging = useRef(false);
-  const startY = useRef(0);
-  const startHeight = useRef(0);
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      isDragging.current = true;
-      startY.current = e.clientY;
-      startHeight.current = notesHeight;
-      document.body.style.cursor = 'ns-resize';
-      document.body.style.userSelect = 'none';
-
-      const onMouseMove = (moveEvent: MouseEvent) => {
-        if (!isDragging.current) return;
-        const delta = startY.current - moveEvent.clientY;
-        const newHeight = Math.max(70, Math.min(450, startHeight.current + delta));
-        setNotesHeight(newHeight);
-      };
-
-      const onMouseUp = () => {
-        isDragging.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-      };
-
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    },
-    [notesHeight],
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  const handleOutlineDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (onMoveSection && over && active.id !== over.id) {
+      const oldIndex = summary.outline.findIndex((i) => i.id === active.id);
+      const newIndex = summary.outline.findIndex((i) => i.id === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        onMoveSection(oldIndex, newIndex, oldIndex < newIndex ? 'after' : 'before');
+      }
+    }
+  };
 
   return (
     <div className="writing-panel">
@@ -169,105 +246,30 @@ export function WritingPanel({
               {summary.outline.length === 0 ? (
                 <p className="writing-empty">No section headings yet.</p>
               ) : (
-                <ul className="writing-list">
-                  {summary.outline.map((item, index) => {
-                    const depth = Math.min(Math.max(0, item.level - 1), 4);
-                    const isDropBefore =
-                      dropTarget?.index === index && dropTarget.position === 'before';
-                    const isDropAfter =
-                      dropTarget?.index === index && dropTarget.position === 'after';
-                    const isDraggingItem = draggedIndex === index;
-
-                    return (
-                      <li
-                        key={item.id}
-                        className={`writing-outline-row ${isDraggingItem ? 'is-dragging' : ''} ${isDropBefore ? 'drop-before' : ''} ${isDropAfter ? 'drop-after' : ''}`}
-                        draggable={Boolean(onMoveSection)}
-                        onDragStart={(e) => {
-                          if (!onMoveSection) return;
-                          e.dataTransfer.setData('text/plain', String(index));
-                          e.dataTransfer.effectAllowed = 'move';
-                          setDraggedIndex(index);
-                        }}
-                        onDragOver={(e) => {
-                          if (!onMoveSection || draggedIndex === null || draggedIndex === index)
-                            return;
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = 'move';
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const midY = rect.top + rect.height / 2;
-                          const position = e.clientY < midY ? 'before' : 'after';
-                          if (dropTarget?.index !== index || dropTarget?.position !== position) {
-                            setDropTarget({ index, position });
-                          }
-                        }}
-                        onDragLeave={(e) => {
-                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                            if (dropTarget?.index === index) setDropTarget(null);
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (onMoveSection && draggedIndex !== null && dropTarget) {
-                            onMoveSection(draggedIndex, dropTarget.index, dropTarget.position);
-                          }
-                          setDraggedIndex(null);
-                          setDropTarget(null);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedIndex(null);
-                          setDropTarget(null);
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="writing-outline-item"
-                          aria-current={item.id === activeId ? 'location' : undefined}
-                          style={{ paddingLeft: 10 + depth * 12 }}
-                          title={`Go to line ${item.line}${onMoveSection ? ' (drag to reorder)' : ''}`}
-                          onClick={() => onJumpToLine(item.line)}
-                        >
-                          <span>{item.title}</span>
-                          <small className="writing-outline-line">Ln {item.line}</small>
-                        </button>
-                        {onMoveSection && (
-                          <div
-                            className="writing-outline-actions"
-                            role="group"
-                            aria-label="Reorder section"
-                          >
-                            <button
-                              type="button"
-                              className="writing-outline-action-button"
-                              title="Move section up"
-                              aria-label="Move section up"
-                              disabled={index === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onMoveSection(index, index - 1, 'before');
-                              }}
-                            >
-                              <ChevronUp size={11} aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              className="writing-outline-action-button"
-                              title="Move section down"
-                              aria-label="Move section down"
-                              disabled={index === summary.outline.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onMoveSection(index, index + 1, 'after');
-                              }}
-                            >
-                              <ChevronDown size={11} aria-hidden="true" />
-                            </button>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleOutlineDragEnd}
+                >
+                  <SortableContext
+                    items={summary.outline.map((item) => item.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <ul className="writing-list">
+                      {summary.outline.map((item, index) => (
+                        <SortableOutlineItem
+                          key={item.id}
+                          item={item}
+                          index={index}
+                          total={summary.outline.length}
+                          activeId={activeId}
+                          onMoveSection={onMoveSection}
+                          onJumpToLine={onJumpToLine}
+                        />
+                      ))}
+                    </ul>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           )}
@@ -275,33 +277,20 @@ export function WritingPanel({
 
         {/* Resizer Splitter between Outline and Notes */}
         {outlineOpen && notesOpen && (
-          <div
+          <ResizableSeparator
+            orientation="horizontal"
             className="writing-resizer"
-            onMouseDown={onMouseDown}
-            role="separator"
-            aria-label="Notes height"
-            aria-orientation="horizontal"
-            aria-valuemin={70}
-            aria-valuemax={450}
-            aria-valuenow={notesHeight}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setNotesHeight((prev) => Math.min(450, prev + 16));
-              } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setNotesHeight((prev) => Math.max(70, prev - 16));
-              } else if (e.key === 'Home') {
-                e.preventDefault();
-                setNotesHeight(70);
-              } else if (e.key === 'End') {
-                e.preventDefault();
-                setNotesHeight(450);
-              }
-            }}
-            onDoubleClick={() => setNotesHeight(130)}
+            label="Notes height"
+            value={notesHeight}
+            min={70}
+            max={450}
+            defaultValue={130}
+            step={16}
             title="Drag or use arrow keys to resize Outline and Notes"
+            onResize={setNotesHeight}
+            computeValueFromPointer={(event, start) => {
+              return start.value + (start.y - event.clientY);
+            }}
           />
         )}
 

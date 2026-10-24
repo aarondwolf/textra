@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronLeft, ChevronRight, Ellipsis, LocateFixed } from '../../icons';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import {
@@ -88,7 +89,6 @@ interface PageItemProps {
   defaultDimensions: { width: number; height: number };
   searchTerm: string;
   synctexLocation: PdfLocation | null;
-  scrollContainer: HTMLElement | null;
   onInverse: (
     event: React.MouseEvent<HTMLCanvasElement>,
     pageNumber: number,
@@ -105,7 +105,6 @@ function PdfPageItem({
   defaultDimensions,
   searchTerm,
   synctexLocation,
-  scrollContainer,
   onInverse,
   registerPageRef,
 }: PageItemProps) {
@@ -115,43 +114,20 @@ function PdfPageItem({
   const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number } | null>(
     null,
   );
-  const [isVisible, setIsVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [synctexPoint, setSynctexPoint] = useState<{ x: number; y: number } | null>(null);
 
-  // Intersection observer to track when page enters viewport window (+/- 600px buffer)
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !scrollContainer) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsVisible(entry.isIntersecting);
-      },
-      {
-        root: scrollContainer,
-        rootMargin: '600px 0px 600px 0px',
-      },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [scrollContainer]);
+    registerPageRef(pageNumber, containerRef.current);
+    return () => {
+      registerPageRef(pageNumber, null);
+    };
+  }, [pageNumber, registerPageRef]);
 
-  // Unload rendered canvas memory for large documents when scrolled far away
+  // Render canvas buffer when mounted in the virtualized window
   useEffect(() => {
-    if (!isVisible && rendered && pdf && pdf.numPages > 30) {
-      setRendered(false);
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = 0;
-        canvas.height = 0;
-      }
-    }
-  }, [isVisible, rendered, pdf]);
-
-  // Render canvas buffer when visible
-  useEffect(() => {
-    if (!isVisible || !pdf) return;
+    if (!pdf) return;
     let disposed = false;
     let rendering: RenderTask | undefined;
 
@@ -204,11 +180,11 @@ function PdfPageItem({
       disposed = true;
       rendering?.cancel();
     };
-  }, [pdf, pageNumber, scale, isVisible]);
+  }, [pdf, pageNumber, scale]);
 
   // Search highlights
   useEffect(() => {
-    if (!pageProxy || !searchTerm || !isVisible) {
+    if (!pageProxy || !searchTerm) {
       setHighlights([]);
       return;
     }
@@ -226,7 +202,7 @@ function PdfPageItem({
     return () => {
       disposed = true;
     };
-  }, [pageProxy, searchTerm, scale, isVisible]);
+  }, [pageProxy, searchTerm, scale]);
 
   // SyncTeX indicator
   useEffect(() => {
@@ -251,14 +227,12 @@ function PdfPageItem({
   return (
     <div
       className="pdf-page"
-      ref={(el) => {
-        containerRef.current = el;
-        registerPageRef(pageNumber, el);
-      }}
+      ref={containerRef}
       data-page-number={pageNumber}
       style={{
         width: `${pageWidth}px`,
         height: `${pageHeight}px`,
+        margin: '0 auto',
       }}
     >
       <canvas
@@ -270,7 +244,7 @@ function PdfPageItem({
         }}
         title="Double-click to find this position in the source"
         style={{
-          display: isVisible || rendered ? 'block' : 'none',
+          display: rendered ? 'block' : 'none',
         }}
       />
       {highlights.length > 0 && (
@@ -343,7 +317,6 @@ export default function PdfViewer({
   const [searched, setSearched] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [location, setLocation] = useState<PdfLocation | null>(null);
-  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
 
   const scroll = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -366,6 +339,17 @@ export default function PdfViewer({
     if (!pdf) return [];
     return Array.from({ length: pdf.numPages }, (_, i) => i + 1);
   }, [pdf]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: pages.length,
+    getScrollElement: () => scroll.current,
+    estimateSize: () => Math.round(defaultDimensions.height * scale) + 24,
+    overscan: 2,
+  });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [scale, defaultDimensions.height, rowVirtualizer]);
 
   const cancelSearch = useCallback(() => {
     searchId.current++;
@@ -567,32 +551,21 @@ export default function PdfViewer({
       const target = Math.min(pdf.numPages, Math.max(1, targetPage));
       setPageNumber(target);
       setLocation(null);
-      const container = scroll.current;
-      const pageEl = pageRefs.current[target];
-      if (container && pageEl) {
-        isProgrammaticScroll.current = true;
-        const containerRect = container.getBoundingClientRect();
-        const pageRect = pageEl.getBoundingClientRect();
-        const targetScrollTop = pageRect.top - containerRect.top + container.scrollTop - 20;
-        container.scrollTo({
-          top: Math.max(0, targetScrollTop),
-          behavior,
-        });
-        window.clearTimeout(scrollTimer.current);
-        scrollTimer.current = window.setTimeout(() => {
-          isProgrammaticScroll.current = false;
-        }, 700);
-      }
+      isProgrammaticScroll.current = true;
+      rowVirtualizer.scrollToIndex(target - 1, { align: 'start', behavior });
+      window.clearTimeout(scrollTimer.current);
+      scrollTimer.current = window.setTimeout(() => {
+        isProgrammaticScroll.current = false;
+      }, 700);
     },
-    [pdf],
+    [pdf, rowVirtualizer],
   );
 
   // SyncTeX location scrolling
   const scrollToLocation = useCallback(
     async (loc: PdfLocation) => {
       const container = scroll.current;
-      const pageEl = pageRefs.current[loc.page];
-      if (!container || !pageEl || !pdf) return;
+      if (!container || !pdf) return;
 
       isProgrammaticScroll.current = true;
       try {
@@ -604,9 +577,15 @@ export default function PdfViewer({
           loc.x + page.view[0],
           page.view[3] - loc.y,
         );
-        const containerRect = container.getBoundingClientRect();
-        const pageRect = pageEl.getBoundingClientRect();
-        const targetY = pageRect.top - containerRect.top + container.scrollTop + vy - 120;
+
+        rowVirtualizer.scrollToIndex(loc.page - 1, { align: 'start' });
+        const virtualItem = rowVirtualizer
+          .getVirtualItems()
+          .find((item) => item.index === loc.page - 1);
+        const startY = virtualItem
+          ? virtualItem.start
+          : (loc.page - 1) * (Math.round(natural.height * currentScale) + 24);
+        const targetY = startY + vy - 120;
         const targetX = Math.max(0, vx - width / 2);
         container.scrollTo({
           top: Math.max(0, targetY),
@@ -614,7 +593,7 @@ export default function PdfViewer({
           behavior: 'smooth',
         });
       } catch {
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        rowVirtualizer.scrollToIndex(loc.page - 1, { align: 'start', behavior: 'smooth' });
       }
 
       window.clearTimeout(scrollTimer.current);
@@ -622,10 +601,10 @@ export default function PdfViewer({
         isProgrammaticScroll.current = false;
       }, 700);
     },
-    [pdf, fit, width, zoom],
+    [pdf, fit, width, zoom, rowVirtualizer],
   );
 
-  // Dynamic scroll listener: tracks active page in view for the toolbar
+  // Dynamic scroll listener: tracks active page in view for the toolbar in O(1)
   const handleScroll = useCallback(() => {
     if (isProgrammaticScroll.current) return;
     if (scrollRaf.current !== null) return;
@@ -640,30 +619,18 @@ export default function PdfViewer({
         return;
       }
 
-      const containerRect = container.getBoundingClientRect();
-      const focalY = containerRect.top + Math.min(150, containerRect.height / 3);
+      const virtualItems = rowVirtualizer.getVirtualItems();
+      if (!virtualItems.length) return;
 
-      let currentVisiblePage = 1;
-      let minDistance = Infinity;
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const el = pageRefs.current[i];
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.top <= focalY && rect.bottom >= focalY) {
-          currentVisiblePage = i;
-          break;
-        }
-        const dist = Math.min(Math.abs(rect.top - focalY), Math.abs(rect.bottom - focalY));
-        if (dist < minDistance) {
-          minDistance = dist;
-          currentVisiblePage = i;
-        }
+      const focalY = container.scrollTop + Math.min(150, container.clientHeight / 3);
+      const activeItem =
+        virtualItems.find((item) => item.start <= focalY && item.end >= focalY) ?? virtualItems[0];
+      if (activeItem) {
+        const next = activeItem.index + 1;
+        setPageNumber((current) => (current !== next ? next : current));
       }
-
-      setPageNumber((current) => (current !== currentVisiblePage ? currentVisiblePage : current));
     });
-  }, [pdf]);
+  }, [pdf, rowVirtualizer]);
 
   async function findText() {
     if (!pdf || !query.trim()) return;
@@ -960,10 +927,7 @@ export default function PdfViewer({
       )}
       <div
         className="pdf-scroll"
-        ref={(el) => {
-          scroll.current = el;
-          setScrollEl(el);
-        }}
+        ref={scroll}
         tabIndex={0}
         aria-label="PDF pages"
         aria-keyshortcuts="Control+f Meta+f Control+h Meta+h"
@@ -985,20 +949,44 @@ export default function PdfViewer({
             Loading PDF…
           </div>
         ) : pdf ? (
-          pages.map((p) => (
-            <PdfPageItem
-              key={p}
-              pdf={pdf}
-              pageNumber={p}
-              scale={scale}
-              defaultDimensions={defaultDimensions}
-              searchTerm={searchTerm}
-              synctexLocation={location}
-              scrollContainer={scrollEl}
-              onInverse={handleInverse}
-              registerPageRef={registerPageRef}
-            />
-          ))
+          <div
+            className="pdf-virtual-list"
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+              const p = pages[virtualItem.index];
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    paddingBottom: '24px',
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <PdfPageItem
+                    pdf={pdf}
+                    pageNumber={p}
+                    scale={scale}
+                    defaultDimensions={defaultDimensions}
+                    searchTerm={searchTerm}
+                    synctexLocation={location}
+                    onInverse={handleInverse}
+                    registerPageRef={registerPageRef}
+                  />
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="pdf-empty">
             <h2>PDF preview</h2>

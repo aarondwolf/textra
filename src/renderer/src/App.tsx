@@ -2,6 +2,7 @@ import { emitTextraEvent } from './services/events';
 import { useEffect, useRef, useState } from 'react';
 import { lazyFeature } from './features/startup/LazyFeature';
 import * as Dialog from '@radix-ui/react-dialog';
+import { Command } from 'cmdk';
 import {
   AIChat,
   ArrowRight,
@@ -300,96 +301,86 @@ function CommandPalette() {
         >
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Search workspace commands. Use Tab to choose a command, then Enter to run it.
+            Search workspace commands. Use arrow keys to choose a command, then Enter to run it.
           </Dialog.Description>
-          <div className="command-search">
-            <Search size={19} aria-hidden="true" />
-            <input
-              ref={input}
-              aria-label="Search commands"
-              placeholder="What would you like to do?"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && commands[0])
-                  runCommand(commands[0].label, commands[0].run);
-                if (event.key === 'ArrowDown') {
-                  event.preventDefault();
-                  document.querySelector<HTMLButtonElement>('.command-item')?.focus();
-                }
-              }}
-            />
-            <Dialog.Close className="key-cap" aria-label="Close command palette">
-              Esc
-            </Dialog.Close>
-          </div>
-          <div
-            className="command-list"
-            aria-label="Workspace commands"
-            onKeyDown={(event) => {
-              const buttons = Array.from(event.currentTarget.querySelectorAll('button'));
-              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                buttons[(index + 1) % buttons.length]?.focus();
-              }
-              if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                if (index <= 0) input.current?.focus();
-                else buttons[index - 1]?.focus();
-              }
-            }}
-          >
-            {recentCommands.length > 0 && <div className="eyebrow command-group">RECENT</div>}
-            {recentCommands.map(({ label, shortcut, icon: Icon, run }) => (
-              <button
-                className="command-item"
-                aria-label={label}
-                key={label}
-                onClick={() => runCommand(label, run)}
+          <Command className="command-palette" shouldFilter={false} loop>
+            <div className="command-search">
+              <Search size={19} aria-hidden="true" />
+              <Command.Input
+                ref={input}
+                aria-label="Search commands"
+                placeholder="What would you like to do?"
+                value={query}
+                onValueChange={setQuery}
+              />
+              <Dialog.Close className="key-cap" aria-label="Close command palette">
+                Esc
+              </Dialog.Close>
+            </div>
+            <Command.List className="command-list" aria-label="Workspace commands">
+              {recentCommands.length > 0 && (
+                <Command.Group heading="RECENT">
+                  <div className="eyebrow command-group">RECENT</div>
+                  {recentCommands.map(({ label, shortcut, icon: Icon, run }) => (
+                    <Command.Item
+                      key={label}
+                      value={label}
+                      className="command-item"
+                      aria-label={label}
+                      onSelect={() => runCommand(label, run)}
+                    >
+                      <Icon size={17} aria-hidden="true" />
+                      <span>{label}</span>
+                      {shortcut && <kbd>{shortcut}</kbd>}
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
+              {otherCommands.length > 0 && (
+                <Command.Group heading="WORKSPACE">
+                  <div className="eyebrow command-group">WORKSPACE</div>
+                  {otherCommands.map(({ label, shortcut, icon: Icon, run }) => (
+                    <Command.Item
+                      key={label}
+                      value={label}
+                      className="command-item"
+                      aria-label={label}
+                      onSelect={() => runCommand(label, run)}
+                    >
+                      <Icon size={17} aria-hidden="true" />
+                      <span>{label}</span>
+                      {shortcut && <kbd>{shortcut}</kbd>}
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
+              {commands.length === 0 && (
+                <Command.Empty className="no-commands">No commands match “{query}”.</Command.Empty>
+              )}
+              <details
+                className="command-shortcuts"
+                open={shortcutsOpen || search.length > 0}
+                onToggle={(event) => setShortcutsOpen(event.currentTarget.open)}
               >
-                <Icon size={17} aria-hidden="true" />
-                <span>{label}</span>
-                {shortcut && <kbd>{shortcut}</kbd>}
-                <ArrowRight size={15} aria-hidden="true" />
-              </button>
-            ))}
-            {otherCommands.length > 0 && <div className="eyebrow command-group">WORKSPACE</div>}
-            {otherCommands.map(({ label, shortcut, icon: Icon, run }) => (
-              <button
-                className="command-item"
-                aria-label={label}
-                key={label}
-                onClick={() => runCommand(label, run)}
-              >
-                <Icon size={17} aria-hidden="true" />
-                <span>{label}</span>
-                {shortcut && <kbd>{shortcut}</kbd>}
-                <ArrowRight size={15} aria-hidden="true" />
-              </button>
-            ))}
-            {commands.length === 0 && <p className="no-commands">No commands match “{query}”.</p>}
-            <details
-              className="command-shortcuts"
-              open={shortcutsOpen || search.length > 0}
-              onToggle={(event) => setShortcutsOpen(event.currentTarget.open)}
-            >
-              <summary>Keyboard shortcuts</summary>
-              {matchingShortcuts.map(([label, shortcut]) => (
-                <p key={label}>
-                  <span>{label}</span> <kbd>{shortcut}</kbd>
-                </p>
-              ))}
-              {matchingShortcuts.length === 0 && <p>No shortcuts match “{query}”.</p>}
-            </details>
-          </div>
-          <div className="command-footer">
-            Your workspace, a few keystrokes away.
-            <span>
-              <kbd>↑</kbd>
-              <kbd>↓</kbd> navigate <kbd>↵</kbd> select
-            </span>
-          </div>
+                <summary>Keyboard shortcuts</summary>
+                {matchingShortcuts.map(([label, shortcut]) => (
+                  <p key={label}>
+                    <span>{label}</span> <kbd>{shortcut}</kbd>
+                  </p>
+                ))}
+                {matchingShortcuts.length === 0 && <p>No shortcuts match “{query}”.</p>}
+              </details>
+            </Command.List>
+            <div className="command-footer">
+              Your workspace, a few keystrokes away.
+              <span>
+                <kbd>↑</kbd>
+                <kbd>↓</kbd> navigate <kbd>↵</kbd> select
+              </span>
+            </div>
+          </Command>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

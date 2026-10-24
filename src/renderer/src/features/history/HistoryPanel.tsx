@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import type { HistorySnapshotSummary, LegacyHistorySummary } from '../../../../shared/api';
 import { useHistorySnapshots } from './useHistorySnapshots';
-import { beginHistoryResize } from './history-resize';
+import { ResizableSeparator } from '../../components/ResizableSeparator';
 import { PaneHeader } from '../../components/Layout';
 import { IconButton } from '../../components/Button';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   ChevronDown,
   ChevronRight,
@@ -133,16 +134,9 @@ export function HistoryPanel({
   const [historyOpen, setHistoryOpen] = useState(true);
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [recentsHeight, setRecentsHeight] = useState(160);
-  const dragLifetime = useRef({ cleanup: () => {} });
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [isNarrow, setIsNarrow] = useState(false);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const owner = dragLifetime.current;
-    return () => owner.cleanup();
-  }, []);
 
   useEffect(() => {
     const el = sidebarRef.current;
@@ -155,32 +149,6 @@ export function HistoryPanel({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!activeMenuId) return;
-    const handleDown = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('.history-action-menu')) return;
-      setActiveMenuId(null);
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setActiveMenuId(null);
-    };
-    window.addEventListener('mousedown', handleDown);
-    window.addEventListener('keydown', handleKey);
-    return () => {
-      window.removeEventListener('mousedown', handleDown);
-      window.removeEventListener('keydown', handleKey);
-    };
-  }, [activeMenuId]);
-
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      dragLifetime.current.cleanup();
-      e.preventDefault();
-      dragLifetime.current.cleanup = beginHistoryResize(e.clientY, recentsHeight, setRecentsHeight);
-    },
-    [recentsHeight],
-  );
 
   useEffect(() => {
     const owner = recoveryGeneration.current;
@@ -600,41 +568,37 @@ export function HistoryPanel({
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {isNarrow ? (
-                                  <div style={{ position: 'relative' }}>
-                                    <IconButton
-                                      small={true}
-                                      className="icon-button small history-card-btn"
-                                      label="Snapshot actions"
-                                      title="Snapshot actions"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveMenuId(activeMenuId === snap.id ? null : snap.id);
-                                      }}
-                                    >
-                                      <Ellipsis size={15} weight="bold" />
-                                    </IconButton>
-                                    {activeMenuId === snap.id && (
-                                      <div
-                                        className="history-action-menu"
-                                        role="menu"
+                                  <DropdownMenu.Root>
+                                    <DropdownMenu.Trigger asChild>
+                                      <IconButton
+                                        small={true}
+                                        className="icon-button small history-card-btn"
+                                        label="Snapshot actions"
+                                        title="Snapshot actions"
                                         onClick={(e) => e.stopPropagation()}
                                       >
-                                        <button
-                                          type="button"
+                                        <Ellipsis size={15} weight="bold" />
+                                      </IconButton>
+                                    </DropdownMenu.Trigger>
+                                    <DropdownMenu.Portal>
+                                      <DropdownMenu.Content
+                                        className="history-action-menu"
+                                        side="bottom"
+                                        align="end"
+                                        sideOffset={4}
+                                        collisionPadding={8}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <DropdownMenu.Item
                                           className="history-menu-item"
-                                          onClick={() => {
-                                            setActiveMenuId(null);
-                                            onCompareSnapshot(snap);
-                                          }}
+                                          onSelect={() => onCompareSnapshot(snap)}
                                         >
                                           <Columns2 size={13} />
                                           <span>Compare with current file</span>
-                                        </button>
-                                        <button
-                                          type="button"
+                                        </DropdownMenu.Item>
+                                        <DropdownMenu.Item
                                           className={`history-menu-item${snap.pinned ? ' is-pinned' : ''}`}
-                                          onClick={() => {
-                                            setActiveMenuId(null);
+                                          onSelect={() => {
                                             if (snap.pinned) {
                                               void handleUnpin(snap);
                                             } else {
@@ -650,32 +614,23 @@ export function HistoryPanel({
                                           <span>
                                             {snap.pinned ? 'Unpin version' : 'Pin version...'}
                                           </span>
-                                        </button>
-                                        <button
-                                          type="button"
+                                        </DropdownMenu.Item>
+                                        <DropdownMenu.Item
                                           className="history-menu-item"
-                                          onClick={() => {
-                                            setActiveMenuId(null);
-                                            void onRestoreSnapshot(snap);
-                                          }}
+                                          onSelect={() => void onRestoreSnapshot(snap)}
                                         >
                                           <Undo2 size={13} />
                                           <span>Restore version</span>
-                                        </button>
-                                        <button
-                                          type="button"
+                                        </DropdownMenu.Item>
+                                        <DropdownMenu.Item
                                           className="history-menu-item"
-                                          onClick={() => {
-                                            setActiveMenuId(null);
-                                            void onExportSnapshot(snap);
-                                          }}
+                                          onSelect={() => void onExportSnapshot(snap)}
                                         >
                                           <ArrowSquareOut size={13} />
                                           <span>Export version...</span>
-                                        </button>
-                                        <div className="history-menu-divider" />
-                                        <button
-                                          type="button"
+                                        </DropdownMenu.Item>
+                                        <DropdownMenu.Separator className="history-menu-divider" />
+                                        <DropdownMenu.Item
                                           className="history-menu-item history-menu-delete"
                                           disabled={!canDelete || Boolean(busyAction)}
                                           title={
@@ -683,17 +638,14 @@ export function HistoryPanel({
                                               ? 'Delete snapshot'
                                               : 'Delete (save current file first)'
                                           }
-                                          onClick={() => {
-                                            setActiveMenuId(null);
-                                            void handleDelete(snap);
-                                          }}
+                                          onSelect={() => void handleDelete(snap)}
                                         >
                                           <Trash2 size={13} />
                                           <span>Delete snapshot</span>
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
+                                        </DropdownMenu.Item>
+                                      </DropdownMenu.Content>
+                                    </DropdownMenu.Portal>
+                                  </DropdownMenu.Root>
                                 ) : (
                                   <div className="history-item-icons">
                                     <IconButton
@@ -803,33 +755,20 @@ export function HistoryPanel({
 
         {/* Resizer Splitter between File History and Recent Projects */}
         {historyOpen && recentsOpen && (
-          <div
+          <ResizableSeparator
+            orientation="horizontal"
             className="writing-resizer"
-            onMouseDown={onMouseDown}
-            role="separator"
-            aria-label="Recent projects height"
-            aria-orientation="horizontal"
-            aria-valuemin={70}
-            aria-valuemax={450}
-            aria-valuenow={recentsHeight}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setRecentsHeight((prev) => Math.min(450, prev + 16));
-              } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setRecentsHeight((prev) => Math.max(70, prev - 16));
-              } else if (e.key === 'Home') {
-                e.preventDefault();
-                setRecentsHeight(70);
-              } else if (e.key === 'End') {
-                e.preventDefault();
-                setRecentsHeight(450);
-              }
-            }}
-            onDoubleClick={() => setRecentsHeight(160)}
+            label="Recent projects height"
+            value={recentsHeight}
+            min={70}
+            max={450}
+            defaultValue={160}
+            step={16}
             title="Drag or use arrow keys to resize File History and Recent Projects"
+            onResize={setRecentsHeight}
+            computeValueFromPointer={(event, start) => {
+              return start.value + (start.y - event.clientY);
+            }}
           />
         )}
 

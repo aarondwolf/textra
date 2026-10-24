@@ -1,5 +1,52 @@
 # Current state
 
+2026-10-24 Phase 3 Part 2 BibTeX & LaTeX Parser Modernization:
+
+- BibTeX Parser Modernization (@retorquere/bibtex-parser):
+  - In [src/shared/bibliography.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/bibliography.ts), replaced hand-rolled brace/quote tracking and fragile single-character regex tokenization with `@retorquere/bibtex-parser`.
+  - Added robust title cleaning (`cleanTitle`), author normalization (`formatAuthor`/`formatAuthors`), and BibLaTeX `date` fallback to `year`.
+  - Added graceful try/catch error recovery for partial entries while typing in the editor.
+  - Preserved 100% backward compatibility for `BibliographyEntry` interface and `bibliographyDetail()`.
+  - Expanded unit tests in [tests/unit/bibliography.test.ts](file:///c:/Users/aaron/Dropbox/repos/textra/tests/unit/bibliography.test.ts).
+- LaTeX Structure & Reference Parser Modernization (@unified-latex/*):
+  - In [src/shared/tex-structure.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/tex-structure.ts), replaced regex tokenizers and bracket stack walkers (`stripComments`, `maskVerbatim`, `lineLocator`, `readGroup`, `readBracket`) with `@unified-latex` AST parser and visitor.
+  - Registered custom macro signatures with `getParser`: `input`, `include`, `subfile`, `subfileinclude`, `lstinputlisting`, `verbatiminput`, `import`, `subimport`, `bibliography`, `addbibresource`, `includegraphics`, `graphicspath`, `usepackage`, `RequirePackage`, `documentclass`.
+  - Handled section hierarchy, starred flags (`*`), short titles, graphics directory groups (`\graphicspath{{figures/}{img/}}`), and file index resolution.
+  - In [src/shared/writing-analysis.ts](file:///c:/Users/aaron/Dropbox/repos/textra/src/shared/writing-analysis.ts), converted `analyzeLatexDocument` to unified-latex AST visitor: extracts labels, references, citations, graphics, table environments, figure environments, equation environments (`equation`, `align`, `gather`, etc.), and inline/display math.
+  - Handled `type: 'verbatim'` and verbatim environments (`verbatim*`, `lstlisting`, `minted`, `comment`) by recording line boundaries to accurately skip fake TODOs/references.
+  - Refactored `extractPromptContext` to query AST environment boundaries rather than regular expression stacks.
+- Verification:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm run build` passed (Electron main, preload, and renderer packages).
+  - `npm test` unit and integration tests passed (70/70 suites, 718/718 tests passing).
+
+2026-10-24 Phase 3 UI Improvements & Library Standardization:
+
+- Headless UI Migration (Radix UI & cmdk):
+  - In [src/renderer/src/components/DropdownMenu.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/DropdownMenu.tsx), replaced the hand-rolled DOM sizer duplication and custom menu state machine with `@radix-ui/react-dropdown-menu`, using portals with collision detection (`sideOffset`, `collisionPadding`). Preserved 100% backward-compatible prop signatures.
+  - In [src/renderer/src/features/chat/ModelPicker.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/chat/ModelPicker.tsx), migrated to `@radix-ui/react-popover`, eliminating manual bounding-box calculations and window listeners.
+  - In [src/renderer/src/Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx), migrated file-tree row context menu to `@radix-ui/react-context-menu`, file action button to `@radix-ui/react-dropdown-menu`, tab context menu to `@radix-ui/react-context-menu`, editor options popup to `@radix-ui/react-popover`, and compile recipe menu to `@radix-ui/react-popover`.
+  - In [src/renderer/src/features/history/HistoryPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/history/HistoryPanel.tsx), replaced ad-hoc snapshot menu with `@radix-ui/react-dropdown-menu`.
+  - In [src/renderer/src/App.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/App.tsx), migrated Command Palette to `cmdk` (`<Command>`, `<Command.Input>`, `<Command.List>`, `<Command.Group>`, `<Command.Item>`), keeping keyboard focus locked to the search input via `aria-activedescendant`.
+- Accessible Split-Pane Separators:
+  - Created [src/renderer/src/components/ResizableSeparator.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/components/ResizableSeparator.tsx) with pointer capture (`setPointerCapture`/`releasePointerCapture`), accessible WAI-ARIA separator semantics (`role="separator"`, `aria-orientation`, `aria-valuenow`, `aria-valuemin`, `aria-valuemax`), double-click reset to `defaultValue`, keyboard stepping (`ArrowUp`/`ArrowDown`/`ArrowLeft`/`ArrowRight`/`Home`/`End`), and `data-resizing` attributes.
+  - Replaced ad-hoc resizers across [Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx) (sidebar & split-preview), [WritingPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/writing/WritingPanel.tsx), [HistoryPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/history/HistoryPanel.tsx), and [DocumentView.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/document/DocumentView.tsx).
+- Accessible Drag-and-Drop (@dnd-kit):
+  - In [src/renderer/src/features/writing/WritingPanel.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/writing/WritingPanel.tsx), replaced raw HTML5 drag events with `@dnd-kit/core` and `@dnd-kit/sortable` (`PointerSensor` with `distance: 5` constraint and `KeyboardSensor`).
+  - In [src/renderer/src/Workspace.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/Workspace.tsx), migrated document tabs to `@dnd-kit/sortable` (`horizontalListSortingStrategy`, `SortableTab` component), eliminating plain-text data transfer leaks and ensuring keyboard reordering.
+- Accessible Toast Notification Viewport (@radix-ui/react-toast):
+  - In [src/renderer/src/features/notifications/ToastViewport.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/notifications/ToastViewport.tsx), replaced manual setTimeout queue with Radix Toast (`Toast.Provider`, `Toast.Root`, `Toast.Viewport`), adding swipe-to-dismiss, hover pause, and accessible close button. Kept `notify(message, tone)` contract intact.
+- Markdown Rendering Upgrade (react-markdown & remark-gfm):
+  - In [src/renderer/src/features/markdown/MarkdownPreview.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/markdown/MarkdownPreview.tsx), replaced ad-hoc regex parser with `react-markdown` + `remark-gfm`, mapping AST nodes to secure links (`safeHref`), fenced code blocks (`CodePreBlock` with copy button), and tables.
+- PDF Virtualization (@tanstack/react-virtual):
+  - In [src/renderer/src/features/pdf/PdfViewer.tsx](file:///c:/Users/aaron/Dropbox/repos/textra/src/renderer/src/features/pdf/PdfViewer.tsx), replaced per-page `IntersectionObserver` array and `for (let i = 1; i <= pdf.numPages; i++) getBoundingClientRect()` scroll loops with `@tanstack/react-virtual` (`useVirtualizer`), rendering only visible pages + overscan buffer, freeing memory on unmount, and achieving $O(1)$ page tracking and navigation.
+- Verification:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm run build` passed (all chunks generated cleanly).
+  - `npm test` unit and integration tests passed (714/714 passing).
+
 2026-10-24 Architectural Modernization & Codebase Audit Implementations:
 
 - AsyncMutex Consolidation (F-13):

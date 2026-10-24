@@ -1,13 +1,5 @@
-import {
-  useEffect,
-  useMemo,
-  useId,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { CaretDown, Check } from '@phosphor-icons/react';
 
 export interface DropdownMenuItem<T extends string = string> {
@@ -54,9 +46,9 @@ function isGroup<T extends string>(item: DropdownItemOrGroup<T>): item is Dropdo
 /**
  * DropdownMenu (also exported as SelectMenu)
  *
- * Unified dropdown and select component matching the styling of the formatting toolbar
- * and setup dialogs. Provides pill-styled trigger, floating shadow menu, checkmarks on active
- * items, keyboard arrow navigation, roving tabIndex/aria-activedescendant, and outside-click dismissal.
+ * Accessible dropdown and select component built on Radix UI primitives.
+ * Automatically handles collision detection, portal positioning, roving keyboard focus,
+ * and WAI-ARIA menuitem semantics while preserving TeXtra's pill-button visual design.
  */
 export function DropdownMenu<T extends string = string>({
   value,
@@ -78,25 +70,7 @@ export function DropdownMenu<T extends string = string>({
   footer,
 }: DropdownMenuProps<T>) {
   const [open, setOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement | HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const menuId = useId();
 
-  // Close when clicking outside
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener('mousedown', handleClickOutside);
-    return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
-
-  // Flatten items to locate selected item label and index navigation
   const flatItems = useMemo(() => {
     const list: DropdownMenuItem<T>[] = [];
     for (const item of items) {
@@ -113,124 +87,25 @@ export function DropdownMenu<T extends string = string>({
   const selectedItem = selectedIndex >= 0 ? flatItems[selectedIndex] : undefined;
   const displayLabel = selectedItem ? selectedItem.label : placeholder;
 
-  // Initialize or reset highlightedIndex when open changes
-  useEffect(() => {
-    if (open) {
-      if (selectedIndex >= 0 && !flatItems[selectedIndex]?.disabled) {
-        setHighlightedIndex(selectedIndex);
-      } else {
-        const firstEnabled = flatItems.findIndex((item) => !item.disabled);
-        setHighlightedIndex(firstEnabled);
-      }
-    } else {
-      setHighlightedIndex(-1);
-    }
-  }, [open, selectedIndex, flatItems]);
-
-  // Auto-scroll highlighted item into view
-  useEffect(() => {
-    if (open && highlightedIndex >= 0 && itemRefs.current[highlightedIndex]) {
-      itemRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [open, highlightedIndex]);
-
-  const selectItemAt = (index: number) => {
-    const item = flatItems[index];
-    if (!item || item.disabled) return;
+  const handleSelect = (item: DropdownMenuItem<T>) => {
+    if (item.disabled) return;
     if (item.onClick) {
       item.onClick();
     }
     if (onChange) {
       onChange(item.value);
     }
-    setOpen(false);
-    triggerRef.current?.focus();
   };
 
-  const findNextEnabledIndex = (fromIndex: number, direction: 1 | -1): number => {
-    const total = flatItems.length;
-    if (total === 0) return -1;
-    for (let step = 1; step <= total; step++) {
-      const idx = (fromIndex + direction * step + total) % total;
-      if (!flatItems[idx]?.disabled) return idx;
-    }
-    return fromIndex;
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (disabled || items.length === 0) return;
-
-    if (!open) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        setOpen(true);
-      }
-      return;
-    }
-
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlightedIndex((prev) => findNextEnabledIndex(prev, 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedIndex((prev) => findNextEnabledIndex(prev, -1));
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      const first = flatItems.findIndex((item) => !item.disabled);
-      if (first >= 0) setHighlightedIndex(first);
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      for (let i = flatItems.length - 1; i >= 0; i--) {
-        if (!flatItems[i]?.disabled) {
-          setHighlightedIndex(i);
-          break;
-        }
-      }
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      if (highlightedIndex >= 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        selectItemAt(highlightedIndex);
-      }
-    } else if (e.key === 'Tab') {
-      setOpen(false);
-    }
-  };
-
-  const renderItem = (item: DropdownMenuItem<T>, flatIndex: number) => {
+  const renderItem = (item: DropdownMenuItem<T>) => {
     const isSelected = item.value === value;
-    const isHighlighted = flatIndex === highlightedIndex;
-    const itemId = `${menuId}-item-${flatIndex}`;
 
     return (
-      <button
+      <DropdownMenuPrimitive.Item
         key={item.value}
-        id={itemId}
-        ref={(el) => {
-          itemRefs.current[flatIndex] = el;
-        }}
-        type="button"
-        role="menuitem"
-        aria-selected={isSelected}
-        tabIndex={isHighlighted ? 0 : -1}
-        className={[
-          'dropdown-menu-item',
-          isSelected ? 'selected' : '',
-          isHighlighted ? 'highlighted' : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
         disabled={item.disabled}
-        onMouseEnter={() => {
-          if (!item.disabled) setHighlightedIndex(flatIndex);
-        }}
-        onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
-        onClick={() => selectItemAt(flatIndex)}
+        className={['dropdown-menu-item', isSelected ? 'selected' : ''].filter(Boolean).join(' ')}
+        onSelect={() => handleSelect(item)}
       >
         <span className="dropdown-menu-item-content">
           {item.icon}
@@ -249,15 +124,12 @@ export function DropdownMenu<T extends string = string>({
             />
           )}
         </div>
-      </button>
+      </DropdownMenuPrimitive.Item>
     );
   };
 
-  let flatIndexCounter = 0;
-
   return (
     <div
-      ref={containerRef}
       className={[
         'dropdown-menu-container',
         'editor-format-heading',
@@ -268,112 +140,73 @@ export function DropdownMenu<T extends string = string>({
         .filter(Boolean)
         .join(' ')}
       style={style}
-      onKeyDown={handleKeyDown}
     >
-      {!fullWidth && !customTrigger && (
-        <div className="dropdown-menu-sizer" aria-hidden="true">
-          <div className="dropdown-menu-sizer-item">
-            <span>{displayLabel}</span>
-            <span className="dropdown-menu-sizer-caret" />
-          </div>
-          {flatItems.map((item) => (
-            <div key={item.value} className="dropdown-menu-sizer-item">
-              <span className="dropdown-menu-item-content">
-                {item.icon}
-                <span>{item.label}</span>
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                {item.description && (
-                  <span className="dropdown-menu-item-description">{item.description}</span>
-                )}
-                <span className="dropdown-menu-sizer-check" />
-              </div>
+      <DropdownMenuPrimitive.Root open={open} onOpenChange={setOpen}>
+        <DropdownMenuPrimitive.Trigger asChild disabled={disabled || items.length === 0}>
+          {customTrigger ? (
+            <div
+              role="button"
+              tabIndex={disabled || items.length === 0 ? -1 : 0}
+              aria-label={ariaLabel}
+              title={title}
+              className="dropdown-menu-custom-trigger"
+              onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
+              style={triggerStyle}
+            >
+              {typeof customTrigger === 'function' ? customTrigger(open) : customTrigger}
             </div>
-          ))}
-        </div>
-      )}
+          ) : (
+            <button
+              type="button"
+              className="dropdown-menu-trigger editor-format-heading-trigger"
+              aria-label={ariaLabel}
+              title={title}
+              disabled={disabled || items.length === 0}
+              onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
+              style={triggerStyle}
+            >
+              <span className="dropdown-menu-trigger-text">{displayLabel}</span>
+              <CaretDown size={11} aria-hidden="true" className="dropdown-menu-trigger-caret" />
+            </button>
+          )}
+        </DropdownMenuPrimitive.Trigger>
 
-      {customTrigger ? (
-        <div
-          ref={triggerRef as React.RefObject<HTMLDivElement>}
-          role="button"
-          tabIndex={disabled || items.length === 0 ? -1 : 0}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? `${menuId}-popup` : undefined}
-          aria-activedescendant={
-            open && highlightedIndex >= 0 ? `${menuId}-item-${highlightedIndex}` : undefined
-          }
-          aria-label={ariaLabel}
-          title={title}
-          className="dropdown-menu-custom-trigger"
-          onClick={() => {
-            if (!disabled && items.length > 0) setOpen((prev) => !prev);
-          }}
-          onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
-          style={triggerStyle}
-        >
-          {typeof customTrigger === 'function' ? customTrigger(open) : customTrigger}
-        </div>
-      ) : (
-        <button
-          ref={triggerRef as React.RefObject<HTMLButtonElement>}
-          type="button"
-          className="dropdown-menu-trigger editor-format-heading-trigger"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? `${menuId}-popup` : undefined}
-          aria-activedescendant={
-            open && highlightedIndex >= 0 ? `${menuId}-item-${highlightedIndex}` : undefined
-          }
-          aria-label={ariaLabel}
-          title={title}
-          disabled={disabled || items.length === 0}
-          onClick={() => setOpen((prev) => !prev)}
-          onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
-          style={triggerStyle}
-        >
-          <span className="dropdown-menu-trigger-text">{displayLabel}</span>
-          <CaretDown size={11} aria-hidden="true" className="dropdown-menu-trigger-caret" />
-        </button>
-      )}
-
-      {open && (
-        <div
-          id={`${menuId}-popup`}
-          className={[
-            'dropdown-menu-popup',
-            'editor-format-heading-menu',
-            direction === 'up' ? 'direction-up' : '',
-            align === 'right' ? 'align-right' : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          role="menu"
-          aria-label={ariaLabel}
-          aria-activedescendant={
-            highlightedIndex >= 0 ? `${menuId}-item-${highlightedIndex}` : undefined
-          }
-          style={menuStyle}
-        >
-          {items.map((itemOrGroup, idx) => {
-            if (isGroup(itemOrGroup)) {
-              return (
-                <div key={`group-${itemOrGroup.group}-${idx}`}>
-                  <div className="dropdown-menu-group-header">{itemOrGroup.group}</div>
-                  {itemOrGroup.items.map((item) => {
-                    const currentIdx = flatIndexCounter++;
-                    return renderItem(item, currentIdx);
-                  })}
-                </div>
-              );
-            }
-            const currentIdx = flatIndexCounter++;
-            return renderItem(itemOrGroup, currentIdx);
-          })}
-          {footer && <div className="dropdown-menu-footer">{footer}</div>}
-        </div>
-      )}
+        <DropdownMenuPrimitive.Portal>
+          <DropdownMenuPrimitive.Content
+            sideOffset={4}
+            collisionPadding={8}
+            align={align === 'right' ? 'end' : 'start'}
+            side={direction === 'up' ? 'top' : 'bottom'}
+            className={[
+              'dropdown-menu-popup',
+              'editor-format-heading-menu',
+              direction === 'up' ? 'direction-up' : '',
+              align === 'right' ? 'align-right' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            style={{
+              ...(fullWidth ? { minWidth: 'var(--radix-dropdown-menu-trigger-width)' } : {}),
+              ...menuStyle,
+            }}
+          >
+            {items.map((itemOrGroup, idx) => {
+              if (isGroup(itemOrGroup)) {
+                return (
+                  <DropdownMenuPrimitive.Group key={`group-${itemOrGroup.group}-${idx}`}>
+                    <DropdownMenuPrimitive.Label className="dropdown-menu-group-header">
+                      {itemOrGroup.group}
+                    </DropdownMenuPrimitive.Label>
+                    {itemOrGroup.items.map((item) => renderItem(item))}
+                  </DropdownMenuPrimitive.Group>
+                );
+              }
+              return renderItem(itemOrGroup);
+            })}
+            {footer && <div className="dropdown-menu-footer">{footer}</div>}
+          </DropdownMenuPrimitive.Content>
+        </DropdownMenuPrimitive.Portal>
+      </DropdownMenuPrimitive.Root>
     </div>
   );
 }

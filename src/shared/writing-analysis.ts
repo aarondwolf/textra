@@ -4,6 +4,11 @@
  * while remaining safe to run on every editor change.
  */
 
+import { getParser } from '@unified-latex/unified-latex-util-parse';
+import { toString } from '@unified-latex/unified-latex-util-to-string';
+import { SKIP, visit } from '@unified-latex/unified-latex-util-visit';
+import type * as Ast from '@unified-latex/unified-latex-types';
+
 export type OutlineCommand =
   'part' | 'chapter' | 'section' | 'subsection' | 'subsubsection' | 'paragraph' | 'subparagraph';
 
@@ -103,19 +108,39 @@ const EQUATION_ENVIRONMENTS = new Set([
   'displaymath',
   'math',
 ]);
-const MAX_GROUP = 10_000;
 
-function lineAndColumnAt(text: string, index: number): { line: number; column: number } {
-  let line = 1;
-  let lastBreak = -1;
-  for (let i = 0; i < index; i++) {
-    if (text[i] === '\n') {
-      line++;
-      lastBreak = i;
-    }
-  }
-  return { line, column: index - lastBreak };
-}
+const writingLatexParser = getParser({
+  macros: {
+    label: { signature: 'm' },
+    ref: { signature: 'm' },
+    eqref: { signature: 'm' },
+    pageref: { signature: 'm' },
+    autoref: { signature: 'm' },
+    cref: { signature: 'm' },
+    Cref: { signature: 'm' },
+    cpageref: { signature: 'm' },
+    Cpageref: { signature: 'm' },
+    crefrange: { signature: 'm m' },
+    Crefrange: { signature: 'm m' },
+    vref: { signature: 'm' },
+    Vref: { signature: 'm' },
+    cite: { signature: 'o o m' },
+    citep: { signature: 'o o m' },
+    citet: { signature: 'o o m' },
+    citeauthor: { signature: 'o o m' },
+    citeyear: { signature: 'o o m' },
+    autocite: { signature: 'o o m' },
+    Autocite: { signature: 'o o m' },
+    parencite: { signature: 'o o m' },
+    Parencite: { signature: 'o o m' },
+    textcite: { signature: 'o o m' },
+    Textcite: { signature: 'o o m' },
+    footcite: { signature: 'o o m' },
+    supercite: { signature: 'o o m' },
+    nocite: { signature: 'm' },
+    includegraphics: { signature: 'o o m' },
+  },
+});
 
 /** Removes comments while preserving offsets and line numbers. */
 export function maskLatexComments(source: string): string {
@@ -139,52 +164,6 @@ export function maskLatexComments(source: string): string {
     }
   }
   return output;
-}
-
-function maskVerbatim(source: string): string {
-  return source.replace(
-    /\\begin\{(verbatim\*?|lstlisting|minted|comment)\}[\s\S]*?\\end\{\1\}/g,
-    (match) => match.replace(/[^\r\n]/g, ' '),
-  );
-}
-
-function skipSpace(text: string, index: number): number {
-  while (index < text.length && /\s/.test(text[index])) index++;
-  return index;
-}
-
-function readGroup(text: string, after: number): [string, number] | null {
-  const start = skipSpace(text, after);
-  if (text[start] !== '{') return null;
-  let depth = 0;
-  for (let i = start; i < text.length && i - start < MAX_GROUP; i++) {
-    if (text[i] === '\\') {
-      i++;
-      continue;
-    }
-    if (text[i] === '{') depth++;
-    else if (text[i] === '}') {
-      depth--;
-      if (depth === 0) return [text.slice(start + 1, i), i + 1];
-    }
-  }
-  return null;
-}
-
-function readOptional(text: string, after: number): number {
-  const start = skipSpace(text, after);
-  if (text[start] !== '[') return after;
-  let depth = 0;
-  for (let i = start + 1; i < text.length && i - start < MAX_GROUP; i++) {
-    if (text[i] === '\\') {
-      i++;
-      continue;
-    }
-    if (text[i] === '{') depth++;
-    else if (text[i] === '}') depth = Math.max(0, depth - 1);
-    else if (text[i] === ']' && depth === 0) return i + 1;
-  }
-  return after;
 }
 
 function readableText(raw: string): string {
@@ -236,64 +215,134 @@ function countInlineMath(source: string): number {
   );
 }
 
-/** Scans one document, ignoring comments and verbatim-like environments. */
+/** Scans one document using unified-latex AST, ignoring comments and verbatim-like environments. */
 export function analyzeLatexDocument(source: string): WritingAnalysis {
-  const uncommented = maskLatexComments(source);
-  const text = maskVerbatim(uncommented);
+  let ast: Ast.Root;
+  try {
+    ast = writingLatexParser.parse(source);
+  } catch {
+    return {
+      outline: [],
+      labels: [],
+      references: [],
+      citations: [],
+      graphics: [],
+      todos: [],
+      referenceIssues: [],
+      counts: {
+        words: 0,
+        sections: 0,
+        tables: 0,
+        figures: 0,
+        equations: 0,
+        citations: 0,
+        todos: 0,
+      },
+    };
+  }
+
   const outline: WritingOutlineItem[] = [];
   const labels: SourceOccurrence[] = [];
   const references: SourceOccurrence[] = [];
   const citations: SourceOccurrence[] = [];
   const graphics: SourceOccurrence[] = [];
-  const todos: TodoItem[] = [];
+  const verbatimRanges: Array<{ start: number; end: number }> = [];
   let tableCount = 0;
   let figureCount = 0;
   let equationCount = 0;
-  let match: RegExpExecArray | null;
-  const commands = /\\([A-Za-z@]+)(\*?)/g;
-  while ((match = commands.exec(text))) {
-    const command = match[1];
-    const starred = match[2] === '*';
-    const location = lineAndColumnAt(text, match.index);
-    const after = match.index + match[0].length;
-    if (command === 'begin' || command === 'end') {
-      const group = readGroup(text, after);
-      const name = group?.[0].trim();
-      if (!name) continue;
-      if (command === 'begin') {
-        if (TABLE_ENVIRONMENTS.has(name)) tableCount++;
-        if (FIGURE_ENVIRONMENTS.has(name)) figureCount++;
-        if (EQUATION_ENVIRONMENTS.has(name)) equationCount++;
+
+  visit(ast, {
+    enter(node) {
+      if (node.type === 'verbatim') {
+        if (node.position?.start?.line && node.position?.end?.line) {
+          verbatimRanges.push({ start: node.position.start.line, end: node.position.end.line });
+        }
+        return SKIP;
       }
-      continue;
-    }
-    const groupStart = readOptional(text, after);
-    const group = readGroup(text, groupStart);
-    if (!group) continue;
-    if (SECTION_NAMES.has(command as OutlineCommand)) {
-      outline.push({
-        command: command as OutlineCommand,
-        level: SECTION_LEVELS[command as OutlineCommand],
-        title: readableText(group[0]) || '(untitled)',
-        starred,
-        line: location.line,
+      if (node.type === 'mathenv') {
+        equationCount++;
+      } else if (node.type === 'environment') {
+        const envName = (node as { env?: string }).env ?? '';
+        if (VERBATIM_ENVIRONMENTS.has(envName)) {
+          if (node.position?.start?.line && node.position?.end?.line) {
+            verbatimRanges.push({ start: node.position.start.line, end: node.position.end.line });
+          }
+          return SKIP;
+        }
+        if (TABLE_ENVIRONMENTS.has(envName)) tableCount++;
+        if (FIGURE_ENVIRONMENTS.has(envName)) figureCount++;
+        if (EQUATION_ENVIRONMENTS.has(envName)) equationCount++;
+      } else if (node.type === 'inlinemath' || node.type === 'displaymath') {
+        equationCount++;
+      } else if (node.type === 'macro') {
+        const command = node.content;
+        const line = node.position?.start?.line ?? 1;
+        const column = node.position?.start?.column ?? 1;
+
+        if (SECTION_NAMES.has(command as OutlineCommand)) {
+          const starred = Boolean(
+            node.args?.[0]?.content?.some((c) => c.type === 'string' && c.content === '*'),
+          );
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            outline.push({
+              command: command as OutlineCommand,
+              level: SECTION_LEVELS[command as OutlineCommand],
+              title: readableText(toString(mandatoryArg.content)) || '(untitled)',
+              starred,
+              line,
+            });
+          }
+        } else if (command === 'label') {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            for (const value of valuesInGroup(toString(mandatoryArg.content))) {
+              labels.push({ value, command, line, column });
+            }
+          }
+        } else if (isReferenceCommand(command)) {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            for (const value of valuesInGroup(toString(mandatoryArg.content))) {
+              references.push({ value, command, line, column });
+            }
+          }
+        } else if (isCitationCommand(command)) {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            for (const value of valuesInGroup(toString(mandatoryArg.content))) {
+              citations.push({ value, command, line, column });
+            }
+          }
+        } else if (command === 'includegraphics') {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            for (const value of valuesInGroup(toString(mandatoryArg.content))) {
+              graphics.push({ value, command, line, column });
+            }
+          }
+        }
+      }
+    },
+  });
+
+  const sourceLines = source.split(/\r?\n/);
+  const todos: TodoItem[] = [];
+  for (let i = 0; i < sourceLines.length; i++) {
+    const lineNum = i + 1;
+    if (verbatimRanges.some((r) => lineNum >= r.start && lineNum <= r.end)) continue;
+    const lineText = sourceLines[i];
+    const match = /\b(TODO|FIXME)\b\s*:?[ \t]*([^\r\n]*)/.exec(lineText);
+    if (match) {
+      todos.push({
+        kind: match[1] as TodoItem['kind'],
+        text: match[2].trim(),
+        line: lineNum,
+        column: match.index + 1,
       });
-    } else if (command === 'label') {
-      for (const value of valuesInGroup(group[0])) labels.push({ value, command, ...location });
-    } else if (isReferenceCommand(command)) {
-      for (const value of valuesInGroup(group[0])) references.push({ value, command, ...location });
-    } else if (isCitationCommand(command)) {
-      for (const value of valuesInGroup(group[0])) citations.push({ value, command, ...location });
-    } else if (command === 'includegraphics') {
-      for (const value of valuesInGroup(group[0])) graphics.push({ value, command, ...location });
     }
   }
-  const todoSource = maskVerbatim(source);
-  const todoPattern = /\b(TODO|FIXME)\b\s*:?[ \t]*([^\r\n]*)/g;
-  while ((match = todoPattern.exec(todoSource))) {
-    const location = lineAndColumnAt(source, match.index);
-    todos.push({ kind: match[1] as TodoItem['kind'], text: match[2].trim(), ...location });
-  }
+
   const referenceIssues = findReferenceIssues(labels, references);
   return {
     outline,
@@ -304,11 +353,11 @@ export function analyzeLatexDocument(source: string): WritingAnalysis {
     todos,
     referenceIssues,
     counts: {
-      words: countWords(text),
+      words: countWords(source),
       sections: outline.length,
       tables: tableCount,
       figures: figureCount || graphics.length,
-      equations: equationCount + countInlineMath(text),
+      equations: equationCount,
       citations: citations.length,
       todos: todos.length,
     },
@@ -415,35 +464,41 @@ export function extractPromptContext(
 ): PromptContext {
   const lines = source.split(/\r\n|\n|\r/);
   const line = Math.max(1, Math.min(targetLine, Math.max(lines.length, 1)));
-  const text = maskVerbatim(maskLatexComments(source));
-  const stack: { name: string; start: number }[] = [];
-  let nearest: { name: string; start: number; end: number } | null = null;
-  const token = /\\(begin|end)\{([^{}\r\n]+)\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = token.exec(text))) {
-    const eventLine = lineAndColumnAt(text, match.index).line;
-    const name = match[2].trim();
-    if (VERBATIM_ENVIRONMENTS.has(name)) continue;
-    if (match[1] === 'begin') stack.push({ name, start: eventLine });
-    else {
-      for (let i = stack.length - 1; i >= 0; i--) {
-        if (stack[i].name !== name) continue;
-        const opened = stack.splice(i, 1)[0];
-        if (opened.start <= line && line <= eventLine) {
-          const candidate = { name, start: opened.start, end: eventLine };
-          if (!nearest || candidate.end - candidate.start < nearest.end - nearest.start)
-            nearest = candidate;
-        }
-        break;
-      }
-    }
+
+  let ast: Ast.Root | null = null;
+  try {
+    ast = writingLatexParser.parse(source);
+  } catch {
+    // AST parse fallback
   }
-  if (nearest) {
+
+  let nearest: { name: string; start: number; end: number } | null = null;
+  if (ast) {
+    visit(ast, {
+      enter(node) {
+        if (node.type === 'verbatim') return SKIP;
+        if (node.type === 'environment') {
+          const envName = (node as { env?: string }).env ?? '';
+          if (VERBATIM_ENVIRONMENTS.has(envName)) return SKIP;
+          const start = node.position?.start?.line;
+          const end = node.position?.end?.line;
+          if (start && end && start <= line && line <= end) {
+            if (!nearest || end - start < nearest.end - nearest.start) {
+              nearest = { name: envName, start, end };
+            }
+          }
+        }
+      },
+    });
+  }
+
+  const enclosing = nearest as { name: string; start: number; end: number } | null;
+  if (enclosing) {
     return {
-      startLine: nearest.start,
-      endLine: nearest.end,
-      text: lines.slice(nearest.start - 1, nearest.end).join('\n'),
-      environment: nearest.name,
+      startLine: enclosing.start,
+      endLine: enclosing.end,
+      text: lines.slice(enclosing.start - 1, enclosing.end).join('\n'),
+      environment: enclosing.name,
     };
   }
   const startLine = Math.max(1, line - Math.max(0, radius));

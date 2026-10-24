@@ -48,4 +48,26 @@ describe('parseBibliography', () => {
       }),
     );
   });
+
+  it('handles institutional authors, compound names, and grace on malformed entries', () => {
+    const entries = parseBibliography(`
+      @techreport{who2020,
+        author = {{World Health Organization} and Smith, Jr., John and {von Neumann}, John},
+        title = {Global Report},
+        year = "2020"
+      }
+      @misc{incomplete,
+    `);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual({
+      key: 'who2020',
+      type: 'techreport',
+      title: 'Global Report',
+      author: 'World Health Organization and John Smith Jr. and John von Neumann',
+      year: '2020',
+    });
+    expect(bibliographyDetail(entries[0])).toBe('World Health Organization · 2020 · Global Report');
+    expect(entries[1].key).toBe('incomplete');
+    expect(bibliographyDetail(entries[1])).toBe('misc');
+  });
 });

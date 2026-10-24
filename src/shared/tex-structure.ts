@@ -1,8 +1,13 @@
 /**
- * Lightweight, dependency-free extraction of document structure from LaTeX source:
+ * AST-based extraction of document structure from LaTeX source:
  * the section outline and the files a document pulls in. It is a reading aid, not a
  * TeX engine: macro-generated commands and conditionals are intentionally not expanded.
  */
+
+import { getParser } from '@unified-latex/unified-latex-util-parse';
+import { toString } from '@unified-latex/unified-latex-util-to-string';
+import { SKIP, visit } from '@unified-latex/unified-latex-util-visit';
+import type * as Ast from '@unified-latex/unified-latex-types';
 
 export const SECTION_LEVELS = {
   part: 0,
@@ -50,79 +55,26 @@ const PACKAGE_COMMANDS: Record<string, string> = {
   RequirePackage: '.sty',
   documentclass: '.cls',
 };
-const MAX_GROUP = 4000;
-const MAX_BRACKET = 500;
 
-function stripComments(source: string): string {
-  return source
-    .split(/\r\n|\n|\r/)
-    .map((line) => {
-      for (let i = 0; i < line.length; i++) {
-        const character = line[i];
-        if (character === '\\') i++;
-        else if (character === '%') return line.slice(0, i);
-      }
-      return line;
-    })
-    .join('\n');
-}
-
-function maskVerbatim(text: string): string {
-  return text.replace(
-    /\\begin\{(verbatim\*?|lstlisting|minted|comment)\}[\s\S]*?\\end\{\1\}/g,
-    (match) => match.replace(/[^\n]/g, ' '),
-  );
-}
-
-function lineLocator(text: string): (index: number) => number {
-  const starts = [0];
-  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1);
-  return (index) => {
-    let low = 0;
-    let high = starts.length - 1;
-    while (low < high) {
-      const middle = (low + high + 1) >> 1;
-      if (starts[middle] <= index) low = middle;
-      else high = middle - 1;
-    }
-    return low + 1;
-  };
-}
-
-function skipSpace(text: string, index: number): number {
-  while (index < text.length && /\s/.test(text[index])) index++;
-  return index;
-}
-
-function readBracket(text: string, index: number): [string, number] | null {
-  const start = skipSpace(text, index);
-  if (text[start] !== '[') return null;
-  let depth = 0;
-  for (let i = start + 1; i < text.length && i < start + MAX_BRACKET; i++) {
-    const character = text[i];
-    if (character === '\\') i++;
-    else if (character === '{') depth++;
-    else if (character === '}') depth = Math.max(0, depth - 1);
-    else if (character === ']' && depth === 0) return [text.slice(start + 1, i), i + 1];
-  }
-  return null;
-}
-
-function readGroup(text: string, index: number): [string, number] | null {
-  const start = skipSpace(text, index);
-  if (text[start] !== '{') return null;
-  let depth = 0;
-  for (let i = start; i < text.length && i < start + MAX_GROUP; i++) {
-    const character = text[i];
-    if (character === '\\') i++;
-    else if (character === '{') depth++;
-    else if (character === '}') {
-      depth--;
-      if (depth === 0) return [text.slice(start + 1, i), i + 1];
-    }
-  }
-  return null;
-}
+const texStructureParser = getParser({
+  macros: {
+    input: { signature: 'm' },
+    include: { signature: 'm' },
+    subfile: { signature: 'm' },
+    subfileinclude: { signature: 'm' },
+    lstinputlisting: { signature: 'o m' },
+    verbatiminput: { signature: 'o m' },
+    import: { signature: 'm m' },
+    subimport: { signature: 'm m' },
+    bibliography: { signature: 'o m' },
+    addbibresource: { signature: 'o m' },
+    includegraphics: { signature: 'o o m' },
+    graphicspath: { signature: 'm' },
+    usepackage: { signature: 'o m' },
+    RequirePackage: { signature: 'o m' },
+    documentclass: { signature: 'o m' },
+  },
+});
 
 /** Reduces a heading's TeX to readable text. */
 export function cleanTitle(raw: string): string {
@@ -158,93 +110,114 @@ function splitList(raw: string): string[] {
 }
 
 export function parseTexStructure(source: string): TexStructure {
-  const text = maskVerbatim(stripComments(source));
-  const lineAt = lineLocator(text);
+  let ast: Ast.Root;
+  try {
+    ast = texStructureParser.parse(source);
+  } catch {
+    return { sections: [], references: [], graphicsPaths: [] };
+  }
+
   const sections: ParsedSection[] = [];
   const references: TexReference[] = [];
   const graphicsPaths: string[] = [];
-  const commandPattern = /\\([A-Za-z]+)(\*?)/g;
-  let match: RegExpExecArray | null;
-  while ((match = commandPattern.exec(text))) {
-    const name = match[1];
-    const after = match.index + match[0].length;
-    const line = lineAt(match.index);
-    if (name in SECTION_LEVELS) {
-      const command = name as SectionCommand;
-      const optional = readBracket(text, after);
-      const group = readGroup(text, optional ? optional[1] : after);
-      if (!group) continue;
-      sections.push({
-        command,
-        level: SECTION_LEVELS[command],
-        title: cleanTitle(group[0]) || '(untitled)',
-        starred: match[2] === '*',
-        line,
-      });
-    } else if (TEX_INCLUDES.has(name) || TEXT_INCLUDES.has(name)) {
-      const optional = readBracket(text, after);
-      const group = readGroup(text, optional ? optional[1] : after);
-      const target = group ? cleanTarget(group[0]) : null;
-      if (target)
-        references.push({
-          kind: TEX_INCLUDES.has(name) ? 'tex' : 'text',
-          command: name,
-          target,
-          line,
-        });
-    } else if (IMPORTS.has(name)) {
-      const directory = readGroup(text, after);
-      const file = directory ? readGroup(text, directory[1]) : null;
-      const base = directory ? cleanTarget(directory[0]) : null;
-      const leaf = file ? cleanTarget(file[0]) : null;
-      if (base && leaf)
-        references.push({
-          kind: 'tex',
-          command: name,
-          target: `${base.replace(/\/+$/, '')}/${leaf}`,
-          line,
-        });
-    } else if (name === 'bibliography' || name === 'addbibresource') {
-      const optional = readBracket(text, after);
-      const group = readGroup(text, optional ? optional[1] : after);
-      if (group)
-        for (const target of splitList(group[0]))
-          references.push({ kind: 'bib', command: name, target, line });
-    } else if (name === 'includegraphics') {
-      let position = after;
-      for (let i = 0; i < 2; i++) {
-        const optional = readBracket(text, position);
-        if (optional) position = optional[1];
+
+  visit(ast, {
+    enter(node) {
+      if (
+        node.type === 'verbatim' ||
+        (node.type === 'environment' && /^(verbatim\*?|lstlisting|minted|comment)$/.test(node.env))
+      ) {
+        return SKIP;
       }
-      const group = readGroup(text, position);
-      const target = group ? cleanTarget(group[0]) : null;
-      if (target) references.push({ kind: 'graphic', command: name, target, line });
-    } else if (name === 'graphicspath') {
-      const group = readGroup(text, after);
-      if (group) {
-        let position = 0;
-        for (;;) {
-          const inner = readGroup(group[0], position);
-          if (!inner) break;
-          const directory = cleanTarget(inner[0]);
-          if (directory) graphicsPaths.push(directory.replace(/\/+$/, ''));
-          position = inner[1];
+
+      if (node.type === 'macro') {
+        const name = node.content;
+        const line = node.position?.start?.line ?? 1;
+
+        if (name in SECTION_LEVELS) {
+          const command = name as SectionCommand;
+          const starred = Boolean(
+            node.args?.[0]?.content?.some((c) => c.type === 'string' && c.content === '*'),
+          );
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (!mandatoryArg) return;
+          const title = cleanTitle(toString(mandatoryArg.content)) || '(untitled)';
+          sections.push({
+            command,
+            level: SECTION_LEVELS[command],
+            title,
+            starred,
+            line,
+          });
+        } else if (TEX_INCLUDES.has(name) || TEXT_INCLUDES.has(name)) {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          const target = mandatoryArg ? cleanTarget(toString(mandatoryArg.content)) : null;
+          if (target) {
+            references.push({
+              kind: TEX_INCLUDES.has(name) ? 'tex' : 'text',
+              command: name,
+              target,
+              line,
+            });
+          }
+        } else if (IMPORTS.has(name)) {
+          const mandatoryArgs = node.args?.filter((a) => a.openMark === '{') ?? [];
+          if (mandatoryArgs.length >= 2) {
+            const base = cleanTarget(toString(mandatoryArgs[0].content));
+            const leaf = cleanTarget(toString(mandatoryArgs[1].content));
+            if (base && leaf) {
+              references.push({
+                kind: 'tex',
+                command: name,
+                target: `${base.replace(/\/+$/, '')}/${leaf}`,
+                line,
+              });
+            }
+          }
+        } else if (name === 'bibliography' || name === 'addbibresource') {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            for (const target of splitList(toString(mandatoryArg.content))) {
+              references.push({ kind: 'bib', command: name, target, line });
+            }
+          }
+        } else if (name === 'includegraphics') {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          const target = mandatoryArg ? cleanTarget(toString(mandatoryArg.content)) : null;
+          if (target) references.push({ kind: 'graphic', command: name, target, line });
+        } else if (name === 'graphicspath') {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            const groups = mandatoryArg.content.filter((n) => n.type === 'group');
+            if (groups.length > 0) {
+              for (const g of groups) {
+                const directory = cleanTarget(toString((g as Ast.Group).content));
+                if (directory) graphicsPaths.push(directory.replace(/\/+$/, ''));
+              }
+            } else {
+              for (const part of splitList(toString(mandatoryArg.content))) {
+                graphicsPaths.push(part.replace(/\/+$/, ''));
+              }
+            }
+          }
+        } else if (name in PACKAGE_COMMANDS) {
+          const mandatoryArg = node.args?.find((a) => a.openMark === '{');
+          if (mandatoryArg) {
+            for (const target of splitList(toString(mandatoryArg.content))) {
+              references.push({
+                kind: 'package',
+                command: name,
+                target,
+                line,
+                extension: PACKAGE_COMMANDS[name],
+              });
+            }
+          }
         }
       }
-    } else if (name in PACKAGE_COMMANDS) {
-      const optional = readBracket(text, after);
-      const group = readGroup(text, optional ? optional[1] : after);
-      if (group)
-        for (const target of splitList(group[0]))
-          references.push({
-            kind: 'package',
-            command: name,
-            target,
-            line,
-            extension: PACKAGE_COMMANDS[name],
-          });
-    }
-  }
+    },
+  });
+
   return { sections, references, graphicsPaths };
 }
 

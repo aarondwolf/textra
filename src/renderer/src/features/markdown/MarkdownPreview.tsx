@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { isValidElement, useEffect, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Check, Copy } from '../../icons';
 import './markdown.css';
 
@@ -27,7 +29,7 @@ interface TextBlock {
   language?: string;
 }
 
-type MarkdownBlock = ListBlock | TextBlock;
+export type MarkdownBlock = ListBlock | TextBlock;
 
 const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const UNORDERED_ITEM = /^\s*[-*+]\s+(.+)$/;
@@ -35,8 +37,7 @@ const ORDERED_ITEM = /^\s*\d+[.)]\s+(.+)$/;
 const FENCE = /^\s*```([^`]*)$/;
 
 /**
- * Small CommonMark-inspired block parser for the in-app preview. Deliberately no raw HTML
- * support: keeping this representation as strings makes rendering safe by construction.
+ * CommonMark-inspired block parser preserved for backward compatibility and test contracts.
  */
 export function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   const lines = source.replace(/\r\n?/g, '\n').split('\n');
@@ -108,7 +109,7 @@ export function parseMarkdownBlocks(source: string): MarkdownBlock[] {
   return blocks;
 }
 
-function safeHref(candidate: string): string | null {
+export function safeHref(candidate: string): string | null {
   const href = candidate.trim();
   if (
     !href ||
@@ -122,7 +123,7 @@ function safeHref(candidate: string): string | null {
   return null;
 }
 
-/** Renders the small inline subset without using HTML injection. */
+/** Legacy inline renderer preserved for backward compatibility and test contracts. */
 export function renderMarkdownInline(source: string): ReactNode[] {
   const pattern =
     /(`[^`]*`)|(\[[^\]]+\]\([^\s)]+\))|(\*\*[^*]+\*\*|__[^_]+__)|(\*[^*]+\*|_[^_]+_)/g;
@@ -161,7 +162,7 @@ export function renderMarkdownInline(source: string): ReactNode[] {
   return nodes;
 }
 
-function CodeBlock({ block, copyCode }: { block: TextBlock; copyCode: boolean }) {
+function CodePreBlock({ children, copyCode }: { children?: ReactNode; copyCode: boolean }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
 
@@ -171,10 +172,26 @@ function CodeBlock({ block, copyCode }: { block: TextBlock; copyCode: boolean })
     return () => window.clearTimeout(timer);
   }, [copied]);
 
+  let codeText = '';
+  let language: string | undefined;
+
+  if (isValidElement<{ className?: string; children?: ReactNode }>(children)) {
+    const rawClass = children.props.className || '';
+    const match = /language-(\w+)/.exec(rawClass);
+    if (match) language = match[1];
+    const rawContent = children.props.children;
+    codeText =
+      typeof rawContent === 'string'
+        ? rawContent.replace(/\n$/, '')
+        : String(rawContent ?? '').replace(/\n$/, '');
+  } else if (typeof children === 'string') {
+    codeText = children.replace(/\n$/, '');
+  }
+
   return (
     <div className="markdown-preview-code-wrap">
-      <pre className="markdown-preview-code" data-language={block.language || undefined}>
-        <code>{block.text}</code>
+      <pre className="markdown-preview-code" data-language={language}>
+        <code>{codeText}</code>
       </pre>
       {copyCode && (
         <>
@@ -186,7 +203,7 @@ function CodeBlock({ block, copyCode }: { block: TextBlock; copyCode: boolean })
             onClick={() => {
               setCopyError('');
               void window.textra
-                .copyText(block.text)
+                .copyText(codeText)
                 .then((result) => {
                   if (result.ok) setCopied(true);
                   else setCopyError(result.error);
@@ -211,45 +228,48 @@ function CodeBlock({ block, copyCode }: { block: TextBlock; copyCode: boolean })
   );
 }
 
-function Block({ block, copyCode }: { block: MarkdownBlock; copyCode: boolean }) {
-  if (block.kind === 'code') {
-    return <CodeBlock block={block} copyCode={copyCode} />;
-  }
-  if (block.kind === 'list') {
-    const List = block.listKind === 'ordered' ? 'ol' : 'ul';
+/**
+ * Rich, secure Markdown preview using react-markdown and remark-gfm.
+ * Supports GFM tables, task lists, nested lists, blockquotes, and code copying with safe URLs.
+ */
+export function MarkdownPreview({ source, className, copyCode = false }: MarkdownPreviewProps) {
+  if (!source.trim()) {
     return (
-      <List>
-        {block.items.map((item, index) => (
-          <li key={`${index}-${item}`}>{renderMarkdownInline(item)}</li>
-        ))}
-      </List>
+      <section
+        className={`markdown-preview${className ? ` ${className}` : ''}`}
+        aria-label="Markdown preview"
+      >
+        <div className="markdown-preview-body">
+          <p className="markdown-preview-empty">Nothing to preview.</p>
+        </div>
+      </section>
     );
   }
-  if (block.kind === 'heading') {
-    const Heading = `h${block.level ?? 1}` as keyof React.JSX.IntrinsicElements;
-    return <Heading>{renderMarkdownInline(block.text)}</Heading>;
-  }
-  return <p>{renderMarkdownInline(block.text)}</p>;
-}
 
-/** A dependency-free, read-only Markdown preview intended for project documentation. */
-export function MarkdownPreview({ source, className, copyCode = false }: MarkdownPreviewProps) {
-  const blocks = parseMarkdownBlocks(source);
   return (
     <section
       className={`markdown-preview${className ? ` ${className}` : ''}`}
       aria-label="Markdown preview"
     >
       <div className="markdown-preview-body">
-        {blocks.length ? (
-          blocks.map((block, index) => (
-            <Fragment key={`${block.kind}-${index}`}>
-              <Block block={block} copyCode={copyCode} />
-            </Fragment>
-          ))
-        ) : (
-          <p className="markdown-preview-empty">Nothing to preview.</p>
-        )}
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ href, children }) => {
+              const safe = href ? safeHref(href) : null;
+              return safe ? (
+                <a href={safe} rel="noreferrer noopener" target="_blank">
+                  {children}
+                </a>
+              ) : (
+                <span>{children}</span>
+              );
+            },
+            pre: ({ children }) => <CodePreBlock copyCode={copyCode}>{children}</CodePreBlock>,
+          }}
+        >
+          {source}
+        </ReactMarkdown>
       </div>
     </section>
   );

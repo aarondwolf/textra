@@ -8,10 +8,27 @@ import {
   useState,
   type ComponentProps,
   type FormEvent,
-  type KeyboardEvent,
-  type PointerEvent,
 } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as Popover from '@radix-ui/react-popover';
+import * as ContextMenu from '@radix-ui/react-context-menu';
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  horizontalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { ReviewOutcomeEvent } from './features/chat/ChatPanel';
 import { lazyFeature } from './features/startup/LazyFeature';
 import { afterPaint, markStartup, scheduleBackground } from './features/startup/scheduling';
@@ -55,6 +72,7 @@ import {
 } from './icons';
 import { FileIcon } from './features/files/FileIcon';
 import { DropdownMenu } from './components/DropdownMenu';
+import { ResizableSeparator } from './components/ResizableSeparator';
 import {
   BUILD_RECIPES,
   DEFAULT_PREFERENCES,
@@ -292,53 +310,22 @@ function PromptDialog({ prompt, close }: { prompt: Prompt | null; close: () => v
 
 function SidebarHandle() {
   const { preferences, updatePreferences } = useUI();
-  const dragging = useRef(false);
-  const clamp = (value: number) =>
-    Math.round(Math.min(SIDEBAR_WIDTH_RANGE.max, Math.max(SIDEBAR_WIDTH_RANGE.min, value)));
-  const resize = (event: PointerEvent<HTMLDivElement>) => {
-    const sidebar = event.currentTarget.previousElementSibling;
-    if (sidebar)
-      updatePreferences({
-        sidebarWidth: clamp(event.clientX - sidebar.getBoundingClientRect().left),
-      });
-  };
   return (
-    <div
+    <ResizableSeparator
+      orientation="vertical"
       className="split-handle sidebar-handle"
-      role="separator"
-      aria-label="Sidebar width"
-      aria-orientation="vertical"
-      aria-valuemin={SIDEBAR_WIDTH_RANGE.min}
-      aria-valuemax={SIDEBAR_WIDTH_RANGE.max}
-      aria-valuenow={preferences.sidebarWidth}
-      tabIndex={0}
-      onKeyDown={(event) => {
-        const changes: Record<string, number> = {
-          ArrowLeft: preferences.sidebarWidth - 16,
-          ArrowRight: preferences.sidebarWidth + 16,
-          Home: SIDEBAR_WIDTH_RANGE.min,
-          End: SIDEBAR_WIDTH_RANGE.max,
-        };
-        if (event.key in changes) {
-          event.preventDefault();
-          updatePreferences({ sidebarWidth: clamp(changes[event.key]) });
-        }
-      }}
-      onDoubleClick={() => updatePreferences({ sidebarWidth: DEFAULT_PREFERENCES.sidebarWidth })}
-      onPointerDown={(event) => {
-        dragging.current = true;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        resize(event);
-      }}
-      onPointerMove={(event) => {
-        if (dragging.current) resize(event);
-      }}
-      onPointerUp={(event) => {
-        dragging.current = false;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
-      onLostPointerCapture={() => {
-        dragging.current = false;
+      label="Sidebar width"
+      value={preferences.sidebarWidth}
+      min={SIDEBAR_WIDTH_RANGE.min}
+      max={SIDEBAR_WIDTH_RANGE.max}
+      defaultValue={DEFAULT_PREFERENCES.sidebarWidth}
+      step={16}
+      onResize={(sidebarWidth) => updatePreferences({ sidebarWidth })}
+      computeValueFromPointer={(event) => {
+        const sidebar = event.currentTarget.previousElementSibling;
+        return sidebar
+          ? event.clientX - sidebar.getBoundingClientRect().left
+          : preferences.sidebarWidth;
       }}
     />
   );
@@ -418,56 +405,158 @@ function NewEntryRow({
 
 function SplitHandle({ container }: { container: React.RefObject<HTMLDivElement | null> }) {
   const { preferences, updatePreferences } = useUI();
-  const dragging = useRef(false);
-  const resize = (event: PointerEvent<HTMLDivElement>) => {
-    const bounds = container.current?.getBoundingClientRect();
-    if (bounds)
-      updatePreferences({
-        editorWidth: Math.min(
-          75,
-          Math.max(30, Math.round(((event.clientX - bounds.left) / bounds.width) * 100)),
-        ),
-      });
-  };
-  const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
-    const changes: Record<string, number> = {
-      ArrowLeft: preferences.editorWidth - 2,
-      ArrowRight: preferences.editorWidth + 2,
-      Home: 30,
-      End: 75,
-    };
-    if (event.key in changes) {
-      event.preventDefault();
-      updatePreferences({ editorWidth: Math.min(75, Math.max(30, changes[event.key])) });
-    }
-  };
   return (
-    <div
+    <ResizableSeparator
+      orientation="vertical"
       className="split-handle"
-      role="separator"
-      aria-label="Editor and preview split"
-      aria-orientation="vertical"
-      aria-valuemin={30}
-      aria-valuemax={75}
-      aria-valuenow={preferences.editorWidth}
-      tabIndex={0}
-      onKeyDown={keyboard}
-      onPointerDown={(event) => {
-        dragging.current = true;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        resize(event);
-      }}
-      onPointerMove={(event) => {
-        if (dragging.current) resize(event);
-      }}
-      onPointerUp={(event) => {
-        dragging.current = false;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
-      onLostPointerCapture={() => {
-        dragging.current = false;
+      label="Editor and preview split"
+      value={preferences.editorWidth}
+      min={30}
+      max={75}
+      defaultValue={DEFAULT_PREFERENCES.editorWidth}
+      step={2}
+      onResize={(editorWidth) => updatePreferences({ editorWidth })}
+      computeValueFromPointer={(event) => {
+        const bounds = container.current?.getBoundingClientRect();
+        return bounds
+          ? Math.round(((event.clientX - bounds.left) / bounds.width) * 100)
+          : preferences.editorWidth;
       }}
     />
+  );
+}
+
+interface SortableTabProps {
+  document: {
+    path: string;
+    conflict?: boolean;
+  };
+  index: number;
+  total: number;
+  activePath: string | null;
+  previewPath: string | null;
+  savedTabPath: string | null;
+  tabCloseButtons: 'always' | 'hover';
+  isDirty: boolean;
+  hasSavedTabs: boolean;
+  project: { id: string; name: string } | null;
+  onSelect: () => void;
+  onClose: () => void;
+  onCloseOthers: () => void;
+  onCloseToRight: () => void;
+  onCloseSaved: () => void;
+  onViewHistory: () => void;
+  onReveal: () => void;
+  onCopyRelativePath: () => void;
+}
+
+function SortableTab({
+  document,
+  index,
+  total,
+  activePath,
+  previewPath,
+  savedTabPath,
+  tabCloseButtons,
+  isDirty,
+  hasSavedTabs,
+  project,
+  onSelect,
+  onClose,
+  onCloseOthers,
+  onCloseToRight,
+  onCloseSaved,
+  onViewHistory,
+  onReveal,
+  onCopyRelativePath,
+}: SortableTabProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: document.path,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 20 : undefined,
+  };
+
+  return (
+    <ContextMenu.Root key={document.path}>
+      <ContextMenu.Trigger asChild>
+        <div
+          ref={setNodeRef}
+          style={style}
+          className={`document-tab ${document.path === activePath ? 'selected' : ''}${document.path === previewPath ? ' preview-tab' : ''}${savedTabPath === document.path ? ' tab-saved-pulse' : ''}${isDragging ? ' is-dragging' : ''}`}
+          data-close-buttons={tabCloseButtons}
+          {...attributes}
+          {...listeners}
+          onAuxClick={(event) => {
+            if (event.button === 1) {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+        >
+          <button
+            role="tab"
+            aria-label={`Edit ${document.path}`}
+            aria-selected={document.path === activePath}
+            title={document.path}
+            onClick={onSelect}
+          >
+            <FileText size={13} />
+            <span>{document.path.split('/').at(-1)}</span>
+            <span
+              className={`dirty-dot ${isDirty ? 'is-dirty' : ''}`}
+              aria-label={isDirty ? 'Unsaved changes' : undefined}
+            />
+            {document.conflict && <Warning size={12} aria-label="External change conflict" />}
+          </button>
+          <button
+            className="tab-close"
+            aria-label={`Close ${document.path}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          className="file-menu tab-context-menu"
+          role="menu"
+          aria-label={'Tab actions for ' + document.path}
+        >
+          <div className="file-menu-name">{document.path.split('/').at(-1)}</div>
+          <ContextMenu.Item role="menuitem" onSelect={onClose}>
+            Close
+          </ContextMenu.Item>
+          <ContextMenu.Item role="menuitem" disabled={total <= 1} onSelect={onCloseOthers}>
+            Close Other Tabs
+          </ContextMenu.Item>
+          <ContextMenu.Item role="menuitem" disabled={index >= total - 1} onSelect={onCloseToRight}>
+            Close Tabs to the Right
+          </ContextMenu.Item>
+          <ContextMenu.Item role="menuitem" disabled={!hasSavedTabs} onSelect={onCloseSaved}>
+            Close Saved Tabs
+          </ContextMenu.Item>
+          <ContextMenu.Item role="menuitem" onSelect={onViewHistory}>
+            View File History
+          </ContextMenu.Item>
+          <ContextMenu.Item role="menuitem" onSelect={onCopyRelativePath}>
+            Copy Relative Path
+          </ContextMenu.Item>
+          {project && (
+            <ContextMenu.Item role="menuitem" onSelect={onReveal}>
+              Open in File Explorer
+            </ContextMenu.Item>
+          )}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
 
@@ -514,6 +603,20 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     else cancelWorkspaceRestoration();
   }, [hydrated, preferences.restoreSession]);
   const sessionTabs = documents.map((document) => document.path).join('\0');
+  const tabSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const handleTabDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = documents.findIndex((d) => d.path === active.id);
+      const newIndex = documents.findIndex((d) => d.path === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        reorderDocuments(oldIndex, newIndex);
+      }
+    }
+  };
   useEffect(() => {
     persistWorkspaceSession(preferences.restoreSession);
   }, [sessionTabs, activePath, project?.id, recents, preferences.restoreSession, restoration]);
@@ -625,22 +728,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }, [build.projectId, build.outcome, project?.id]);
   const [savedTabPath, setSavedTabPath] = useState<string | null>(null);
   const savedTabTimer = useRef<number | null>(null);
-  const [tabContextMenu, setTabContextMenu] = useState<{
-    x: number;
-    y: number;
-    path: string;
-    index: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!tabContextMenu) return;
-    const dismiss = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('.tab-context-menu')) return;
-      setTabContextMenu(null);
-    };
-    window.addEventListener('mousedown', dismiss);
-    return () => window.removeEventListener('mousedown', dismiss);
-  }, [tabContextMenu]);
 
   const closeOtherTabs = (keepPath: string) => {
     const toClose = documents.filter((d) => d.path !== keepPath);
@@ -774,33 +861,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     setSidebarView(view);
     updatePreferences({ sidebarVisible: true });
   }
-  const [fileMenu, setFileMenu] = useState<{ path: string; x: number; y: number } | null>(null);
-  const fileMenuRef = useRef<HTMLDivElement>(null);
-  const fileMenuTrigger = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (!fileMenu) return;
-    const firstAction =
-      fileMenuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)');
-    (firstAction ?? fileMenuRef.current)?.focus();
-    const dismiss = (event: globalThis.PointerEvent) => {
-      if (!fileMenuRef.current?.contains(event.target as Node)) setFileMenu(null);
-    };
-    document.addEventListener('pointerdown', dismiss);
-    return () => document.removeEventListener('pointerdown', dismiss);
-  }, [fileMenu, activePath]);
-  useEffect(() => {
-    setFileMenu(null);
-  }, [project?.id, preferences.sidebarVisible, sidebarView]);
-  function showFileMenu(path: string, target: HTMLButtonElement) {
-    setSelected(path);
-    fileMenuTrigger.current = target;
-    const bounds = target.getBoundingClientRect();
-    setFileMenu({
-      path,
-      x: Math.max(4, Math.min(bounds.left + 18, window.innerWidth - 192)),
-      y: Math.max(4, Math.min(bounds.bottom + 2, window.innerHeight - 260)),
-    });
-  }
   // Folders start collapsed; only the ones listed here are open.
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const expandPath = (previous: Set<string>, folder: string) => {
@@ -810,7 +870,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     return next;
   };
   const [editorOptionsOpen, setEditorOptionsOpen] = useState(false);
-  const editorOptions = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setExpandedFolders(new Set());
   }, [project?.id]);
@@ -820,17 +879,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       expandPath(previous, activePath.split('/').slice(0, -1).join('/')),
     );
   }, [activePath]);
-  useEffect(() => {
-    if (!editorOptionsOpen) return;
-    editorOptions.current?.querySelector<HTMLButtonElement>('.editor-options-menu button')?.focus();
-    const dismiss = (event: globalThis.PointerEvent) => {
-      if (!editorOptions.current?.contains(event.target as Node)) setEditorOptionsOpen(false);
-    };
-    document.addEventListener('pointerdown', dismiss);
-    return () => document.removeEventListener('pointerdown', dismiss);
-  }, [editorOptionsOpen]);
   function toggleFolder(path: string) {
-    setFileMenu(null);
     setSelected(path);
     setExpandedFolders((previous) => {
       const next = new Set(previous);
@@ -1169,7 +1218,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     : availableRecipes[0].name;
   const canCompile = configReady && !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
-  const recipeControl = useRef<HTMLDivElement>(null);
   const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
   const [headerNode, setHeaderNode] = useState<HTMLDivElement | null>(null);
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -1218,14 +1266,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     observer.observe(headerNode);
     return () => observer.disconnect();
   }, [headerNode]);
-  useEffect(() => {
-    if (!recipeOpen) return;
-    const dismiss = (event: MouseEvent) => {
-      if (!recipeControl.current?.contains(event.target as Node)) setRecipeOpen(false);
-    };
-    document.addEventListener('mousedown', dismiss);
-    return () => document.removeEventListener('mousedown', dismiss);
-  }, [recipeOpen]);
   const hasDirty = documents.some(dirty);
   const currentBuild = build.projectId === project?.id ? build : null;
   const { analysisSources, bibliographyEntries, documentAnalysis, referenceDiagnostics } =
@@ -1482,7 +1522,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         : selectedEntry
           ? selectedEntry.path.split('/').slice(0, -1).join('/')
           : '';
-    setFileMenu(null);
     updatePreferences({ sidebarVisible: true });
     setSidebarView('explorer');
     setExpandedFolders((previous) => expandPath(previous, parent));
@@ -2680,96 +2719,361 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       )}
                       {visibleFiles.map((file) => (
                         <Fragment key={file.path}>
-                          <div
-                            className="file-row"
-                            style={{
-                              paddingLeft: `${(file.path.split('/').length - 1) * 14}px`,
+                          <ContextMenu.Root
+                            onOpenChange={(open) => {
+                              if (open) setSelected(file.path);
                             }}
                           >
-                            <button
-                              aria-label={
-                                file.kind === 'file'
-                                  ? `Open ${file.path}`
-                                  : `Select folder ${file.path}`
-                              }
-                              aria-current={selected === file.path ? 'true' : undefined}
-                              className="file-entry"
-                              data-path={file.path}
-                              disabled={busy}
-                              aria-expanded={
-                                file.kind === 'directory'
-                                  ? expandedFolders.has(file.path)
-                                  : undefined
-                              }
-                              onClick={() => {
-                                if (file.kind === 'directory') toggleFolder(file.path);
-                                else {
-                                  setFileMenu(null);
-                                  setSelected(file.path);
-                                  openExplorerFile(file.path);
-                                }
-                              }}
-                              onContextMenu={(event) => {
-                                event.preventDefault();
-                                showFileMenu(file.path, event.currentTarget);
-                              }}
-                              onKeyDown={(event) => {
-                                if (
-                                  file.kind === 'directory' &&
-                                  (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
-                                ) {
-                                  event.preventDefault();
-                                  setExpandedFolders((previous) => {
-                                    const next = new Set(previous);
-                                    if (event.key === 'ArrowLeft') next.delete(file.path);
-                                    else next.add(file.path);
-                                    return next;
-                                  });
-                                }
-                                if (
-                                  (event.shiftKey && event.key === 'F10') ||
-                                  event.key === 'ContextMenu'
-                                ) {
-                                  event.preventDefault();
-                                  showFileMenu(file.path, event.currentTarget);
-                                }
-                              }}
-                            >
-                              {file.kind === 'directory' ? (
-                                <>
-                                  <ChevronRight
-                                    size={12}
-                                    aria-hidden="true"
-                                    className={
-                                      'folder-chevron' +
-                                      (expandedFolders.has(file.path) ? ' expanded' : '')
-                                    }
-                                  />
-                                  <FileIcon
-                                    name={file.name}
-                                    kind="directory"
-                                    expanded={expandedFolders.has(file.path)}
-                                  />
-                                </>
-                              ) : (
-                                <FileIcon name={file.name} kind="file" />
-                              )}
-                              <span>{file.name}</span>
-                            </button>
-                            {selected === file.path && (
-                              <button
-                                className="file-more"
-                                aria-label={`More actions for ${file.path}`}
-                                title="More actions"
-                                aria-haspopup="menu"
-                                aria-expanded={fileMenu?.path === file.path}
-                                disabled={busy}
-                                onClick={(event) => showFileMenu(file.path, event.currentTarget)}
+                            <ContextMenu.Trigger asChild>
+                              <div
+                                className="file-row"
+                                style={{
+                                  paddingLeft: `${(file.path.split('/').length - 1) * 14}px`,
+                                }}
                               >
-                                <Ellipsis size={14} />
-                              </button>
-                            )}
-                          </div>
+                                <button
+                                  aria-label={
+                                    file.kind === 'file'
+                                      ? `Open ${file.path}`
+                                      : `Select folder ${file.path}`
+                                  }
+                                  aria-current={selected === file.path ? 'true' : undefined}
+                                  className="file-entry"
+                                  data-path={file.path}
+                                  disabled={busy}
+                                  aria-expanded={
+                                    file.kind === 'directory'
+                                      ? expandedFolders.has(file.path)
+                                      : undefined
+                                  }
+                                  onClick={() => {
+                                    if (file.kind === 'directory') toggleFolder(file.path);
+                                    else {
+                                      setSelected(file.path);
+                                      openExplorerFile(file.path);
+                                    }
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (
+                                      file.kind === 'directory' &&
+                                      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+                                    ) {
+                                      event.preventDefault();
+                                      setExpandedFolders((previous) => {
+                                        const next = new Set(previous);
+                                        if (event.key === 'ArrowLeft') next.delete(file.path);
+                                        else next.add(file.path);
+                                        return next;
+                                      });
+                                    }
+                                  }}
+                                >
+                                  {file.kind === 'directory' ? (
+                                    <>
+                                      <ChevronRight
+                                        size={12}
+                                        aria-hidden="true"
+                                        className={
+                                          'folder-chevron' +
+                                          (expandedFolders.has(file.path) ? ' expanded' : '')
+                                        }
+                                      />
+                                      <FileIcon
+                                        name={file.name}
+                                        kind="directory"
+                                        expanded={expandedFolders.has(file.path)}
+                                      />
+                                    </>
+                                  ) : (
+                                    <FileIcon name={file.name} kind="file" />
+                                  )}
+                                  <span>{file.name}</span>
+                                </button>
+                                {selected === file.path && (
+                                  <DropdownMenuPrimitive.Root>
+                                    <DropdownMenuPrimitive.Trigger asChild>
+                                      <button
+                                        className="file-more"
+                                        aria-label={`More actions for ${file.path}`}
+                                        title="More actions"
+                                        disabled={busy}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setSelected(file.path);
+                                        }}
+                                      >
+                                        <Ellipsis size={14} />
+                                      </button>
+                                    </DropdownMenuPrimitive.Trigger>
+                                    <DropdownMenuPrimitive.Portal>
+                                      <DropdownMenuPrimitive.Content
+                                        className="file-menu"
+                                        side="bottom"
+                                        align="start"
+                                        sideOffset={4}
+                                        collisionPadding={8}
+                                        aria-label={'Actions for ' + (file.path || project?.name)}
+                                      >
+                                        <div className="file-menu-name">
+                                          {file.name || project?.name}
+                                        </div>
+                                        <DropdownMenuPrimitive.Item
+                                          role="menuitem"
+                                          disabled={busy || build.running || file.path === ''}
+                                          onSelect={() => {
+                                            setSelected(file.path);
+                                            rename();
+                                          }}
+                                        >
+                                          Rename
+                                        </DropdownMenuPrimitive.Item>
+                                        {file.kind === 'file' && (
+                                          <DropdownMenuPrimitive.Item
+                                            role="menuitem"
+                                            disabled={busy || build.running}
+                                            onSelect={() => {
+                                              setSelected(file.path);
+                                              duplicateEntry();
+                                            }}
+                                          >
+                                            Duplicate
+                                          </DropdownMenuPrimitive.Item>
+                                        )}
+                                        <DropdownMenuPrimitive.Item
+                                          role="menuitem"
+                                          disabled={busy || build.running || file.path === ''}
+                                          onSelect={() => {
+                                            setSelected(file.path);
+                                            remove();
+                                          }}
+                                        >
+                                          Delete
+                                        </DropdownMenuPrimitive.Item>
+                                        <div className="file-menu-divider" />
+                                        <DropdownMenuPrimitive.Item
+                                          role="menuitem"
+                                          disabled={busy}
+                                          onSelect={() => {
+                                            if (!project) return;
+                                            void run(async () => {
+                                              unwrap(
+                                                await window.textra.revealEntry({
+                                                  projectId: project.id,
+                                                  path: file.path,
+                                                }),
+                                              );
+                                            });
+                                          }}
+                                        >
+                                          Open in File Explorer
+                                        </DropdownMenuPrimitive.Item>
+                                        <DropdownMenuPrimitive.Item
+                                          role="menuitem"
+                                          disabled={busy || !vscodeAvailable}
+                                          title={
+                                            vscodeAvailable
+                                              ? undefined
+                                              : 'Visual Studio Code is not installed'
+                                          }
+                                          onSelect={() => {
+                                            if (!project) return;
+                                            void run(async () => {
+                                              unwrap(
+                                                await window.textra.openInCode({
+                                                  projectId: project.id,
+                                                  path: file.path,
+                                                }),
+                                              );
+                                            });
+                                          }}
+                                        >
+                                          Open in VS Code
+                                        </DropdownMenuPrimitive.Item>
+                                        {file.kind === 'file' && (
+                                          <DropdownMenuPrimitive.Item
+                                            role="menuitem"
+                                            disabled={busy}
+                                            onSelect={() => {
+                                              openExplorerFile(file.path);
+                                              selectSidebarView('history');
+                                            }}
+                                          >
+                                            View File History
+                                          </DropdownMenuPrimitive.Item>
+                                        )}
+                                        <div className="file-menu-divider" />
+                                        <DropdownMenuPrimitive.Item
+                                          role="menuitem"
+                                          disabled={busy}
+                                          onSelect={() => {
+                                            if (!project) return;
+                                            void run(async () => {
+                                              unwrap(
+                                                await window.textra.copyEntryPath({
+                                                  projectId: project.id,
+                                                  path: file.path,
+                                                  relative: false,
+                                                }),
+                                              );
+                                            });
+                                          }}
+                                        >
+                                          Copy Path
+                                        </DropdownMenuPrimitive.Item>
+                                        <DropdownMenuPrimitive.Item
+                                          role="menuitem"
+                                          disabled={busy}
+                                          onSelect={() => {
+                                            if (!project) return;
+                                            void run(async () => {
+                                              unwrap(
+                                                await window.textra.copyEntryPath({
+                                                  projectId: project.id,
+                                                  path: file.path,
+                                                  relative: true,
+                                                }),
+                                              );
+                                            });
+                                          }}
+                                        >
+                                          Copy Relative Path
+                                        </DropdownMenuPrimitive.Item>
+                                      </DropdownMenuPrimitive.Content>
+                                    </DropdownMenuPrimitive.Portal>
+                                  </DropdownMenuPrimitive.Root>
+                                )}
+                              </div>
+                            </ContextMenu.Trigger>
+                            <ContextMenu.Portal>
+                              <ContextMenu.Content
+                                className="file-menu"
+                                aria-label={'Actions for ' + (file.path || project?.name)}
+                              >
+                                <div className="file-menu-name">{file.name || project?.name}</div>
+                                <ContextMenu.Item
+                                  role="menuitem"
+                                  disabled={busy || build.running || file.path === ''}
+                                  onSelect={() => {
+                                    setSelected(file.path);
+                                    rename();
+                                  }}
+                                >
+                                  Rename
+                                </ContextMenu.Item>
+                                {file.kind === 'file' && (
+                                  <ContextMenu.Item
+                                    role="menuitem"
+                                    disabled={busy || build.running}
+                                    onSelect={() => {
+                                      setSelected(file.path);
+                                      duplicateEntry();
+                                    }}
+                                  >
+                                    Duplicate
+                                  </ContextMenu.Item>
+                                )}
+                                <ContextMenu.Item
+                                  role="menuitem"
+                                  disabled={busy || build.running || file.path === ''}
+                                  onSelect={() => {
+                                    setSelected(file.path);
+                                    remove();
+                                  }}
+                                >
+                                  Delete
+                                </ContextMenu.Item>
+                                <div className="file-menu-divider" />
+                                <ContextMenu.Item
+                                  role="menuitem"
+                                  disabled={busy}
+                                  onSelect={() => {
+                                    if (!project) return;
+                                    void run(async () => {
+                                      unwrap(
+                                        await window.textra.revealEntry({
+                                          projectId: project.id,
+                                          path: file.path,
+                                        }),
+                                      );
+                                    });
+                                  }}
+                                >
+                                  Open in File Explorer
+                                </ContextMenu.Item>
+                                <ContextMenu.Item
+                                  role="menuitem"
+                                  disabled={busy || !vscodeAvailable}
+                                  title={
+                                    vscodeAvailable
+                                      ? undefined
+                                      : 'Visual Studio Code is not installed'
+                                  }
+                                  onSelect={() => {
+                                    if (!project) return;
+                                    void run(async () => {
+                                      unwrap(
+                                        await window.textra.openInCode({
+                                          projectId: project.id,
+                                          path: file.path,
+                                        }),
+                                      );
+                                    });
+                                  }}
+                                >
+                                  Open in VS Code
+                                </ContextMenu.Item>
+                                {file.kind === 'file' && (
+                                  <ContextMenu.Item
+                                    role="menuitem"
+                                    disabled={busy}
+                                    onSelect={() => {
+                                      openExplorerFile(file.path);
+                                      selectSidebarView('history');
+                                    }}
+                                  >
+                                    View File History
+                                  </ContextMenu.Item>
+                                )}
+                                <div className="file-menu-divider" />
+                                <ContextMenu.Item
+                                  role="menuitem"
+                                  disabled={busy}
+                                  onSelect={() => {
+                                    if (!project) return;
+                                    void run(async () => {
+                                      unwrap(
+                                        await window.textra.copyEntryPath({
+                                          projectId: project.id,
+                                          path: file.path,
+                                          relative: false,
+                                        }),
+                                      );
+                                    });
+                                  }}
+                                >
+                                  Copy Path
+                                </ContextMenu.Item>
+                                <ContextMenu.Item
+                                  role="menuitem"
+                                  disabled={busy}
+                                  onSelect={() => {
+                                    if (!project) return;
+                                    void run(async () => {
+                                      unwrap(
+                                        await window.textra.copyEntryPath({
+                                          projectId: project.id,
+                                          path: file.path,
+                                          relative: true,
+                                        }),
+                                      );
+                                    });
+                                  }}
+                                >
+                                  Copy Relative Path
+                                </ContextMenu.Item>
+                              </ContextMenu.Content>
+                            </ContextMenu.Portal>
+                          </ContextMenu.Root>
                           {creating &&
                             creating.parent === file.path &&
                             file.kind === 'directory' && (
@@ -2817,90 +3121,76 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               }}
             >
               <div className="editor-tab-strip">
-                <div className="document-tabs" role="tablist" aria-label="Open documents">
-                  {documents.length ? (
-                    documents.map((document, index) => (
-                      <div
-                        className={`document-tab ${document.path === activePath ? 'selected' : ''}${document.path === previewPath ? ' preview-tab' : ''}${savedTabPath === document.path ? ' tab-saved-pulse' : ''}`}
-                        key={document.path}
-                        data-close-buttons={preferences.tabCloseButtons}
-                        draggable={true}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', String(index));
-                          e.dataTransfer.effectAllowed = 'move';
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = 'move';
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const fromIndex = Number(e.dataTransfer.getData('text/plain'));
-                          if (!isNaN(fromIndex) && fromIndex !== index) {
-                            reorderDocuments(fromIndex, index);
-                          }
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setTabContextMenu({
-                            x: e.clientX,
-                            y: e.clientY,
-                            path: document.path,
-                            index,
-                          });
-                        }}
-                        onAuxClick={(event) => {
-                          if (event.button === 1) {
-                            event.preventDefault();
-                            if (dirty(document)) protect(async () => closeDocument(document.path));
-                            else closeDocument(document.path);
-                          }
-                        }}
-                      >
-                        <button
-                          role="tab"
-                          aria-label={`Edit ${document.path}`}
-                          aria-selected={document.path === activePath}
-                          title={document.path}
-                          onClick={() => {
-                            setPreviewPath((current) =>
-                              current === document.path ? null : current,
-                            );
-                            if (/\.md(?:own)?$/i.test(document.path)) {
-                              setPanel('markdown');
-                            }
-                            selectDocument(document.path);
-                          }}
-                        >
-                          <FileText size={13} />
-                          <span>{document.path.split('/').at(-1)}</span>
-                          <span
-                            className={`dirty-dot ${dirty(document) ? 'is-dirty' : ''}`}
-                            aria-label={dirty(document) ? 'Unsaved changes' : undefined}
+                <DndContext
+                  sensors={tabSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleTabDragEnd}
+                >
+                  <SortableContext
+                    items={documents.map((d) => d.path)}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    <div className="document-tabs" role="tablist" aria-label="Open documents">
+                      {documents.length ? (
+                        documents.map((document, index) => (
+                          <SortableTab
+                            key={document.path}
+                            document={document}
+                            index={index}
+                            total={documents.length}
+                            activePath={activePath}
+                            previewPath={previewPath}
+                            savedTabPath={savedTabPath}
+                            tabCloseButtons={preferences.tabCloseButtons}
+                            isDirty={dirty(document)}
+                            hasSavedTabs={documents.some((d) => !dirty(d))}
+                            project={project}
+                            onSelect={() => {
+                              setPreviewPath((current) =>
+                                current === document.path ? null : current,
+                              );
+                              if (/\.md(?:own)?$/i.test(document.path)) {
+                                setPanel('markdown');
+                              }
+                              selectDocument(document.path);
+                            }}
+                            onClose={() => {
+                              if (dirty(document))
+                                protect(async () => closeDocument(document.path));
+                              else closeDocument(document.path);
+                            }}
+                            onCloseOthers={() => closeOtherTabs(document.path)}
+                            onCloseToRight={() => closeTabsToTheRight(index)}
+                            onCloseSaved={() => closeSavedTabs()}
+                            onViewHistory={() => {
+                              selectDocument(document.path);
+                              selectSidebarView('history');
+                            }}
+                            onReveal={() => {
+                              if (!project) return;
+                              void run(async () => {
+                                unwrap(
+                                  await window.textra.revealEntry({
+                                    projectId: project.id,
+                                    path: document.path,
+                                  }),
+                                );
+                              });
+                            }}
+                            onCopyRelativePath={() => {
+                              void navigator.clipboard.writeText(document.path);
+                            }}
                           />
-                          {document.conflict && (
-                            <Warning size={12} aria-label="External change conflict" />
-                          )}
-                        </button>
-                        <button
-                          className="tab-close"
-                          aria-label={`Close ${document.path}`}
-                          onClick={() => {
-                            if (dirty(document)) protect(async () => closeDocument(document.path));
-                            else closeDocument(document.path);
-                          }}
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="welcome-tab">
-                      <FileText size={15} />
-                      Welcome
+                        ))
+                      ) : (
+                        <div className="welcome-tab">
+                          <FileText size={15} />
+                          Welcome
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </SortableContext>
+                </DndContext>
                 {documents.length > 2 && (
                   <DropdownMenu
                     className="tab-overflow-dropdown"
@@ -2978,119 +3268,120 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       </button>
                     )}
                     */}
-                    <div
-                      className="editor-options"
-                      ref={editorOptions}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Escape') {
-                          setEditorOptionsOpen(false);
-                          editorOptions.current
-                            ?.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')
-                            ?.focus();
-                        }
-                      }}
-                    >
-                      <IconButton
-                        small={true}
-                        className="icon-button small"
-                        label="Editor options"
-                        title="Editor options"
-                        aria-expanded={editorOptionsOpen}
-                        aria-controls="editor-options-panel"
-                        onClick={() => setEditorOptionsOpen(!editorOptionsOpen)}
-                      >
-                        <Ellipsis size={17} />
-                      </IconButton>
-                      {editorOptionsOpen && (
-                        <div
-                          className="editor-options-menu"
-                          id="editor-options-panel"
-                          role="group"
-                          aria-label="Editor options"
-                        >
-                          <button
-                            className="text-button"
-                            aria-label="Save file as"
-                            disabled={busy}
-                            onClick={() => {
-                              setEditorOptionsOpen(false);
-                              saveAs();
-                            }}
+                    <Popover.Root open={editorOptionsOpen} onOpenChange={setEditorOptionsOpen}>
+                      <div className="editor-options">
+                        <Popover.Trigger asChild>
+                          <IconButton
+                            small={true}
+                            className="icon-button small"
+                            label="Editor options"
+                            title="Editor options"
                           >
-                            Save as…
-                          </button>
-                          <label>
-                            Font size
-                            <DropdownMenu
-                              ariaLabel="Editor font size"
-                              fullWidth={true}
-                              value={String(fontSize)}
-                              items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
-                                .sort((a, b) => a - b)
-                                .map((size) => ({
-                                  value: String(size),
-                                  label: `${size}px`,
-                                }))}
-                              onChange={(val) => setFontSize(Number(val))}
-                            />
-                          </label>
-                          <button
-                            className="text-button"
-                            aria-label="Toggle word wrap"
-                            aria-pressed={wrap}
-                            onClick={() => setWrap(!wrap)}
-                          >
-                            Word wrap <span>{wrap ? 'On' : 'Off'}</span>
-                          </button>
-                          <button
-                            className="text-button"
-                            aria-label="Toggle formatting bar"
-                            aria-pressed={formatToolbarVisible}
-                            onClick={() =>
-                              updatePreferences({ formatToolbarVisible: !formatToolbarVisible })
-                            }
-                          >
-                            Formatting bar <span>{formatToolbarVisible ? 'Shown' : 'Hidden'}</span>
-                          </button>
-                          <div
-                            className="editor-layout-presets"
-                            aria-label="Workspace layout presets"
+                            <Ellipsis size={17} />
+                          </IconButton>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                          <Popover.Content
+                            className="editor-options-menu"
+                            id="editor-options-panel"
+                            role="group"
+                            aria-label="Editor options"
+                            side="bottom"
+                            align="end"
+                            sideOffset={6}
+                            collisionPadding={8}
                           >
                             <button
-                              type="button"
+                              className="text-button"
+                              aria-label="Save file as"
+                              disabled={busy}
                               onClick={() => {
-                                setExpandedPane(null);
-                                updatePreferences({
-                                  sidebarVisible: true,
-                                  previewVisible: true,
-                                  editorWidth: 55,
-                                });
+                                setEditorOptionsOpen(false);
+                                saveAs();
                               }}
                             >
-                              Split
+                              Save as…
+                            </button>
+                            <label>
+                              Font size
+                              <DropdownMenu
+                                ariaLabel="Editor font size"
+                                fullWidth={true}
+                                value={String(fontSize)}
+                                items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
+                                  .sort((a, b) => a - b)
+                                  .map((size) => ({
+                                    value: String(size),
+                                    label: `${size}px`,
+                                  }))}
+                                onChange={(val) => setFontSize(Number(val))}
+                              />
+                            </label>
+                            <button
+                              className="text-button"
+                              aria-label="Toggle word wrap"
+                              aria-pressed={wrap}
+                              onClick={() => setWrap(!wrap)}
+                            >
+                              Word wrap <span>{wrap ? 'On' : 'Off'}</span>
                             </button>
                             <button
-                              type="button"
-                              onClick={() => {
-                                setExpandedPane('preview');
-                                updatePreferences({ sidebarVisible: false, previewVisible: true });
-                              }}
+                              className="text-button"
+                              aria-label="Toggle formatting bar"
+                              aria-pressed={formatToolbarVisible}
+                              onClick={() =>
+                                updatePreferences({ formatToolbarVisible: !formatToolbarVisible })
+                              }
                             >
-                              Preview
+                              Formatting bar{' '}
+                              <span>{formatToolbarVisible ? 'Shown' : 'Hidden'}</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExpandedPane(null);
-                                updatePreferences({ sidebarVisible: false, previewVisible: false });
-                              }}
+                            <div
+                              className="editor-layout-presets"
+                              aria-label="Workspace layout presets"
                             >
-                              Focus writing
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedPane(null);
+                                  updatePreferences({
+                                    sidebarVisible: true,
+                                    previewVisible: true,
+                                    editorWidth: 55,
+                                  });
+                                }}
+                              >
+                                Split
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedPane('preview');
+                                  updatePreferences({
+                                    sidebarVisible: false,
+                                    previewVisible: true,
+                                  });
+                                }}
+                              >
+                                Preview
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedPane(null);
+                                  updatePreferences({
+                                    sidebarVisible: false,
+                                    previewVisible: false,
+                                  });
+                                }}
+                              >
+                                Focus writing
+                              </button>
+                            </div>
+                          </Popover.Content>
+                        </Popover.Portal>
+                      </div>
+                    </Popover.Root>
                   </div>
                 )}
               </div>
@@ -3299,88 +3590,84 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               }}
             >
               <div className="preview-header" ref={setHeaderNode}>
-                <div
-                  className="compile-control"
-                  ref={recipeControl}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') {
-                      setRecipeOpen(false);
-                      recipeControl.current
-                        ?.querySelector<HTMLButtonElement>('[aria-label="Choose compile recipe"]')
-                        ?.focus();
-                    }
-                  }}
-                >
-                  <CompileControl
-                    running={build.running}
-                    feedback={buildFeedback}
-                    canCompile={canCompile}
-                    busy={busy}
-                    missingTool={Boolean(missingTool)}
-                    engine={engine}
-                    activePath={activePath}
-                    stepsDone={build.stepsDone}
-                    stepCount={build.stepCount}
-                    onCompile={() => void compile()}
-                    onCancel={() =>
-                      void run(async () => {
-                        unwrap(await window.textra.cancelBuild());
-                      })
-                    }
-                    recipeToggle={{
-                      open: recipeOpen,
-                      onToggle: () => {
-                        if (recipeOpen) setRecipeOpen(false);
-                        else if (project)
-                          void run(async () => {
-                            const config = unwrap(await window.textra.getProjectConfig(project.id));
-                            if (useWorkspace.getState().project?.id !== project.id) return;
-                            useWorkspace.setState({ projectConfig: config });
-                            setRecipeOpen(true);
-                          });
-                      },
-                    }}
-                  />
-                  {recipeOpen && (
-                    <div
-                      className="recipe-menu"
-                      id="compile-recipes"
-                      role="group"
-                      aria-label="Compile recipe"
-                    >
-                      <span className="eyebrow">COMPILE RECIPE</span>
-                      {availableRecipes.map((recipe) => (
+                <Popover.Root open={recipeOpen} onOpenChange={setRecipeOpen}>
+                  <div className="compile-control">
+                    <Popover.Anchor asChild>
+                      <div>
+                        <CompileControl
+                          running={build.running}
+                          feedback={buildFeedback}
+                          canCompile={canCompile}
+                          busy={busy}
+                          missingTool={Boolean(missingTool)}
+                          engine={engine}
+                          activePath={activePath}
+                          stepsDone={build.stepsDone}
+                          stepCount={build.stepCount}
+                          onCompile={() => void compile()}
+                          onCancel={() =>
+                            void run(async () => {
+                              unwrap(await window.textra.cancelBuild());
+                            })
+                          }
+                          recipeToggle={{
+                            open: recipeOpen,
+                            onToggle: () => {
+                              if (recipeOpen) setRecipeOpen(false);
+                              else if (project)
+                                void run(async () => {
+                                  const config = unwrap(
+                                    await window.textra.getProjectConfig(project.id),
+                                  );
+                                  if (useWorkspace.getState().project?.id !== project.id) return;
+                                  useWorkspace.setState({ projectConfig: config });
+                                  setRecipeOpen(true);
+                                });
+                            },
+                          }}
+                        />
+                      </div>
+                    </Popover.Anchor>
+                    <Popover.Portal>
+                      <Popover.Content
+                        className="recipe-menu"
+                        id="compile-recipes"
+                        role="group"
+                        aria-label="Compile recipe"
+                        side="bottom"
+                        align="start"
+                        sideOffset={6}
+                        collisionPadding={8}
+                      >
+                        <span className="eyebrow">COMPILE RECIPE</span>
+                        {availableRecipes.map((recipe) => (
+                          <button
+                            key={recipe.name}
+                            aria-pressed={engine === recipe.name}
+                            onClick={() => {
+                              setRecipeOpen(false);
+                              void run(() => selectRecipe(recipe.name));
+                            }}
+                          >
+                            <span>
+                              {BUILD_RECIPES.find((preset) => preset.value === recipe.name)
+                                ?.label ?? recipe.name}
+                            </span>
+                            {engine === recipe.name && <Check size={14} />}
+                          </button>
+                        ))}
                         <button
-                          key={recipe.name}
-                          aria-pressed={engine === recipe.name}
                           onClick={() => {
                             setRecipeOpen(false);
-                            void run(() => selectRecipe(recipe.name));
-                            recipeControl.current
-                              ?.querySelector<HTMLButtonElement>(
-                                '[aria-label="Choose compile recipe"]',
-                              )
-                              ?.focus();
+                            emitTextraEvent('textra:open-settings', { section: 'compilation' });
                           }}
                         >
-                          <span>
-                            {BUILD_RECIPES.find((preset) => preset.value === recipe.name)?.label ??
-                              recipe.name}
-                          </span>
-                          {engine === recipe.name && <Check size={14} />}
+                          Manage recipes…
                         </button>
-                      ))}
-                      <button
-                        onClick={() => {
-                          setRecipeOpen(false);
-                          emitTextraEvent('textra:open-settings', { section: 'compilation' });
-                        }}
-                      >
-                        Manage recipes…
-                      </button>
-                    </div>
-                  )}
-                </div>
+                      </Popover.Content>
+                    </Popover.Portal>
+                  </div>
+                </Popover.Root>
                 <div className="preview-tabs-host" ref={setTabsHost}>
                   {tabMode === 'menu' ? (
                     <DropdownMenu
@@ -3764,222 +4051,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           </div>
         </main>
       </div>
-      {fileMenu && project && (
-        <div
-          className="file-menu"
-          ref={fileMenuRef}
-          role="menu"
-          tabIndex={-1}
-          aria-label={'Actions for ' + (fileMenu.path || project.name)}
-          style={{ left: fileMenu.x, top: fileMenu.y }}
-          onKeyDown={(event) => {
-            const buttons = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
-            );
-            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              setFileMenu(null);
-              fileMenuTrigger.current?.focus();
-            }
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              buttons[
-                (index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length
-              ]?.focus();
-            }
-            if (event.key === 'Tab') setFileMenu(null);
-          }}
-        >
-          <div className="file-menu-name">{fileMenu.path.split('/').at(-1) || project.name}</div>
-          <button
-            role="menuitem"
-            disabled={busy || build.running || fileMenu.path === ''}
-            onClick={() => {
-              setFileMenu(null);
-              rename();
-            }}
-          >
-            Rename
-          </button>
-          <button
-            role="menuitem"
-            disabled={
-              busy ||
-              build.running ||
-              !project.files.some((file) => file.path === fileMenu.path && file.kind === 'file')
-            }
-            onClick={() => {
-              setFileMenu(null);
-              duplicateEntry();
-            }}
-          >
-            Duplicate
-          </button>
-          <button
-            role="menuitem"
-            disabled={busy || build.running || fileMenu.path === ''}
-            onClick={() => {
-              setFileMenu(null);
-              remove();
-            }}
-          >
-            Delete
-          </button>
-          <button
-            role="menuitem"
-            disabled={busy}
-            onClick={() => {
-              const path = fileMenu.path;
-              setFileMenu(null);
-              void run(async () => {
-                unwrap(await window.textra.revealEntry({ projectId: project.id, path }));
-              });
-            }}
-          >
-            Open in File Explorer
-          </button>
-          <button
-            role="menuitem"
-            disabled={busy || !vscodeAvailable}
-            title={vscodeAvailable ? undefined : 'Visual Studio Code is not installed'}
-            onClick={() => {
-              const path = fileMenu.path;
-              setFileMenu(null);
-              void run(async () => {
-                unwrap(await window.textra.openInCode({ projectId: project.id, path }));
-              });
-            }}
-          >
-            Open in VS Code
-          </button>
-          {project.files.some((file) => file.path === fileMenu.path && file.kind === 'file') && (
-            <button
-              role="menuitem"
-              disabled={busy}
-              onClick={() => {
-                const path = fileMenu.path;
-                setFileMenu(null);
-                openExplorerFile(path);
-                selectSidebarView('history');
-              }}
-            >
-              View File History
-            </button>
-          )}
-          {([false, true] as const).map((relative) => (
-            <button
-              key={String(relative)}
-              role="menuitem"
-              disabled={busy}
-              onClick={() => {
-                const path = fileMenu.path;
-                setFileMenu(null);
-                void run(async () => {
-                  unwrap(
-                    await window.textra.copyEntryPath({ projectId: project.id, path, relative }),
-                  );
-                });
-              }}
-            >
-              {relative ? 'Copy Relative Path' : 'Copy Path'}
-            </button>
-          ))}
-        </div>
-      )}
-      {tabContextMenu && (
-        <div
-          className="file-menu tab-context-menu"
-          role="menu"
-          tabIndex={-1}
-          aria-label={'Tab actions for ' + tabContextMenu.path}
-          style={{ left: tabContextMenu.x, top: tabContextMenu.y }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setTabContextMenu(null);
-          }}
-        >
-          <div className="file-menu-name">{tabContextMenu.path.split('/').at(-1)}</div>
-          <button
-            role="menuitem"
-            onClick={() => {
-              const path = tabContextMenu.path;
-              setTabContextMenu(null);
-              const doc = documents.find((d) => d.path === path);
-              if (doc && dirty(doc)) protect(async () => closeDocument(path));
-              else closeDocument(path);
-            }}
-          >
-            Close
-          </button>
-          <button
-            role="menuitem"
-            disabled={documents.length <= 1}
-            onClick={() => {
-              const path = tabContextMenu.path;
-              setTabContextMenu(null);
-              closeOtherTabs(path);
-            }}
-          >
-            Close Other Tabs
-          </button>
-          <button
-            role="menuitem"
-            disabled={tabContextMenu.index >= documents.length - 1}
-            onClick={() => {
-              const idx = tabContextMenu.index;
-              setTabContextMenu(null);
-              closeTabsToTheRight(idx);
-            }}
-          >
-            Close Tabs to the Right
-          </button>
-          <button
-            role="menuitem"
-            disabled={!documents.some((d) => !dirty(d))}
-            onClick={() => {
-              setTabContextMenu(null);
-              closeSavedTabs();
-            }}
-          >
-            Close Saved Tabs
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              const path = tabContextMenu.path;
-              setTabContextMenu(null);
-              selectDocument(path);
-              selectSidebarView('history');
-            }}
-          >
-            View File History
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              const path = tabContextMenu.path;
-              setTabContextMenu(null);
-              void navigator.clipboard.writeText(path);
-            }}
-          >
-            Copy Relative Path
-          </button>
-          {project && (
-            <button
-              role="menuitem"
-              onClick={() => {
-                const path = tabContextMenu.path;
-                setTabContextMenu(null);
-                void run(async () => {
-                  unwrap(await window.textra.revealEntry({ projectId: project.id, path }));
-                });
-              }}
-            >
-              Open in File Explorer
-            </button>
-          )}
-        </div>
-      )}
       <Dialog.Root open={!!formatPreview} onOpenChange={(open) => !open && setFormatPreview(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className="dialog-overlay" />

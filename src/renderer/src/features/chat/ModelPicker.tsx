@@ -1,4 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import type { AISettings } from '../../../../shared/api';
 import {
   AI_PROVIDERS,
@@ -22,8 +31,8 @@ function matches(query: string, ...fields: string[]): boolean {
 }
 
 /**
- * Searchable, provider-grouped model chooser. Typing filters by model name, id
- * or provider; arrow keys move, Enter picks, Escape closes.
+ * Accessible, provider-grouped model chooser built on Radix Popover.
+ * Provides portal rendering, collision detection, and keyboard navigation.
  */
 export function ModelPicker({
   settings,
@@ -52,9 +61,6 @@ export function ModelPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const [popupPlacement, setPopupPlacement] = useState(placement);
-  const [popupHeight, setPopupHeight] = useState(360);
-  const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -81,55 +87,34 @@ export function ModelPicker({
   const found = findModel(settings, value, role);
   const current = found && (!role || supportsAIRole(found, role)) ? found : null;
   const display = current?.label ?? (value ? `${value.model} (unavailable)` : placeholder);
-  const optionId = (index: number) => `${listId}-option-${index}`;
+  const optionId = useCallback((index: number) => `${listId}-option-${index}`, [listId]);
 
   useEffect(() => {
-    if (!open) return;
-    function outside(event: MouseEvent) {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    if (open) {
+      setQuery('');
+      const all = groups.flatMap((group) =>
+        group.models.map((model) => ({ provider: group.provider, model: model.id })),
+      );
+      setActive(
+        Math.max(
+          0,
+          all.findIndex((ref) => sameModel(ref, value)),
+        ),
+      );
+      setTimeout(() => input.current?.focus(), 0);
     }
-    document.addEventListener('mousedown', outside);
-    return () => document.removeEventListener('mousedown', outside);
-  }, [open]);
-  useEffect(() => {
-    if (open) input.current?.focus();
-  }, [open]);
+  }, [open, groups, value]);
+
   useEffect(() => {
     if (open) document.getElementById(optionId(active))?.scrollIntoView({ block: 'nearest' });
-    // optionId only depends on the stable listId.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, open]);
+  }, [active, open, optionId]);
 
-  function show() {
-    if (disabled) return;
-    const rect = button.current?.getBoundingClientRect();
-    if (rect) {
-      const container = root.current
-        ?.closest('.ai-settings-scroll, .ai-provider-editor-form')
-        ?.getBoundingClientRect();
-      const below = (container?.bottom ?? window.innerHeight) - rect.bottom;
-      const above = rect.top - (container?.top ?? 0);
-      const direction = placement === 'up' || (below < 250 && above > below) ? 'up' : 'down';
-      setPopupPlacement(direction);
-      setPopupHeight(Math.max(96, Math.min(360, (direction === 'up' ? above : below) - 10)));
-    }
-    setQuery('');
-    const all = groups.flatMap((group) =>
-      group.models.map((model) => ({ provider: group.provider, model: model.id })),
-    );
-    setActive(
-      Math.max(
-        0,
-        all.findIndex((ref) => sameModel(ref, value)),
-      ),
-    );
-    setOpen(true);
-  }
   function choose(ref: AIModelRef) {
     onChange(ref);
     setOpen(false);
     button.current?.focus();
   }
+
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -153,110 +138,116 @@ export function ModelPicker({
 
   let index = -1;
   return (
-    <div className={`model-picker model-picker-${variant}`} ref={root}>
-      <button
-        ref={button}
-        type="button"
-        className="model-picker-button"
-        disabled={disabled || !groups.length}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={`${label}: ${display}`}
-        title={
-          current && value
-            ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label})`
-            : (modelUnavailableReason(settings, value, role) ?? placeholder)
-        }
-        onClick={() => (open ? setOpen(false) : show())}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            show();
-          }
-        }}
-      >
-        <span className="model-picker-value">
-          <span className="model-picker-name">{display}</span>
-          {variant === 'field' && value && current && !only && (
-            <small className="model-picker-provider">
-              {settings?.providers.find((provider) => provider.id === value.provider)
-                ?.displayName || AI_PROVIDERS[value.provider].label}
-            </small>
-          )}
-        </span>
-        {placement === 'up' ? (
-          <ChevronUp size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
-        ) : (
-          <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
-        )}
-      </button>
-      {open && (
-        <div
-          className="model-picker-popup"
-          data-placement={popupPlacement}
-          style={{ maxHeight: popupHeight }}
-        >
-          <div className="model-picker-search">
-            <Search size={12} aria-hidden="true" />
-            <input
-              ref={input}
-              role="combobox"
-              aria-expanded="true"
-              aria-controls={listId}
-              aria-autocomplete="list"
-              aria-activedescendant={flat.length ? optionId(active) : undefined}
-              aria-label={`Search ${label.toLowerCase()}`}
-              placeholder="Search models"
-              value={query}
-              spellCheck={false}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-              }}
-              onKeyDown={onKeyDown}
-            />
-          </div>
-          <div className="model-picker-list" id={listId} role="listbox" aria-label={label}>
-            {!flat.length && <p className="model-picker-empty">No models match “{query}”.</p>}
-            {filtered.map((group) => (
-              <div key={group.provider} role="group" aria-label={group.label}>
-                {!only && <div className="model-picker-group">{group.label}</div>}
-                {group.models.map((model) => {
-                  const position = ++index;
-                  const ref = { provider: group.provider, model: model.id };
-                  const selected = sameModel(ref, value);
-                  return (
-                    <div
-                      key={model.id}
-                      id={optionId(position)}
-                      role="option"
-                      aria-selected={selected}
-                      data-active={position === active}
-                      className="model-picker-option"
-                      title={model.id}
-                      onMouseMove={() => setActive(position)}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => choose(ref)}
-                    >
-                      <span className="model-picker-option-text">
-                        <span>{model.label}</span>
-                        {model.label !== model.id && <small>{model.id}</small>}
-                      </span>
-                      {role && sameModel(settings?.roleDefaults[role], ref) && (
-                        <Star size={11} weight="fill" aria-label="Role default" />
-                      )}
-                      {(!role || !sameModel(settings?.roleDefaults[role], ref)) &&
-                        group.defaultModel === model.id &&
-                        !only && <small className="model-picker-tag">default</small>}
-                      {selected && <Check size={11} aria-hidden="true" />}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+    <div className={`model-picker model-picker-${variant}`}>
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Trigger asChild>
+          <button
+            ref={button}
+            type="button"
+            className="model-picker-button"
+            disabled={disabled || !groups.length}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-label={`${label}: ${display}`}
+            title={
+              current && value
+                ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label})`
+                : (modelUnavailableReason(settings, value, role) ?? placeholder)
+            }
+          >
+            <span className="model-picker-value">
+              <span className="model-picker-name">{display}</span>
+              {variant === 'field' && value && current && !only && (
+                <small className="model-picker-provider">
+                  {settings?.providers.find((provider) => provider.id === value.provider)
+                    ?.displayName || AI_PROVIDERS[value.provider].label}
+                </small>
+              )}
+            </span>
+            {placement === 'up' ? (
+              <ChevronUp size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+            )}
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            side={placement === 'up' ? 'top' : 'bottom'}
+            sideOffset={4}
+            collisionPadding={8}
+            align="start"
+            className="model-picker-popup"
+            style={{
+              width: 'var(--radix-popover-trigger-width)',
+              minWidth: 220,
+              maxWidth: 380,
+              maxHeight: 360,
+              zIndex: 100,
+            }}
+          >
+            <div className="model-picker-search">
+              <Search size={12} aria-hidden="true" />
+              <input
+                ref={input}
+                role="combobox"
+                aria-expanded="true"
+                aria-controls={listId}
+                aria-autocomplete="list"
+                aria-activedescendant={flat.length ? optionId(active) : undefined}
+                aria-label={`Search ${label.toLowerCase()}`}
+                placeholder="Search models"
+                value={query}
+                spellCheck={false}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActive(0);
+                }}
+                onKeyDown={onKeyDown}
+              />
+            </div>
+            <div className="model-picker-list" id={listId} role="listbox" aria-label={label}>
+              {!flat.length && <p className="model-picker-empty">No models match “{query}”.</p>}
+              {filtered.map((group) => (
+                <div key={group.provider} role="group" aria-label={group.label}>
+                  {!only && <div className="model-picker-group">{group.label}</div>}
+                  {group.models.map((model) => {
+                    const position = ++index;
+                    const ref = { provider: group.provider, model: model.id };
+                    const selected = sameModel(ref, value);
+                    return (
+                      <div
+                        key={model.id}
+                        id={optionId(position)}
+                        role="option"
+                        aria-selected={selected}
+                        data-active={position === active}
+                        className="model-picker-option"
+                        title={model.id}
+                        onMouseMove={() => setActive(position)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => choose(ref)}
+                      >
+                        <span className="model-picker-option-text">
+                          <span>{model.label}</span>
+                          {model.label !== model.id && <small>{model.id}</small>}
+                        </span>
+                        {role && sameModel(settings?.roleDefaults[role], ref) && (
+                          <Star size={11} weight="fill" aria-label="Role default" />
+                        )}
+                        {(!role || !sameModel(settings?.roleDefaults[role], ref)) &&
+                          group.defaultModel === model.id &&
+                          !only && <small className="model-picker-tag">default</small>}
+                        {selected && <Check size={11} aria-hidden="true" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
     </div>
   );
 }

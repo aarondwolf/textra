@@ -632,7 +632,8 @@
 }
 .dropdown-menu-item:hover:not(:disabled),
 .dropdown-menu-item:focus-visible,
-.dropdown-menu-item.highlighted:not(:disabled) {
+.dropdown-menu-item.highlighted:not(:disabled),
+.dropdown-menu-item[data-highlighted]:not([data-disabled]) {
   background: var(--hover);
   border-color: transparent;
   color: var(--text);
@@ -2162,7 +2163,8 @@ h1 > span {
   margin-left: 10px;
 }
 .command-item:hover,
-.command-item:focus {
+.command-item:focus,
+.command-item[data-selected='true'] {
   background: var(--hover);
 }
 .command-footer {
@@ -2713,7 +2715,13 @@ h1 > span {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.file-menu button {
+.file-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.file-menu button,
+.file-menu [role='menuitem'] {
   display: block;
   width: 100%;
   padding: 7px 8px;
@@ -2721,11 +2729,23 @@ h1 > span {
   text-align: left;
   font-size: 12px;
   color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
 }
 .file-menu button:hover,
-.file-menu button:focus-visible {
+.file-menu button:focus-visible,
+.file-menu [role='menuitem']:hover,
+.file-menu [role='menuitem'][data-highlighted] {
   background: var(--hover);
   color: var(--accent);
+}
+.file-menu [role='menuitem'][data-disabled] {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
 }
 
 .editor-tab-strip {

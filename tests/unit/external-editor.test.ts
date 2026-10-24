@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExternalEditorService } from '../../src/main/services/external-editor';
 import { ProjectService } from '../../src/main/services/projects';
 import type { ProjectInfo } from '../../src/shared/api';
@@ -22,7 +22,78 @@ describe('external editor safety service', () => {
 
   afterEach(async () => {
     service.clear();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  it('allows only the newest concurrent watch to own timers', async () => {
+    vi.useFakeTimers();
+    const ref = { projectId: project.id, path: 'chapter.tex', pollingOnly: true };
+    const results = await Promise.allSettled([service.watch(ref), service.watch(ref)]);
+    expect(results.map((result) => result.status)).toEqual(['rejected', 'fulfilled']);
+    expect(vi.getTimerCount()).toBe(1);
+    service.clear();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('invalidates a watch that is still resolving its file when cleared', async () => {
+    vi.useFakeTimers();
+    const projects = (service as unknown as { projects: ProjectService }).projects;
+    const original = projects.resolvePath.bind(projects);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(projects, 'resolvePath').mockImplementation(async (...args) => {
+      await blocked;
+      return original(...args);
+    });
+    const pending = service.watch({
+      projectId: project.id,
+      path: 'chapter.tex',
+      pollingOnly: true,
+    });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'WATCH_CANCELLED' });
+    service.clear();
+    release();
+    await rejected;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not publish or start quiet timers for a sample completed after clear', async () => {
+    vi.useFakeTimers();
+    const ref = { projectId: project.id, path: 'chapter.tex', pollingOnly: true };
+    await service.watch(ref);
+    const projects = (service as unknown as { projects: ProjectService }).projects;
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = projects.resolvePath.bind(projects);
+    let sampled!: () => void;
+    const started = new Promise<void>((resolve) => {
+      sampled = resolve;
+    });
+    vi.spyOn(projects, 'resolvePath').mockImplementation(async (...args) => {
+      sampled();
+      await blocked;
+      return original(...args);
+    });
+    const changed = vi.fn();
+    service.onChange(changed);
+    await writeFile(join(directory, ref.path), 'A new, different external revision.');
+    const internals = service as unknown as {
+      watched: Map<string, unknown>;
+      sample(entry: unknown, rename: boolean): Promise<void>;
+    };
+    const sampling = internals.sample([...internals.watched.values()][0], false);
+    await started;
+    service.clear();
+    release();
+    await sampling;
+    expect(changed).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('creates collision-safe sibling conflict snapshots without touching the external file', async () => {

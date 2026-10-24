@@ -191,6 +191,29 @@ describe('canonical active-file agent workspace boundary', () => {
     expect(await pending).toBeNull();
     expect(() => agent.getDocument('any-context')).toThrow();
   });
+
+  it('does not begin provider work when the workspace clears after disk validation finishes', async () => {
+    const context = (await workspace.sync(document))!;
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const internal = workspace as unknown as { current(id: string): Promise<AIAgentDocument> };
+    const current = internal.current.bind(workspace);
+    vi.spyOn(internal, 'current').mockImplementationOnce(async (id) => {
+      const validated = await current(id);
+      entered.resolve();
+      await release.promise;
+      return validated;
+    });
+    const run = vi.spyOn(agent, 'run');
+    const pending = workspace.run(request(context.contextId));
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'AI_AGENT_STALE' });
+    await entered.promise;
+    await workspace.sync(null);
+    release.resolve();
+    await rejected;
+    expect(run).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
   it.each(['run', 'accept', 'review'] as const)(
     'rechecks context after the awaited disk read before %s',
     async (operation) => {

@@ -28,6 +28,19 @@ function assistantEvent(value: unknown): AIAssistantEvent | null {
 }
 
 const api: TextraAPI = {
+  onBeforeClose: (listener) => {
+    const receive = (_event: IpcRendererEvent, value: unknown) => {
+      if (typeof value === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(value)) listener(value);
+    };
+    ipcRenderer.on('textra:before-close', receive);
+    return () => ipcRenderer.removeListener('textra:before-close', receive);
+  },
+  onCloseCancelled: (listener) => {
+    const receive = () => listener();
+    ipcRenderer.on('textra:close-cancelled', receive);
+    return () => ipcRenderer.removeListener('textra:close-cancelled', receive);
+  },
+  acknowledgeBeforeClose: (request) => ipcRenderer.invoke('textra:close:ack', request),
   getAISettings: () => ipcRenderer.invoke('textra:ai:settings'),
   configureAIProvider: (request) => ipcRenderer.invoke('textra:ai:provider:configure', request),
   requestAIInlineEdit: (request) => ipcRenderer.invoke('textra:ai:inline-edit:request', request),
@@ -137,6 +150,7 @@ const api: TextraAPI = {
   getTexlabDiagnostics: (request) => ipcRenderer.invoke('textra:texlab:diagnostics', request),
   lintLatex: (request) => ipcRenderer.invoke('textra:language:lint', request),
   formatLatex: (request) => ipcRenderer.invoke('textra:language:format', request),
+  cancelLanguageRequest: (request) => ipcRenderer.invoke('textra:language:cancel', request),
   openStackExchangeSearch: (query) => ipcRenderer.invoke('textra:language:stackexchange', query),
   openTexFaqHelp: (url) => ipcRenderer.invoke('textra:help:texfaq', url),
   copyText: (text) => ipcRenderer.invoke('textra:clipboard:copy', text),
@@ -147,6 +161,9 @@ const api: TextraAPI = {
   pinFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:pin', request),
   exportFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:export', request),
   deleteFileHistorySnapshot: (request) => ipcRenderer.invoke('textra:history:delete', request),
+  listLegacyFileHistories: (projectId) =>
+    ipcRenderer.invoke('textra:history:legacy:list', projectId),
+  importLegacyFileHistory: (request) => ipcRenderer.invoke('textra:history:legacy:import', request),
 };
 
 contextBridge.exposeInMainWorld('textra', Object.freeze(api));

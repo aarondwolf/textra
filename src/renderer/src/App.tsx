@@ -35,6 +35,7 @@ import { hydratePreferences, useUI } from './state/ui';
 import { Workspace } from './Workspace';
 import type { SectionId } from './features/onboarding/SetupDialog';
 import { ToastViewport } from './features/notifications/ToastViewport';
+import { installShutdown, useShutdown } from './state/shutdown';
 
 const SetupDialog = lazyFeature(() => import('./features/onboarding/SetupDialog'), 'Settings');
 
@@ -414,6 +415,8 @@ function isLightColor(color: string): boolean {
 }
 
 export function App() {
+  const closing = useShutdown((state) => state.pending);
+  useEffect(() => installShutdown(), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
   const { preferences, hydrated, error, updatePreferences } = useUI();
@@ -651,80 +654,87 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [hydrated]);
   return (
-    <div className="app-shell">
-      <header className="window-titlebar" aria-label="Application title bar">
-        <div className="window-titlebar-brand">
-          <TextraLogo size={18} />
-          <span>TeXtra</span>
-          <span className="window-titlebar-version">
-            {appVersion.startsWith('v') ? appVersion : `v${appVersion}`}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="window-titlebar-search"
-          onClick={() => useUI.getState().setPaletteOpen(true)}
-          aria-label="Search commands and files (Ctrl+K)"
-        >
-          <Search size={12} aria-hidden="true" />
-          <span className="window-titlebar-search-text">Search commands, files...</span>
-          <kbd className="window-titlebar-search-kbd">Ctrl K</kbd>
-        </button>
-        <div className="window-titlebar-actions">
-          <button
-            type="button"
-            className={`window-titlebar-action ${preferences.sidebarVisible ? 'active' : ''}`}
-            aria-label="Toggle sidebar"
-            aria-pressed={preferences.sidebarVisible}
-            title={
-              preferences.sidebarVisible ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'
-            }
-            onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
-          >
-            {preferences.sidebarVisible ? (
-              <PanelLeftClose size={15} />
-            ) : (
-              <PanelLeftOpen size={15} />
-            )}
-          </button>
-          <button
-            type="button"
-            className={`window-titlebar-action ${preferences.previewVisible ? 'active' : ''}`}
-            aria-label="Toggle preview"
-            aria-pressed={preferences.previewVisible}
-            title={
-              preferences.previewVisible ? 'Collapse preview (Ctrl+J)' : 'Expand preview (Ctrl+J)'
-            }
-            onClick={() => updatePreferences({ previewVisible: !preferences.previewVisible })}
-          >
-            {preferences.previewVisible ? (
-              <PanelRightClose size={15} />
-            ) : (
-              <PanelRightOpen size={15} />
-            )}
-          </button>
-        </div>
-      </header>
-      {error && (
-        <div className="error-banner" role="alert">
-          {error}
+    <>
+      {closing && (
+        <div className="error-banner" role="status">
+          Saving session before closing…
         </div>
       )}
-      <Workspace
-        onOpenSettings={(section) => {
-          if (section) setSettingsSection(section);
-          setSettingsOpen(true);
-        }}
-      />
-      <CommandPalette />
-      <ToastViewport />
-      {(settingsOpen || settingsLoaded) && (
-        <SetupDialog
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-          initialSection={settingsSection}
+      <div className="app-shell" inert={closing}>
+        <header className="window-titlebar" aria-label="Application title bar">
+          <div className="window-titlebar-brand">
+            <TextraLogo size={18} />
+            <span>TeXtra</span>
+            <span className="window-titlebar-version">
+              {appVersion.startsWith('v') ? appVersion : `v${appVersion}`}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="window-titlebar-search"
+            onClick={() => useUI.getState().setPaletteOpen(true)}
+            aria-label="Search commands and files (Ctrl+K)"
+          >
+            <Search size={12} aria-hidden="true" />
+            <span className="window-titlebar-search-text">Search commands, files...</span>
+            <kbd className="window-titlebar-search-kbd">Ctrl K</kbd>
+          </button>
+          <div className="window-titlebar-actions">
+            <button
+              type="button"
+              className={`window-titlebar-action ${preferences.sidebarVisible ? 'active' : ''}`}
+              aria-label="Toggle sidebar"
+              aria-pressed={preferences.sidebarVisible}
+              title={
+                preferences.sidebarVisible ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'
+              }
+              onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+            >
+              {preferences.sidebarVisible ? (
+                <PanelLeftClose size={15} />
+              ) : (
+                <PanelLeftOpen size={15} />
+              )}
+            </button>
+            <button
+              type="button"
+              className={`window-titlebar-action ${preferences.previewVisible ? 'active' : ''}`}
+              aria-label="Toggle preview"
+              aria-pressed={preferences.previewVisible}
+              title={
+                preferences.previewVisible ? 'Collapse preview (Ctrl+J)' : 'Expand preview (Ctrl+J)'
+              }
+              onClick={() => updatePreferences({ previewVisible: !preferences.previewVisible })}
+            >
+              {preferences.previewVisible ? (
+                <PanelRightClose size={15} />
+              ) : (
+                <PanelRightOpen size={15} />
+              )}
+            </button>
+          </div>
+        </header>
+        {error && (
+          <div className="error-banner" role="alert">
+            {error}
+          </div>
+        )}
+        <Workspace
+          onOpenSettings={(section) => {
+            if (section) setSettingsSection(section);
+            setSettingsOpen(true);
+          }}
         />
-      )}
-    </div>
+        <CommandPalette />
+        <ToastViewport />
+        {(settingsOpen || settingsLoaded) && (
+          <SetupDialog
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            initialSection={settingsSection}
+          />
+        )}
+      </div>
+    </>
   );
 }

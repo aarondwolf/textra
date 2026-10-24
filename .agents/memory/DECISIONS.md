@@ -1,5 +1,24 @@
 # Decisions
 
+- 2026-10-24 Electron audit implementation (user-approved comprehensive plan):
+  - One instance per user profile; acquire the lock before loading services. A second
+    launch focuses or recreates the primary window instead of writing shared stores.
+  - Portable .textra/history is authoritative across project IDs and reopenings.
+    Legacy UUID stores are enumerated using opaque IDs and imported only after
+    explicit native confirmation; retain originals because project identity is unknown.
+  - Malformed/future catalogs are errors, never empty history. Bound indexes to 16 MiB
+    /20,000 records, pages to 200, source to 5 MiB and decompression to source limits.
+    Publish catalog removals before deleting snapshot bytes. Retry transient Windows
+    publication locks only while revalidating path authority and expected contents.
+  - Restores require captured recovery text and durable editor/disk backups; any
+    backup failure aborts. Preserve edits made after capture and update disk baseline.
+  - Close is single-flight: renderer flush/current dirty bit, native discard consent,
+    stop/drain and persistence flush. Failed persistence keeps the window open.
+    A known crashed/unloaded renderer needs explicit native consent to bypass its ack.
+  - Keep strict sandbox/preload boundaries and no new dependencies. Use narrow
+    cancellation/pagination APIs, ownership tokens and bounded queues rather than
+    generic IPC/process access. Platform release gates remain incomplete.
+
 - 2026-10-23 Automatic File History architecture and retention:
   - Local-first & portable: Snapshots are compressed with standard zlib gzip and stored in `<projectRoot>/.textra/history/` mirroring relative file paths, so project history moves with the project without external databases.
   - Path traversal & sanitization: Snapshot paths are validated using `validateRelativePath` and Windows-safe timestamp filenames (`toISOString().replace(/:/g, '-')`).

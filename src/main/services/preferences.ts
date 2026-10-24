@@ -377,6 +377,10 @@ export class PreferencesStore {
     return this.read();
   }
 
+  async flush(): Promise<void> {
+    await this.pending;
+  }
+
   async set(value: unknown): Promise<Preferences> {
     const preferences = validatePreferences(value);
     const write = this.pending

@@ -95,4 +95,17 @@ describe('TexLab renderer coordination', () => {
     await adapter().syncDocument!(source);
     expect(sync).toHaveBeenCalledTimes(2);
   });
+  it('resynchronizes unchanged open text after a cancelled shutdown restarts resources', async () => {
+    await adapter().syncDocument!(source);
+    const restarted = createTexlabAdapter({
+      documents: [open],
+      ready: true,
+      diagnostics: new Map(),
+      onDiagnostics,
+      resourceEpoch: 1,
+    });
+    await restarted.syncDocument!(source);
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(restarted.resourceEpoch).toBe(1);
+  });
 });

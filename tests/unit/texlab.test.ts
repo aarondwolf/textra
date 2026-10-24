@@ -17,6 +17,8 @@ class Server extends EventEmitter {
   killed = false;
   messages: Message[] = [];
   buffer = Buffer.alloc(0);
+  pauseWrites = false;
+  heldWrites: Array<() => void> = [];
   stdin = new Writable({
     write: (chunk: Buffer, _encoding, done) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
@@ -35,7 +37,8 @@ class Server extends EventEmitter {
         if (message.method === 'shutdown') queueMicrotask(() => this.respond(message.id!, null));
         if (message.method === 'exit') queueMicrotask(() => this.emit('close'));
       }
-      done();
+      if (this.pauseWrites) this.heldWrites.push(done);
+      else done();
     },
   });
   respond(id: number, result: unknown) {
@@ -147,5 +150,94 @@ describe('TexLab synchronization and bounded requests (mock LSP process)', () =>
     }
     expect(server.requests('textDocument/hover')).toHaveLength(12);
     await Promise.all(pending);
+  });
+
+  it('accepts split UTF-8 bodies and several frames in one chunk', async () => {
+    const first = service.hover(path, 0, 1);
+    const second = service.completion(path, 0, 1);
+    const encode = (id: number, result: unknown) => {
+      const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result }));
+      return Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`), body]);
+    };
+    const one = encode(server.requests('textDocument/hover')[0].id!, { contents: '€語' });
+    const two = encode(server.requests('textDocument/completion')[0].id!, []);
+    for (let offset = 0; offset < one.length - 3; offset++)
+      server.stdout.write(one.subarray(offset, offset + 1));
+    server.stdout.write(Buffer.concat([one.subarray(one.length - 3), two]));
+    await expect(first).resolves.toEqual({ contents: '€語' });
+    await expect(second).resolves.toEqual([]);
+  });
+
+  it.each([
+    Buffer.alloc(8193, 65),
+    Buffer.from('Content-Length: 16777217\r\n\r\n'),
+    Buffer.from('Content-Length: 2\r\nContent-Length: 2\r\n\r\n{}'),
+    Buffer.from('Content-Length: -1\r\n\r\n'),
+  ])(
+    'stops a malformed or oversized protocol stream and releases pending callers',
+    async (input) => {
+      const pending = service.hover(path, 0, 1);
+      const rejected = expect(pending).rejects.toMatchObject({ code: 'TEXLAB_NOT_STARTED' });
+      server.stdout.write(input);
+      await rejected;
+      expect(service.running).toBe(false);
+      expect(server.killed).toBe(true);
+    },
+  );
+
+  it('handles stdin failure without an uncaught error and rejects outstanding requests', async () => {
+    const pending = service.hover(path, 0, 1);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'TEXLAB_NOT_STARTED' });
+    server.stdin.emit('error', new Error('EPIPE'));
+    await rejected;
+    expect(server.killed).toBe(true);
+  });
+
+  it('waits for drain before sending queued requests', async () => {
+    server.pauseWrites = true;
+    await service.changeDocument({ path, text: 'x'.repeat(100_000), version: 2 });
+    const pending = service.hover(path, 0, 1);
+    expect(server.requests('textDocument/hover')).toHaveLength(0);
+    server.pauseWrites = false;
+    server.heldWrites.shift()!();
+    await vi.waitFor(() => expect(server.requests('textDocument/hover')).toHaveLength(1));
+    server.respond(server.requests('textDocument/hover')[0].id!, null);
+    await pending;
+  });
+
+  it('terminates a non-reading server rather than growing an unlimited outbound queue', async () => {
+    server.pauseWrites = true;
+    let failure: unknown;
+    for (let version = 2; version < 10; version++) {
+      try {
+        await service.changeDocument({
+          path,
+          text: 'x'.repeat(4 * 1024 * 1024 - 16) + version,
+          version,
+        });
+      } catch (error) {
+        failure = error;
+        break;
+      }
+    }
+    expect(failure).toMatchObject({ code: 'TEXLAB_BUSY' });
+    expect(service.running).toBe(false);
+    expect(server.killed).toBe(true);
+    expect(server.requests('textDocument/didChange')).toHaveLength(1);
+  });
+
+  it('cancels and awaits a process that is still emitting its spawn event', async () => {
+    await service.stop();
+    server = new Server();
+    const starting = service.start({
+      executable: join(process.cwd(), 'texlab'),
+      workspaceRoot: process.cwd(),
+    });
+    const rejected = expect(starting).rejects.toMatchObject({ code: 'TEXLAB_NOT_STARTED' });
+    await service.stop();
+    await rejected;
+    expect(server.killed).toBe(true);
+    expect(server.requests('initialize')).toHaveLength(0);
+    expect(service.running).toBe(false);
   });
 });

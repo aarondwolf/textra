@@ -41,6 +41,11 @@ recorded after a two-second settling period. Process working-set values are in K
 and include shared pages, so their sum is an indicative footprint rather than unique
 physical memory. CPU metrics are samples, not a sustained idle CPU profile.
 
+The architecture-refactor harness also samples main-process timer delay after
+settling: 50 intervals of 10 ms, reporting median, p95 and maximum overshoot.
+This test-only diagnostic adds no preload capability. It describes that short
+post-startup window, not startup blocking or sustained responsiveness under load.
+
 The basic benchmark has no generated PDF; PDF-ready is reported as absent. It
 clicks Compile and verifies the real typed IPC reaches main, replacing subprocess
 execution with an explicitly mocked error response. The real compile/PDF native
@@ -184,3 +189,36 @@ rendering without running TeX, and attaches its observed first-page timing. Test
 use real Electron, Monaco, filesystem operations and session storage;
 no provider is configured and TexLab is disabled to keep this fixture independent
 of external tools. Other native suites retain coverage of TexLab and compilation.
+
+## Electron architecture milestone, 2026-10-24
+
+The final production build passed `npm run test:startup -- --unsynced-profile`
+(three measured launches, 24.5s total). The fixture, host and clock definitions
+above apply: one synthetic file, disabled TexLab, unconfigured AI, OS-temp profile,
+warm caches, and mocked TeX execution after startup. No renderer exceptions occurred.
+
+| Measurement                                          | Observation                       |
+| ---------------------------------------------------- | --------------------------------- |
+| Initial renderer entry / React chunk                 | 503,754 / 8,539 bytes             |
+| Visible shell from launch, observed median           | 1.008s                            |
+| Editable editor from launch, observed median (range) | 2.133s (1.879–2.666s)             |
+| Editor mark from launch, epoch-adjusted median       | 1.947s                            |
+| Compile enabled from launch, observed median         | 2.147s                            |
+| Click to compile IPC receipt                         | 93–218ms, subprocess mocked       |
+| Main timer-delay p95 per sample / overall maximum    | 9.57–10.67ms / 16.81ms            |
+| Collected renderer long-task total per sample        | 498–744ms                         |
+| Sum of private-byte counters after settling          | 316–322MiB                        |
+| Sum of working-set counters after settling           | 479–484MiB, shared pages included |
+| Sum of sampled process CPU percentages               | 1.38–1.60%                        |
+
+The observed median remains above the two-second warm investigation target. The
+much lower launch observations than the earlier managed run do not establish a
+causal speedup: cache/scheduling and managed desktop conditions were not controlled
+between dates. Timer delay includes Windows timer scheduling and describes only
+50 post-settle intervals, not main-process work under load. Memory/CPU samples do
+not establish a generally lightweight footprint. Genuinely cold packaged launches
+and first-paint profiling remain open.
+
+Run-specific raw observations are retained locally in
+`.test-data/architecture-startup.json`; rerunning the command produces a fresh
+Playwright JSON attachment. Generated profiles and test outputs are not committed.

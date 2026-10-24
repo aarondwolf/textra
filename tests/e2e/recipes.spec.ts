@@ -56,7 +56,11 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await openRecipes();
     await dialog.getByRole('button', { name: 'New recipe', exact: true }).click();
     await dialog.getByRole('textbox', { name: 'Recipe name', exact: true }).fill('Draft proof');
-    await dialog.getByRole('combobox', { name: 'Add step', exact: true }).selectOption('pdflatex');
+    await dialog.getByRole('button', { name: 'Add step', exact: true }).click();
+    await dialog
+      .getByRole('menu', { name: 'Add step', exact: true })
+      .getByRole('menuitem', { name: 'pdflatex', exact: true })
+      .click();
     await dialog.getByRole('button', { name: 'Edit tool pdflatex', exact: true }).first().click();
     const synctex = dialog.getByRole('button', { name: /^SyncTeX/ });
     await synctex.click();
@@ -70,9 +74,11 @@ test('project recipes round-trip through builder, JSON and external settings edi
     await dialog
       .getByRole('textbox', { name: 'Build folder', exact: true })
       .fill('build/custom output');
+    await dialog.getByRole('button', { name: 'Project default recipe', exact: true }).click();
     await dialog
-      .getByRole('combobox', { name: 'Project default recipe', exact: true })
-      .selectOption('Draft proof');
+      .getByRole('menu', { name: 'Project default recipe', exact: true })
+      .getByRole('menuitem', { name: 'Draft proof', exact: true })
+      .click();
     await dialog.locator('.recipe-scroll').evaluate((element) => {
       element.scrollTop = 0;
     });
@@ -86,19 +92,27 @@ test('project recipes round-trip through builder, JSON and external settings edi
       tools: ['pdflatex', 'pdflatex'],
     });
     async function compileTo(fragment: string) {
+      const previous = await page.evaluate(() => window.textra.getBuildState());
+      expect(previous.ok).toBe(true);
+      const previousVersion = previous.ok ? (previous.value.pdfVersion ?? 0) : 0;
       await page.getByRole('button', { name: 'Compile active document', exact: true }).click();
-      await expect(
-        page.getByRole('button', { name: 'Compile active document', exact: true }),
-      ).toBeEnabled({ timeout: 45000 });
       await expect
         .poll(
           async () => {
             const result = await page.evaluate(() => window.textra.getBuildState());
-            return result.ok && result.value.outcome === 'success' ? result.value.pdfPath : null;
+            return result.ok &&
+              !result.value.running &&
+              result.value.outcome === 'success' &&
+              (result.value.pdfVersion ?? 0) > previousVersion
+              ? result.value.pdfPath
+              : null;
           },
           { timeout: 45000 },
         )
         .toContain(fragment);
+      await expect(
+        page.getByRole('button', { name: 'Compile active document', exact: true }),
+      ).toBeEnabled({ timeout: 45000 });
     }
     await compileTo('build/custom output/');
     await expect(page.locator('.pdf-scroll canvas')).toBeVisible({ timeout: 15000 });
@@ -123,6 +137,16 @@ test('project recipes round-trip through builder, JSON and external settings edi
 
     // Recompiling to the same output filename must reload PDF bytes in the viewer.
     const before = await page.evaluate(() => window.textra.getBuildState());
+    const canvas = page.locator('.pdf-scroll canvas');
+    const renderedPdfFingerprint = () =>
+      canvas.evaluate(async (element: HTMLCanvasElement) => {
+        const image = new TextEncoder().encode(element.toDataURL());
+        const digest = await crypto.subtle.digest('SHA-256', image);
+        return Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, '0'),
+        ).join('');
+      });
+    const previousPixels = await renderedPdfFingerprint();
     const editor = page.getByRole('textbox', { name: 'LaTeX source editor', exact: true });
     await editor.focus();
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
@@ -134,7 +158,13 @@ test('project recipes round-trip through builder, JSON and external settings edi
     expect(
       before.ok && after.ok && (after.value.pdfVersion ?? 0) > (before.value.pdfVersion ?? 0),
     ).toBe(true);
-    await page.locator('.pdf-scroll canvas').focus();
+    // Main's completed build precedes PDF.js loading/rendering its new bytes.
+    await expect
+      .poll(renderedPdfFingerprint, {
+        timeout: 15000,
+      })
+      .not.toBe(previousPixels);
+    await canvas.focus();
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+f' : 'Control+f');
     await page
       .getByRole('textbox', { name: 'Search PDF', exact: true })

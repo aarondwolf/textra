@@ -1714,6 +1714,7 @@ export default function SetupDialog({
                       disabled={busy}
                       onClick={() =>
                         void perform(async () => {
+                          await preferencesSaved();
                           const result = await window.textra.exportSettings();
                           if (!result.ok) throw new Error(result.error);
                           return result.value ? 'Settings exported.' : 'Export cancelled.';
@@ -1726,6 +1727,7 @@ export default function SetupDialog({
                       disabled={busy}
                       onClick={() =>
                         void perform(async () => {
+                          await preferencesSaved();
                           const result = await window.textra.importSettings();
                           if (!result.ok) throw new Error(result.error);
                           if (!result.value) return 'Import cancelled.';
@@ -1740,8 +1742,9 @@ export default function SetupDialog({
 
                   <h3>Application data (AppData)</h3>
                   <p className="setup-hint">
-                    Global preferences, encrypted AI credentials, logs, and local file history
-                    snapshots are stored securely in your user application data folder.
+                    Global preferences, encrypted AI credentials and logs are stored in your user
+                    application data folder. File history is stored with each project in
+                    .textra/history.
                   </p>
                   <div className="setup-actions">
                     <button

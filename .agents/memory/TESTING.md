@@ -1,5 +1,38 @@
 # Test evidence
 
+2026-10-24 Electron architecture milestone:
+
+- Environment: Windows 10.0.26200, Electron 44.9.3, Node 24.14.0 and npm 11.9.0.
+  Bundled TexLab and real MiKTeX are exercised where noted. Native suites run serially
+  after unit/build checks in disposable profiles; no live-provider generation occurred.
+- Final npm test: 67 files, 704/704 tests PASS, 67.95s. Includes real local HTTP adapter
+  fixtures, filesystem growth/junction/hardlink cases, storage retry authority checks,
+  recovery failure, pagination, document/session races, process streams and LSP limits.
+- Final npm run test:e2e: 15 PASS, 2 intentional skips, 4.1m. Live Gemini is opt-in and
+  skipped; startup measurement is separately invoked. All functional cases passed in
+  one complete run against the final production build, including Ctrl+S, undo, exact
+  editor/disk gzip recovery copies, real compile/PDF/SyncTeX, cancelled/repeated close,
+  second instance, untrusted IPC frames and explicit consent after a renderer crash.
+- Typecheck, zero-warning lint, format:check and production build PASS. npm run test:dev PASS for
+  CSS HMR without reload, preload reload, main restart and preference restoration.
+  Temporary probes were removed. Vite's known large Monaco chunk warning remains.
+- npm run test:startup -- --unsynced-profile PASS, 1/1 (24.5s), three measured warm
+  restarts after setup; OS caches not reset, no PDF fixture, TeX execution mocked.
+  Observed shell/editor/compile-enabled medians: 1.008/2.133/2.147s. Main post-settle
+  50x10ms timer-delay p95: 9.57-10.67ms; maximum 16.81ms. No renderer exceptions.
+  Raw local evidence: .test-data/architecture-startup.json; methodology and caveats
+  in docs/PERFORMANCE.md. Do not infer cold latency or a causal cross-date speedup.
+- Earlier native failures exposed stale control selectors, a settings-export debounce
+  race (fixed in product), build-version waits (fixed in test) and incorrect test
+  assumptions about Monaco logical readOnly after disk publication. The final test
+  waits for aria-autocomplete=both before typing; native textarea editability is not
+  sufficient because domReadOnly is unset in installed Monaco.
+- Evidence logs retained locally under .test-data/architecture-{tests,e2e,build,dev,
+  startup}-verified.log; profiles/artifacts are ignored. Windows/Dropbox's empty
+  generated-assets cleanup lock required verified native empty-directory removal.
+- Still unverified: macOS/Linux, complete TeX engine/crop/rotation matrix, installers,
+  platform credential migration, genuinely cold packaged startup and live AI quality.
+
 2026-10-23 startup/UI refactor:
 
 - Final full unit/integration suite 586/586 passes (55 files, 52.81s); typecheck, lint

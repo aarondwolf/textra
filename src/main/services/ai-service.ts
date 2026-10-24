@@ -1375,6 +1375,12 @@ export class AIService {
     this.cancellationVersion++;
     this.active?.abort();
   }
+
+  /** Workspace/window teardown also owns editor completions, independently of foreground work. */
+  cancelAll(): void {
+    this.cancel();
+    this.completionActive?.controller.abort();
+  }
 }
 
 export function validateCompletionRequest(value: unknown): asserts value is AICompletionRequest {

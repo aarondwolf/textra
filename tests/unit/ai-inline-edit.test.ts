@@ -122,6 +122,26 @@ describe('main-owned inline edits', () => {
     await cancelled;
     expect(generate.mock.calls[0][2].signal.aborted).toBe(true);
   });
+
+  it('workspace cancellation aborts an active edit through the foreground owner', async () => {
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    generate.mockImplementationOnce(async () => {
+      started();
+      return new Promise<string>(() => undefined);
+    });
+    const pending = edits.request(request);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'AI_CANCELLED' });
+    await ready;
+    ai.cancelAll();
+    await rejected;
+    expect(generate.mock.calls[0][2].signal.aborted).toBe(true);
+    await expect(edits.request({ ...request, requestId: 'fresh-edit' })).resolves.toMatchObject({
+      text: 'new',
+    });
+  });
   it('streams cumulative raw output and normalizes only the final result', async () => {
     const chunks: string[] = [];
     generate.mockImplementationOnce(async (_access, _model, sent) => {

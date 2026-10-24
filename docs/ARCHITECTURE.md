@@ -11,6 +11,32 @@ preview pane. Compile and Preview/Problems/Output tabs belong to the preview pan
 builds preserve the user's selected view. Hidden PDF tabs remain mounted to retain
 navigation state. PDF find is opened on demand; replace acts on the source editor.
 
+Main startup is split into `index.ts` (profile lock), `application.ts` (composition),
+`window.ts` (secure window policy), `ipc.ts` (fixed privileged capabilities), and
+`lifecycle.ts` (workspace admission, transitions and shutdown). The instance lock is
+acquired before service imports. Workspace transitions reject new work, invalidate
+resource generations, cancel/drain admitted operations, and then replace the root.
+Window close uses one shared preparation and a request-specific renderer persistence
+acknowledgement before draining resources. macOS window recreation reuses the same
+bounded application services.
+
+The renderer's DocumentSessionController owns buffer lifetime/version and Monaco
+attachments. Store snapshots feed presentation; accepted replacements reconcile the
+attached model as an undoable edit. Saves coalesce by project/path and recapture the
+latest buffer and disk revision after each acknowledgement. Formatting captures a
+version and rejects stale previews. History restore captures recovery text, preserves
+later typing and updates the saved baseline without overwriting a newer buffer.
+History/formatting controllers and close-preparation owners keep those operations
+outside presentation components.
+
+Project history has one canonical storage resolver, bounded validated version-1
+indexes and paginated listings. Portable history lives in `.textra/history`; opaque
+legacy app-data store IDs are recoverable only through explicit reviewed import.
+EOF-bounded reads use current data rather than treating a stale stat size as EOF.
+Language tools use an owned process helper; one lint and format slot per workspace
+provide cancellation, output bounds, deadlines and awaited teardown. TexLab uses an
+incremental frame parser and an outbound queue that honors stream backpressure.
+
 `src/shared/api.ts` defines serializable request/result types and the bridge.
 Services live in `src/main/services`; security checks are shared by all filesystem
 operations. Main retains the user-selected project root. Relative file paths are
@@ -98,7 +124,6 @@ models receive no thought configuration and may return no reasoning. SDK HTTP er
 so provider outages retain their status and safe response detail. Tool calls
 execute one at a time in emitted order (`toolCallConcurrency: 1`), and every operation rechecks
 cancellation and document validity first. Budgets are unchanged: 24 responses, 64 tool calls,
-32,000 characters of output, the whole-request deadline, and a document limit of 64,000
 32,000 characters of output, the whole-request deadline, and a document limit of 64,000
 characters. A proposal is published only after successful completion; errors, truncation,
 cancellation or budget exhaustion discard staging. agent-staging.ts holds the in-memory staging

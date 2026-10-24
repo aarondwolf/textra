@@ -55,9 +55,13 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
     await page.screenshot({ path: test.info().outputPath('snippets-bottom.png') });
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-    const theme = page.getByRole('combobox', { name: 'Theme', exact: true });
+    const theme = page.getByRole('button', { name: 'Theme', exact: true });
     for (const value of ['dark', 'light']) {
-      await theme.selectOption(value);
+      await theme.click();
+      await page
+        .getByRole('menuitem', { name: value === 'dark' ? 'Dark (default)' : 'Light', exact: true })
+        .click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', value);
       const bounds = await theme.evaluate((element) => {
         const rect = element.getBoundingClientRect();
         const scroll = element.closest('.setup-scroll')!.getBoundingClientRect();

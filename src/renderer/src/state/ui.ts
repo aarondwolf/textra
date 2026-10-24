@@ -28,16 +28,18 @@ export function preferencesSaved(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
-    void savePreferences();
+    void savePreferences().catch(() => undefined);
   }
-  return current ?? Promise.resolve();
+  return (current ?? Promise.resolve()).then(() => {
+    if (useUI.getState().saveState === 'error') throw new Error('Your layout could not be saved.');
+  });
 }
 
 function scheduleSavePreferences(): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    void savePreferences();
+    void savePreferences().catch(() => undefined);
   }, SAVE_DEBOUNCE_MS);
 }
 
@@ -67,11 +69,12 @@ async function persistPending(): Promise<void> {
     }
   }
   useUI.setState({ saveState: failed ? 'error' : 'saved' });
+  if (failed) throw new Error('Your layout could not be saved.');
 }
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('beforeunload', () => {
-    void preferencesSaved();
+    void preferencesSaved().catch(() => undefined);
   });
 }
 

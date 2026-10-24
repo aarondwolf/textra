@@ -129,17 +129,29 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     await endpoint.fill('http://127.0.0.1:9999/v1');
     await expect(editor).toContainText('HTTP sends requests without transport encryption.');
     await editor.getByLabel('Manual model IDs', { exact: true }).fill('chat-a\nchat-b\ncode-a');
-    const defaultModel = editor.getByRole('combobox', {
+    const defaultModel = editor.getByRole('button', {
       name: 'Connection default model',
       exact: true,
     });
-    await defaultModel.selectOption('chat-a');
+    await defaultModel.click();
+    await editor
+      .getByRole('menu', { name: 'Connection default model', exact: true })
+      .getByRole('menuitem', { name: 'chat-a', exact: true })
+      .click();
     const chatFilter = editor.getByRole('group', {
       name: 'Assistant and inline completion',
       exact: true,
     });
     const autoFilter = editor.getByRole('group', { name: 'Automatic completion', exact: true });
-    await chatFilter.getByRole('combobox').selectOption('include');
+    const chatVisibility = chatFilter.getByRole('button', {
+      name: 'Assistant and inline completion visibility',
+      exact: true,
+    });
+    await chatVisibility.click();
+    await chatFilter
+      .getByRole('menu', { name: 'Assistant and inline completion visibility', exact: true })
+      .getByRole('menuitem', { name: 'Include selected models', exact: true })
+      .click();
     await chatFilter
       .getByRole('textbox', {
         name: 'Search assistant and inline completion models',
@@ -148,7 +160,15 @@ test('custom provider saves locally, filters exact models, resets defaults and s
       .fill('chat-a');
     await expect(chatFilter.getByRole('checkbox')).toHaveCount(1);
     await chatFilter.getByRole('checkbox').check();
-    await autoFilter.getByRole('combobox').selectOption('exclude');
+    const automaticVisibility = autoFilter.getByRole('button', {
+      name: 'Automatic completion visibility',
+      exact: true,
+    });
+    await automaticVisibility.click();
+    await autoFilter
+      .getByRole('menu', { name: 'Automatic completion visibility', exact: true })
+      .getByRole('menuitem', { name: 'Exclude selected models', exact: true })
+      .click();
     await autoFilter
       .getByRole('textbox', { name: 'Automatic completion exact model IDs', exact: true })
       .fill('code-a');
@@ -175,15 +195,15 @@ test('custom provider saves locally, filters exact models, resets defaults and s
     expect(state.configurations[0].apiKey).toBeUndefined();
 
     await row.getByRole('button', { name: 'Edit Lab server', exact: true }).click();
-    await expect(defaultModel).toHaveValue('chat-a');
-    await expect(chatFilter.getByRole('combobox')).toHaveValue('include');
-    await expect(autoFilter.getByRole('combobox')).toHaveValue('exclude');
+    await expect(defaultModel).toHaveText('chat-a');
+    await expect(chatVisibility).toHaveText('Include selected models');
+    await expect(automaticVisibility).toHaveText('Exclude selected models');
     await editor.getByRole('button', { name: 'Test / Refresh models', exact: true }).click();
     await expect(editor.getByRole('status')).toHaveText('Connection tested. Models refreshed.');
     expect((await snapshot()).refreshes).toBe(1);
-    await expect(defaultModel).toHaveValue('chat-a');
+    await expect(defaultModel).toHaveText('chat-a');
     await editor.getByRole('button', { name: 'Reset default model', exact: true }).click();
-    await expect(defaultModel).toHaveValue('');
+    await expect(defaultModel).toHaveText('Not set');
     await editor.getByRole('button', { name: 'Reset endpoint', exact: true }).click();
     await expect(endpoint).toHaveValue('');
     await endpoint.fill('https://models.example.test/v1');

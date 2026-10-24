@@ -19,14 +19,15 @@ Do not mark a gate complete until its acceptance checks pass.
 ### Startup performance verification
 
 - Profile packaged desktop warm/cold launches, native/module initialization and first
-  content paint. The managed final run still takes a median 17.074s to a normal-sized
-  editor; the two-second warm/four-second cold investigation targets remain open.
+  content paint. The 2026-10-24 warm-profile run observed a median 2.133s to an
+  editable editor; the two-second warm/four-second cold investigation targets remain open.
   See [Performance](PERFORMANCE.md) for evidence and limitations.
 
 ### Release requirement
 
-Before public release, migrate the encrypted AI key from repository-local MVP storage
-to app user data and an OS-level storage layer. See [Security](SECURITY.md).
+Before public release, verify encrypted userData credential migration and OS storage
+on each supported platform. Migration preserves the legacy source and never replaces
+an existing store. See [Security](SECURITY.md).
 
 Run the full gate with `npm run format:check`, `npm run typecheck`, `npm run lint`,
 `npm test`, `npm run build`, and `npm run test:e2e`. Record exact evidence and blockers

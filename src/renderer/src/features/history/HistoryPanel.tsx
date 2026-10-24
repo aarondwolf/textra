@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import type { HistorySnapshotSummary } from '../../../../shared/api';
+import type { HistorySnapshotSummary, LegacyHistorySummary } from '../../../../shared/api';
+import { useHistorySnapshots } from './useHistorySnapshots';
+import { beginHistoryResize } from './history-resize';
 import { PaneHeader } from '../../components/Layout';
 import { IconButton } from '../../components/Button';
 import {
@@ -29,6 +31,7 @@ export interface RecentProjectItem {
 
 export interface HistoryPanelProps {
   projectId: string | null;
+  projectName?: string;
   activePath: string | null;
   activeContent?: string;
   isDirty?: boolean;
@@ -94,6 +97,7 @@ function triggerLabel(trigger: HistorySnapshotSummary['trigger']): string {
 
 export function HistoryPanel({
   projectId,
+  projectName = 'the current project',
   activePath,
   isDirty = false,
   selectedSnapshotId,
@@ -108,8 +112,18 @@ export function HistoryPanel({
   onPinProject,
   projectBusy = false,
 }: HistoryPanelProps) {
-  const [snapshots, setSnapshots] = useState<HistorySnapshotSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  const {
+    snapshots,
+    nextCursor,
+    loading,
+    error: historyError,
+    loadSnapshots,
+  } = useHistorySnapshots(projectId, activePath);
+  const [legacyHistories, setLegacyHistories] = useState<LegacyHistorySummary[] | null>(null);
+  const [recoveryError, setRecoveryError] = useState('');
+  const recoveryGeneration = useRef({ value: 0 });
+  const currentProject = useRef(projectId);
+  currentProject.current = projectId;
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [pinDialogSnapshot, setPinDialogSnapshot] = useState<HistorySnapshotSummary | null>(null);
   const [pinLabelInput, setPinLabelInput] = useState('');
@@ -119,13 +133,16 @@ export function HistoryPanel({
   const [historyOpen, setHistoryOpen] = useState(true);
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [recentsHeight, setRecentsHeight] = useState(160);
-  const isDragging = useRef(false);
-  const startY = useRef(0);
-  const startHeight = useRef(0);
+  const dragLifetime = useRef({ cleanup: () => {} });
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [isNarrow, setIsNarrow] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const owner = dragLifetime.current;
+    return () => owner.cleanup();
+  }, []);
 
   useEffect(() => {
     const el = sidebarRef.current;
@@ -158,57 +175,65 @@ export function HistoryPanel({
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      dragLifetime.current.cleanup();
       e.preventDefault();
-      isDragging.current = true;
-      startY.current = e.clientY;
-      startHeight.current = recentsHeight;
-      document.body.style.cursor = 'ns-resize';
-      document.body.style.userSelect = 'none';
-
-      const onMouseMove = (moveEvent: MouseEvent) => {
-        if (!isDragging.current) return;
-        const delta = startY.current - moveEvent.clientY;
-        const newHeight = Math.max(70, Math.min(450, startHeight.current + delta));
-        setRecentsHeight(newHeight);
-      };
-
-      const onMouseUp = () => {
-        isDragging.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-      };
-
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      dragLifetime.current.cleanup = beginHistoryResize(e.clientY, recentsHeight, setRecentsHeight);
     },
     [recentsHeight],
   );
 
-  const loadSnapshots = useCallback(async () => {
-    if (!projectId || !activePath) {
-      setSnapshots([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await window.textra.listFileHistory({ projectId, path: activePath });
-      if (res.ok) {
-        setSnapshots(res.value);
-      } else {
-        setSnapshots([]);
-      }
-    } catch {
-      setSnapshots([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, activePath]);
-
   useEffect(() => {
-    void loadSnapshots();
-  }, [loadSnapshots]);
+    const owner = recoveryGeneration.current;
+    setLegacyHistories(null);
+    setRecoveryError('');
+    return () => {
+      owner.value++;
+    };
+  }, [projectId]);
+
+  async function discoverLegacyHistory() {
+    if (!projectId) return;
+    const generation = ++recoveryGeneration.current.value;
+    setRecoveryError('');
+    try {
+      const result = await window.textra.listLegacyFileHistories(projectId);
+      if (generation !== recoveryGeneration.current.value || currentProject.current !== projectId)
+        return;
+      if (!result.ok) throw new Error(result.error);
+      setLegacyHistories(result.value);
+    } catch (cause) {
+      if (generation === recoveryGeneration.current.value && currentProject.current === projectId)
+        setRecoveryError(
+          cause instanceof Error ? cause.message : 'Could not find earlier history.',
+        );
+    }
+  }
+
+  async function recoverLegacyHistory(history: LegacyHistorySummary) {
+    if (!projectId || busyAction) return;
+    const generation = recoveryGeneration.current.value;
+    setBusyAction('recover-history');
+    try {
+      const result = await window.textra.importLegacyFileHistory({
+        projectId,
+        legacyId: history.id,
+      });
+      if (generation !== recoveryGeneration.current.value || currentProject.current !== projectId)
+        return;
+      if (!result.ok) throw new Error(result.error);
+      if (result.value === 0) return;
+      setLegacyHistories((previous) => previous?.filter((item) => item.id !== history.id) ?? null);
+      await loadSnapshots();
+    } catch (cause) {
+      if (generation === recoveryGeneration.current.value && currentProject.current === projectId)
+        setRecoveryError(
+          cause instanceof Error ? cause.message : 'Could not recover earlier history.',
+        );
+    } finally {
+      if (generation === recoveryGeneration.current.value && currentProject.current === projectId)
+        setBusyAction(null);
+    }
+  }
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -349,6 +374,35 @@ export function HistoryPanel({
       />
 
       <div className="history-content">
+        {projectId && (
+          <div className="history-prompt-card">
+            <button
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={() => void discoverLegacyHistory()}
+            >
+              Recover earlier history…
+            </button>
+            {legacyHistories && (
+              <div aria-label="Earlier history stores">
+                <p>Choose an earlier history store belonging to {projectName}.</p>
+                {legacyHistories.length === 0 && <p>No earlier history stores found.</p>}
+                {legacyHistories.map((history) => (
+                  <button
+                    key={history.id}
+                    type="button"
+                    disabled={Boolean(busyAction)}
+                    onClick={() => void recoverLegacyHistory(history)}
+                  >
+                    {history.snapshotCount} snapshots · {history.samplePaths.join(', ')} (
+                    {history.id})
+                  </button>
+                ))}
+              </div>
+            )}
+            {recoveryError && <p role="alert">{recoveryError}</p>}
+          </div>
+        )}
         {/* Section 1: File History */}
         <section
           className={`writing-section history-section ${historyOpen ? 'expanded' : 'collapsed'}`}
@@ -488,6 +542,7 @@ export function HistoryPanel({
               )}
 
               <div className="history-list" role="region" aria-label="Historical snapshots">
+                {historyError && <p role="alert">{historyError}</p>}
                 {!activePath ? (
                   <div className="history-empty">
                     <History size={28} weight="thin" />
@@ -731,6 +786,15 @@ export function HistoryPanel({
                       })}
                     </div>
                   ))
+                )}
+                {nextCursor && (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void loadSnapshots(nextCursor)}
+                  >
+                    {loading ? 'Loading…' : 'Load older snapshots'}
+                  </button>
                 )}
               </div>
             </div>

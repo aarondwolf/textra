@@ -74,7 +74,31 @@ for fixture details, timing origins, memory/CPU caveats and recorded results.
 Run native tests and measurements after builds and unit/integration checks finish;
 concurrent runs can delete shared test fixtures and distort timings.
 
+Architecture regressions cover persisted history schema/path attacks, production-profile
+reopening, dirty-buffer restore and backup failure, interrupted legacy recovery, actual
+file growth after stat, and Windows history publication locks. Retry tests verify that
+external edits and junction swaps are revalidated rather than overwritten. Language
+and TexLab tests cover owned stream errors, output/frame bounds, cancellation,
+backpressure and queue-saturated shutdown. Document tests cover undoable model
+reconciliation, stale formatting, save coalescing and shutdown persistence ordering.
+
+`tests/e2e/document-sessions.spec.ts` uses real Monaco and project IO with only the
+optional formatter mocked. `tests/e2e/lifecycle.spec.ts` checks untrusted-window IPC,
+new-window denial, a second instance, repeated/cancelled close, pending preference
+writes and explicit native consent after crashing its disposable renderer. The crash
+test intentionally emits a renderer-process-gone diagnostic. These cases do not
+exercise a live AI provider or the user's normal application profile.
+
 ## Remaining gate checks
+
+The 2026-10-24 Electron architecture milestone passed 704 unit/integration tests
+in 67 files (67.95s) and the complete serial native suite: 15 passed, 2 intentional
+skips (4.1m). The skips are live AI and the separately invoked startup benchmark.
+Typecheck, lint, production build, renderer HMR, preload reload and main restart
+also passed. The native document case verifies exact gzip recovery buffers after
+dirty restore; the project case verifies immediate preference export, conflict
+copies, real MiKTeX compilation, SyncTeX and PDF rendering. Final formatting and
+run-specific performance evidence are recorded with the milestone memory.
 
 - Cross-platform native checks for macOS/Linux, including compilation and SyncTeX.
 - The full Phase 1 file, conflict, editor, compiler, PDF and preview workflows.

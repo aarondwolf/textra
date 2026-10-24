@@ -32,6 +32,8 @@ interface Signature {
 }
 
 interface WatchedFile {
+  sampling: boolean;
+  version: number;
   ref: FileRef;
   absolutePath: string;
   watcher: FSWatcher | null;
@@ -78,6 +80,7 @@ function conflictPath(path: string, stamp: string, index: number): string {
  */
 export class ExternalEditorService {
   private readonly watched = new Map<string, WatchedFile>();
+  private readonly registrations = new Map<string, symbol>();
   private readonly listeners = new Set<(event: ExternalFileChangeEvent) => void>();
 
   constructor(private readonly projects: ProjectFiles) {}
@@ -116,45 +119,52 @@ export class ExternalEditorService {
     if (entry.quietTimer) return;
     entry.quietTimer = setTimeout(() => {
       entry.quietTimer = null;
-      void this.sample(entry, false);
+      void this.sample(entry, false).catch(() => undefined);
     }, entry.quietPeriodMs);
   }
 
   private async sample(entry: WatchedFile, fromRenameEvent: boolean): Promise<void> {
-    if (this.watched.get(key(entry.ref)) !== entry) return;
-    const next = await this.signature(entry.ref, entry.signature);
-    if (!next) {
-      const nextState: ExternalWatchState['state'] = fromRenameEvent ? 'renamed' : 'deleted';
-      if (entry.state !== nextState || entry.signature !== null) {
-        entry.signature = null;
-        entry.state = nextState;
+    if (this.watched.get(key(entry.ref)) !== entry || entry.sampling) return;
+    entry.sampling = true;
+    const version = entry.version;
+    try {
+      const next = await this.signature(entry.ref, entry.signature);
+      if (this.watched.get(key(entry.ref)) !== entry || entry.version !== version) return;
+      if (!next) {
+        const nextState: ExternalWatchState['state'] = fromRenameEvent ? 'renamed' : 'deleted';
+        if (entry.state !== nextState || entry.signature !== null) {
+          entry.signature = null;
+          entry.state = nextState;
+          entry.lastExternalChangeAt = Date.now();
+          this.emit(entry);
+        }
+        return;
+      }
+      const changed =
+        !entry.signature ||
+        next.revision !== entry.signature.revision ||
+        next.size !== entry.signature.size ||
+        next.mtimeMs !== entry.signature.mtimeMs;
+      if (changed) {
+        if (entry.quietTimer) {
+          clearTimeout(entry.quietTimer);
+          entry.quietTimer = null;
+        }
+        entry.signature = next;
+        entry.state = 'changing';
         entry.lastExternalChangeAt = Date.now();
         this.emit(entry);
+        this.scheduleQuietCheck(entry);
+        return;
       }
-      return;
-    }
-    const changed =
-      !entry.signature ||
-      next.revision !== entry.signature.revision ||
-      next.size !== entry.signature.size ||
-      next.mtimeMs !== entry.signature.mtimeMs;
-    if (changed) {
-      if (entry.quietTimer) {
-        clearTimeout(entry.quietTimer);
-        entry.quietTimer = null;
+      if (entry.state === 'changing' && entry.lastExternalChangeAt !== null) {
+        if (Date.now() - entry.lastExternalChangeAt >= entry.quietPeriodMs) {
+          entry.state = 'stable';
+          this.emit(entry);
+        } else this.scheduleQuietCheck(entry);
       }
-      entry.signature = next;
-      entry.state = 'changing';
-      entry.lastExternalChangeAt = Date.now();
-      this.emit(entry);
-      this.scheduleQuietCheck(entry);
-      return;
-    }
-    if (entry.state === 'changing' && entry.lastExternalChangeAt !== null) {
-      if (Date.now() - entry.lastExternalChangeAt >= entry.quietPeriodMs) {
-        entry.state = 'stable';
-        this.emit(entry);
-      } else this.scheduleQuietCheck(entry);
+    } finally {
+      entry.sampling = false;
     }
   }
 
@@ -180,47 +190,58 @@ export class ExternalEditorService {
       throw new ProjectError('INVALID_ARGUMENT', 'Choose a quiet period between 2 and 5 seconds.');
     this.unwatch(value);
     const ref: FileRef = { projectId: value.projectId, path: value.path };
-    const absolutePath = await this.projects.resolvePath(ref);
-    const signature = await this.signature(ref);
-    const entry: WatchedFile = {
-      ref,
-      absolutePath,
-      watcher: null,
-      poller: setInterval(
-        () => void this.sample(entry, false).catch(() => undefined),
-        POLL_INTERVAL_MS,
-      ),
-      debounce: null,
-      quietTimer: null,
-      quietPeriodMs: value.quietPeriodMs ?? DEFAULT_QUIET_PERIOD_MS,
-      signature,
-      state: 'watching',
-      lastExternalChangeAt: null,
-    };
-    if (!value.pollingOnly) {
-      try {
-        entry.watcher = watch(dirname(absolutePath), { persistent: false }, (event, filename) => {
-          if (filename && String(filename) !== basename(absolutePath)) return;
-          this.scheduleSample(entry, event === 'rename');
-        });
-        entry.watcher.on('error', () => {
-          entry.watcher?.close();
-          entry.watcher = null;
-        });
-      } catch {
-        // Polling is always active and is the compatibility fallback.
+    const registration = Symbol();
+    this.registrations.set(key(ref), registration);
+    try {
+      const absolutePath = await this.projects.resolvePath(ref);
+      const signature = await this.signature(ref);
+      if (this.registrations.get(key(ref)) !== registration)
+        throw new ProjectError('WATCH_CANCELLED', 'File watch was superseded or closed.');
+      const entry: WatchedFile = {
+        sampling: false,
+        version: 0,
+        ref,
+        absolutePath,
+        watcher: null,
+        poller: setInterval(
+          () => void this.sample(entry, false).catch(() => undefined),
+          POLL_INTERVAL_MS,
+        ),
+        debounce: null,
+        quietTimer: null,
+        quietPeriodMs: value.quietPeriodMs ?? DEFAULT_QUIET_PERIOD_MS,
+        signature,
+        state: 'watching',
+        lastExternalChangeAt: null,
+      };
+      if (!value.pollingOnly) {
+        try {
+          entry.watcher = watch(dirname(absolutePath), { persistent: false }, (event, filename) => {
+            if (filename && String(filename) !== basename(absolutePath)) return;
+            this.scheduleSample(entry, event === 'rename');
+          });
+          entry.watcher.on('error', () => {
+            entry.watcher?.close();
+            entry.watcher = null;
+          });
+        } catch {
+          // Polling is always active and is the compatibility fallback.
+        }
       }
+      this.watched.set(key(ref), entry);
+      return {
+        ...ref,
+        state: 'watching',
+        revision: signature?.revision ?? null,
+        observedAt: Date.now(),
+      };
+    } finally {
+      if (this.registrations.get(key(ref)) === registration) this.registrations.delete(key(ref));
     }
-    this.watched.set(key(ref), entry);
-    return {
-      ...ref,
-      state: 'watching',
-      revision: signature?.revision ?? null,
-      observedAt: Date.now(),
-    };
   }
 
   unwatch(ref: FileRef): void {
+    this.registrations.delete(key(ref));
     const entry = this.watched.get(key(ref));
     if (!entry) return;
     this.watched.delete(key(ref));
@@ -231,6 +252,7 @@ export class ExternalEditorService {
   }
 
   clear(): void {
+    this.registrations.clear();
     for (const entry of [...this.watched.values()]) this.unwatch(entry.ref);
   }
 
@@ -238,10 +260,14 @@ export class ExternalEditorService {
   async noteLocalSave(snapshot: FileSnapshot): Promise<void> {
     const entry = this.watched.get(key(snapshot));
     if (!entry) return;
-    entry.signature = await this.signature(snapshot);
+    const version = ++entry.version;
+    const signature = await this.signature(snapshot);
+    if (this.watched.get(key(snapshot)) !== entry || entry.version !== version) return;
+    entry.signature = signature;
     entry.state = 'watching';
     entry.lastExternalChangeAt = null;
     if (entry.quietTimer) clearTimeout(entry.quietTimer);
+    entry.quietTimer = null;
   }
 
   async createConflictCopy(request: CreateConflictCopyRequest): Promise<FileSnapshot> {

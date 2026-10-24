@@ -18,7 +18,7 @@ export async function closeStartupApplication(application: ElectronApplication) 
   try {
     await application.evaluate(({ dialog }) => {
       // Only disposable fixture documents can be dirty here, after a failed test.
-      dialog.showMessageBoxSync = () => 1;
+      dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
     });
     await application.close();
   } finally {
@@ -237,6 +237,25 @@ export async function observeStartup(launch: () => Promise<ElectronApplication>,
     const processes = await application.evaluate(({ app }) =>
       app.getAppMetrics().map(({ type, cpu, memory }) => ({ type, cpu, memory })),
     );
+    const mainEventLoopDelay = settle
+      ? await application.evaluate(async () => {
+          // Test-only sampling inside main; no privileged diagnostic bridge is exposed.
+          const delays: number[] = [];
+          for (let index = 0; index < 50; index++) {
+            const start = performance.now();
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+            delays.push(Math.max(0, performance.now() - start - 10));
+          }
+          delays.sort((a, b) => a - b);
+          return {
+            samples: delays.length,
+            intervalMs: 10,
+            medianMs: delays[25],
+            p95Ms: delays[47],
+            maxMs: delays.at(-1),
+          };
+        })
+      : null;
     progress('process metrics collected');
     let compileDispatchObservedMs: number | null = null;
     if (settle) {
@@ -348,6 +367,7 @@ export async function observeStartup(launch: () => Promise<ElectronApplication>,
         rendererLongTasks: longTasks,
         rendererLoading,
         processMetricsAfterSettle: processes,
+        mainEventLoopDelayAfterSettle: mainEventLoopDelay,
         settleMs: settle ? 2000 : 0,
         pdfReady: marks.some(({ name }) => name === 'textra:pdf-ready'),
         compileDispatched: marks.some(({ name }) => name === 'textra:compile-dispatch'),

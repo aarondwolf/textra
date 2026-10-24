@@ -7,6 +7,7 @@ import {
   restorationIsCurrent,
 } from '../../state/workspace';
 import { useStartup } from '../../state/startup';
+import { flushWorkspacePersistence } from '../../state/shutdown';
 
 const KEY = 'textra:workspace-session';
 export interface WorkspaceSession {
@@ -61,6 +62,8 @@ async function restore(): Promise<void> {
     const recent = await window.textra.getRecentProjects();
     if (!restorationIsCurrent(generation) || !recent.ok) return;
     if (!recent.value.some((entry) => entry.id === saved.recentId)) return;
+    await flushWorkspacePersistence();
+    if (!restorationIsCurrent(generation)) return;
     const opened = await window.textra.openRecentProject(saved.recentId);
     if (!restorationIsCurrent(generation) || !opened.ok || !opened.value) return;
     const project = opened.value;

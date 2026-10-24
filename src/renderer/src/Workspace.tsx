@@ -1367,12 +1367,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     const timer = window.setInterval(() => {
       if (polling.current) return;
       polling.current = true;
-      void Promise.all([
-        ...(useUI.getState().preferences.externalChangeDetection ? [checkExternalChanges()] : []),
-        window.textra.getBuildState().then((result) => {
+      void window.textra
+        .getBuildState()
+        .then((result) => {
           if (result.ok) useWorkspace.setState({ build: result.value });
-        }),
-      ])
+        })
         .catch(showError)
         .finally(() => {
           polling.current = false;
@@ -1383,7 +1382,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   useEffect(() => {
     // Pick up files created or removed outside TeXtra when the window regains focus.
     const onFocus = () => {
-      if (operations.current === 0) void refresh().catch(() => undefined);
+      if (operations.current === 0) {
+        void refresh().catch(() => undefined);
+        if (useUI.getState().preferences.externalChangeDetection) {
+          void checkExternalChanges().catch(() => undefined);
+        }
+      }
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);

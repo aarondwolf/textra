@@ -11,6 +11,27 @@ import { AGENT_SOURCE_LIMIT } from '../../shared/ai';
 import type { ProjectService } from './projects';
 import { AIError } from './ai-service';
 import type { BoundedAgentService } from './agent';
+import { z } from 'zod';
+
+export const agentDocumentSchema = z.object({
+  projectId: z.string().min(1),
+  path: z.string().regex(/\.tex$/i),
+  content: z.string().max(AGENT_SOURCE_LIMIT),
+  revision: z.string().min(1),
+});
+
+export const agentAcceptRequestSchema = z.object({
+  id: z.string().min(1),
+  contextId: z.string().min(1),
+  hunkIds: z.array(z.string()).optional(),
+});
+
+export const agentReviewRequestSchema = z.object({
+  id: z.string().min(1),
+  contextId: z.string().min(1),
+  approveHunkIds: z.array(z.string()),
+  rejectHunkIds: z.array(z.string()),
+});
 
 /** Binds the staging-only runner to the canonical, currently open editor snapshot. */
 export class AgentWorkspaceService {
@@ -43,31 +64,14 @@ export class AgentWorkspaceService {
     this.document = null;
     this.agent.syncDocument(null);
     if (value === null) return null;
-    if (
-      !value ||
-      typeof value !== 'object' ||
-      !('projectId' in value) ||
-      typeof value.projectId !== 'string' ||
-      !('path' in value) ||
-      typeof value.path !== 'string' ||
-      !/\.tex$/i.test(value.path) ||
-      !('content' in value) ||
-      typeof value.content !== 'string' ||
-      value.content.length > AGENT_SOURCE_LIMIT ||
-      !('revision' in value) ||
-      typeof value.revision !== 'string' ||
-      !value.revision
-    )
+    const parsed = agentDocumentSchema.safeParse(value);
+    if (!parsed.success) {
       throw new AIError(
         'AI_AGENT_SCOPE',
         'The assistant can use only an active .tex file under 64,000 characters.',
       );
-    const document: AIAgentDocument = {
-      projectId: value.projectId,
-      path: value.path,
-      content: value.content,
-      revision: value.revision,
-    };
+    }
+    const document: AIAgentDocument = parsed.data;
     await this.projects.resolvePath({ projectId: document.projectId, path: document.path });
     if (generation !== this.generation) return null;
     const context = this.agent.syncDocument(document);
@@ -123,8 +127,12 @@ export class AgentWorkspaceService {
     contextId: string;
     hunkIds?: string[];
   }): Promise<AIEditProposal> {
-    await this.current(request?.contextId);
-    return this.agent.accept(request);
+    const parsed = agentAcceptRequestSchema.safeParse(request);
+    if (!parsed.success) {
+      throw new AIError('INVALID_ARGUMENT', 'Invalid accept request.');
+    }
+    await this.current(parsed.data.contextId);
+    return this.agent.accept(parsed.data);
   }
 
   reject(id: unknown): void {
@@ -132,8 +140,12 @@ export class AgentWorkspaceService {
   }
 
   async review(request: AIAgentReviewRequest): Promise<AIAgentReviewResult> {
-    await this.current(request?.contextId);
-    const result = this.agent.review(request);
+    const parsed = agentReviewRequestSchema.safeParse(request);
+    if (!parsed.success) {
+      throw new AIError('INVALID_ARGUMENT', 'Invalid review request.');
+    }
+    await this.current(parsed.data.contextId);
+    const result = this.agent.review(parsed.data);
     this.document = this.agent.getDocument(result.context.contextId);
     return result;
   }

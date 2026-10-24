@@ -1,18 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  stat,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
+import { writeAtomic } from './atomic-write';
+import { lstat, mkdir, open, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   BuildRequest,
@@ -249,26 +238,19 @@ export class BuildService {
     const target = await this.metadataPath(root);
     if (!target) return;
     const fingerprint = await this.pdfFingerprint(await checkedPath(root, pdf.path));
-    const temporary = `${target}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(
-        temporary,
-        JSON.stringify({
-          schemaVersion: 1,
-          root,
-          rootFile: pdf.rootFile,
-          path: pdf.path,
-          recipeId: request.recipe ?? null,
-          compiledAt: new Date().toISOString(),
-          fingerprint,
-          digest: createHash('sha256').update(pdf.bytes).digest('hex'),
-        }),
-        { flag: 'wx', mode: 0o600 },
-      );
-      await rename(temporary, target);
-    } finally {
-      await unlink(temporary).catch(() => undefined);
-    }
+    const content = JSON.stringify({
+      schemaVersion: 1,
+      root,
+      rootFile: pdf.rootFile,
+      path: pdf.path,
+      recipeId: request.recipe ?? null,
+      compiledAt: new Date().toISOString(),
+      fingerprint,
+      digest: createHash('sha256').update(pdf.bytes).digest('hex'),
+    });
+    await writeAtomic(target, content, {
+      prefix: 'pdf',
+    });
   }
 
   /** Restored bytes are preview-only; current-build SyncTeX stays unavailable. */

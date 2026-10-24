@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 import { DEFAULT_PREFERENCES, type Preferences } from '../../../shared/api';
 
 interface UIState {
@@ -78,25 +79,27 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   });
 }
 
-export const useUI = create<UIState>((set, get) => ({
-  preferences: { ...DEFAULT_PREFERENCES },
-  hydrated: false,
-  error: null,
-  saveState: 'idle',
-  paletteOpen: false,
-  panel: 'preview',
-  expandedPane: null,
-  updatePreferences: (patch) => {
-    if (!get().hydrated) return;
-    const preferences = { ...get().preferences, ...patch };
-    set({ preferences, saveState: 'saving' });
-    pending = preferences;
-    scheduleSavePreferences();
-  },
-  setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
-  setPanel: (panel) => set({ panel }),
-  setExpandedPane: (expandedPane) => set({ expandedPane }),
-}));
+export const useUI = create<UIState>()(
+  subscribeWithSelector((set, get) => ({
+    preferences: { ...DEFAULT_PREFERENCES },
+    hydrated: false,
+    error: null,
+    saveState: 'idle',
+    paletteOpen: false,
+    panel: 'preview',
+    expandedPane: null,
+    updatePreferences: (patch) => {
+      if (!get().hydrated) return;
+      const preferences = { ...get().preferences, ...patch };
+      set({ preferences, saveState: 'saving' });
+      pending = preferences;
+      scheduleSavePreferences();
+    },
+    setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+    setPanel: (panel) => set({ panel }),
+    setExpandedPane: (expandedPane) => set({ expandedPane }),
+  })),
+);
 
 let hydration: Promise<void> | undefined;
 export function hydratePreferences(): Promise<void> {

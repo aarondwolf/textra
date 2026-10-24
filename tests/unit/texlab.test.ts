@@ -65,7 +65,7 @@ describe('TexLab synchronization and bounded requests (mock LSP process)', () =>
       queueMicrotask(() => server.emit('spawn'));
       return server;
     });
-    service = new TexlabService({ requestTimeoutMs: 25 });
+    service = new TexlabService({ requestTimeoutMs: 500 });
     await service.start({
       executable: join(process.cwd(), 'texlab'),
       workspaceRoot: process.cwd(),
@@ -135,7 +135,7 @@ describe('TexLab synchronization and bounded requests (mock LSP process)', () =>
     vi.useFakeTimers();
     const pending = service.hover(path, 0, 1);
     const rejected = expect(pending).rejects.toMatchObject({ code: 'TEXLAB_REQUEST_TIMEOUT' });
-    await vi.advanceTimersByTimeAsync(25);
+    await vi.advanceTimersByTimeAsync(500);
     await rejected;
     expect(server.requests('$/cancelRequest')).toHaveLength(1);
   });
@@ -145,8 +145,14 @@ describe('TexLab synchronization and bounded requests (mock LSP process)', () =>
     );
     expect(server.requests('textDocument/hover')).toHaveLength(8);
     for (let index = 0; index < 12; index++) {
+      while (!server.requests('textDocument/hover')[index]) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       const request = server.requests('textDocument/hover')[index];
       server.respond(request.id!, null);
+    }
+    while (server.requests('textDocument/hover').length < 12) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(server.requests('textDocument/hover')).toHaveLength(12);
     await Promise.all(pending);

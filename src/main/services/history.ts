@@ -1,7 +1,8 @@
 import { AsyncMutex } from './mutex';
 import { createHash, randomUUID } from 'node:crypto';
-import { open, rename, unlink } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { writeAtomic } from './atomic-write';
+import { basename } from 'node:path';
+import { z } from 'zod';
 import { promisify } from 'node:util';
 import { gzip, gunzip } from 'node:zlib';
 import type { BrowserWindow } from 'electron';
@@ -81,68 +82,48 @@ function label(value: unknown): string | null {
     );
   return value.trim() || null;
 }
+const snapshotSummarySchema = z
+  .object({
+    id: z.string().regex(snapshotId),
+    path: z.string(),
+    createdAt: z.string().refine((val) => {
+      return (
+        val.length === 24 && Number.isFinite(Date.parse(val)) && new Date(val).toISOString() === val
+      );
+    }),
+    sizeBytes: z.number().int().min(0).max(MAX_TEXT_BYTES),
+    revision: z.string().regex(/^[a-f0-9]{64}$/),
+    trigger: z.enum(['save', 'interval', 'compile', 'ai', 'format', 'manual']),
+    pinned: z.boolean(),
+    label: z
+      .string()
+      .max(256)
+      .refine((s) => s.length > 0 && s.trim() === s)
+      .nullable(),
+  })
+  .strict();
+
+const historyIndexFileSchema = z
+  .object({
+    version: z.literal(1),
+    snapshots: z.array(snapshotSummarySchema).max(MAX_SNAPSHOTS),
+  })
+  .strict();
+
 function parseIndex(bytes: Buffer): HistoryIndexFile {
   try {
-    const parsed = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)));
-    if (
-      Object.keys(parsed).length !== 2 ||
-      parsed.version !== 1 ||
-      !Array.isArray(parsed.snapshots) ||
-      parsed.snapshots.length > MAX_SNAPSHOTS
-    )
-      invalid();
+    const raw: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    const parsed = historyIndexFileSchema.parse(raw);
     const seen = new Set<string>();
-    const snapshots = parsed.snapshots.map((value: unknown): HistorySnapshotSummary => {
-      const s = record(value);
-      const fields = [
-        'id',
-        'path',
-        'createdAt',
-        'sizeBytes',
-        'revision',
-        'trigger',
-        'pinned',
-        'label',
-      ];
-      if (
-        Object.keys(s).length !== fields.length ||
-        fields.some((key) => !Object.hasOwn(s, key)) ||
-        typeof s.id !== 'string' ||
-        !snapshotId.test(s.id) ||
-        typeof s.createdAt !== 'string' ||
-        s.createdAt.length !== 24 ||
-        !Number.isFinite(Date.parse(s.createdAt)) ||
-        new Date(s.createdAt).toISOString() !== s.createdAt ||
-        typeof s.sizeBytes !== 'number' ||
-        !Number.isSafeInteger(s.sizeBytes) ||
-        s.sizeBytes < 0 ||
-        s.sizeBytes > MAX_TEXT_BYTES ||
-        typeof s.revision !== 'string' ||
-        !/^[a-f0-9]{64}$/.test(s.revision) ||
-        typeof s.trigger !== 'string' ||
-        !triggers.has(s.trigger) ||
-        typeof s.pinned !== 'boolean' ||
-        (s.label !== null &&
-          (typeof s.label !== 'string' ||
-            !s.label ||
-            s.label.length > 256 ||
-            s.label.trim() !== s.label))
-      )
-        invalid();
+    const snapshots: HistorySnapshotSummary[] = parsed.snapshots.map((s) => {
       const path = validateRelativePath(s.path);
       const key =
         process.platform === 'win32' ? `${path}\0${s.id}`.toLowerCase() : `${path}\0${s.id}`;
       if (seen.has(key)) invalid();
       seen.add(key);
       return {
-        id: s.id,
+        ...s,
         path,
-        createdAt: s.createdAt,
-        sizeBytes: s.sizeBytes,
-        revision: s.revision,
-        trigger: s.trigger as HistorySnapshotSummary['trigger'],
-        pinned: s.pinned,
-        label: s.label as string | null,
       };
     });
     return { version: 1, snapshots };
@@ -150,6 +131,7 @@ function parseIndex(bytes: Buffer): HistoryIndexFile {
     return invalid();
   }
 }
+
 function fileParts(scope: Scope, path: string, id: string): string[] {
   validateRelativePath(path);
   if (!snapshotId.test(id)) invalid();
@@ -167,6 +149,7 @@ function getIsoWeek(date: Date): string {
 
 export class HistoryService {
   private readonly mutex = new AsyncMutex();
+  private readonly indexCache = new Map<string, { bytes: Buffer; index: HistoryIndexFile }>();
   constructor(
     private readonly projects: ProjectService,
     private readonly userDataDir?: string,
@@ -190,7 +173,17 @@ export class HistoryService {
   private async load(scope: Scope): Promise<IndexState> {
     const bytes = await scope.storage.read([...scope.parts, 'index.json'], MAX_INDEX_BYTES);
     this.assertCurrent(scope);
-    return { index: bytes === null ? { version: 1, snapshots: [] } : parseIndex(bytes), bytes };
+    if (bytes === null) {
+      this.indexCache.delete(scope.projectId);
+      return { index: { version: 1, snapshots: [] }, bytes: null };
+    }
+    const cached = this.indexCache.get(scope.projectId);
+    if (cached && cached.bytes.equals(bytes)) {
+      return { index: cached.index, bytes };
+    }
+    const index = parseIndex(bytes);
+    this.indexCache.set(scope.projectId, { bytes, index });
+    return { index, bytes };
   }
   private async save(
     scope: Scope,
@@ -206,6 +199,7 @@ export class HistoryService {
       );
     parseIndex(bytes);
     await scope.storage.write([...scope.parts, 'index.json'], bytes, expected, MAX_INDEX_BYTES);
+    this.indexCache.set(scope.projectId, { bytes, index });
   }
   list(value: ListFileHistoryRequest): Promise<HistorySnapshotPage> {
     return this.serialize(async () => {
@@ -387,21 +381,9 @@ export class HistoryService {
     });
     if (result.canceled || !result.filePath) return false;
     const dest = result.filePath;
-    const temp = join(dirname(dest), `.export-${randomUUID()}.tmp`);
-    try {
-      const file = await open(temp, 'wx', 0o600);
-      try {
-        await file.writeFile(historical.content, 'utf8');
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await rename(temp, dest);
-    } finally {
-      await unlink(temp).catch((error: unknown) => {
-        if (!isMissing(error)) throw error;
-      });
-    }
+    await writeAtomic(dest, historical.content, {
+      prefix: 'export',
+    });
     return true;
   }
   deleteSnapshot(value: HistorySnapshotRef): Promise<void> {

@@ -16,8 +16,6 @@ function unsafe(): never {
   );
 }
 
-
-
 /** All history paths, including persisted paths, pass this authority before filesystem access. */
 export class HistoryStorage {
   constructor(readonly root: string) {}

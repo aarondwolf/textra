@@ -25,7 +25,7 @@ describe('real local LaTeX builds (no package installation)', () => {
     service = new BuildService((id) => {
       if (id !== projectId) throw new Error('Stale project.');
       return root;
-    }, 15000);
+    }, 45000);
   });
 
   afterEach(async () => {

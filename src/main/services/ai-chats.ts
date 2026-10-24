@@ -1,59 +1,82 @@
 import { AsyncMutex } from './mutex';
-import { retryTransient } from './retry';
-import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { writeAtomic } from './atomic-write';
+import { createHash } from 'node:crypto';
+import { lstat, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { z } from 'zod';
 import { AI_REVIEW_OUTCOMES, type AIReviewOutcome, type AIStoredChat } from '../../shared/ai';
-import type { AIMessage } from '../../shared/api';
 import { AIError } from './ai-service';
 
 const MAX_BYTES = 16 * 1024 * 1024;
-function object(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
+
 function invalid(): never {
   throw new AIError(
     'AI_CHAT_STORAGE',
     'Chat history could not be saved or restored. Existing history was preserved.',
   );
 }
-function validateChat(value: unknown): AIStoredChat {
-  if (
-    !object(value) ||
-    typeof value.id !== 'string' ||
-    !/^[A-Za-z0-9-]{1,64}$/.test(value.id) ||
-    typeof value.title !== 'string' ||
-    !value.title.trim() ||
-    value.title.length > 120 ||
-    typeof value.updatedAt !== 'number' ||
-    !Number.isSafeInteger(value.updatedAt) ||
-    value.updatedAt < 0 ||
-    !Array.isArray(value.messages) ||
-    !value.messages.length ||
-    value.messages.length > 80
-  )
-    return invalid();
-  let size = 0;
-  const messages = value.messages.map((message): AIMessage => {
-    if (
-      !object(message) ||
-      (message.role !== 'user' && message.role !== 'model') ||
-      typeof message.text !== 'string' ||
-      !message.text.trim() ||
-      message.text.length > 32_000
-    )
-      return invalid();
-    // Only the application-owned review outcome is kept; tool transcripts are never stored.
+
+const chatMessageSchema = z
+  .object({
+    role: z.enum(['user', 'model']),
+    text: z.string().refine((t) => t.trim().length > 0 && t.length <= 32_000),
+    review: z.enum(AI_REVIEW_OUTCOMES).optional(),
+  })
+  .transform((msg) => {
     const review =
-      message.role === 'model' &&
-      (AI_REVIEW_OUTCOMES as readonly unknown[]).includes(message.review)
-        ? (message.review as AIReviewOutcome)
+      msg.role === 'model' &&
+      msg.review &&
+      (AI_REVIEW_OUTCOMES as readonly unknown[]).includes(msg.review)
+        ? (msg.review as AIReviewOutcome)
         : undefined;
-    size += message.text.length;
-    return { role: message.role, text: message.text, ...(review ? { review } : {}) };
+    return { role: msg.role, text: msg.text, ...(review ? { review } : {}) };
   });
-  if (size > 128_000) return invalid();
-  return { id: value.id, title: value.title, updatedAt: value.updatedAt, messages };
+
+export const storedChatSchema = z
+  .object({
+    id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/),
+    title: z.string().refine((t) => t.trim().length > 0 && t.length <= 120),
+    updatedAt: z.number().int().min(0),
+    messages: z.array(chatMessageSchema).min(1).max(80),
+  })
+  .superRefine((val, ctx) => {
+    let size = 0;
+    for (const msg of val.messages) {
+      size += msg.text.length;
+    }
+    if (size > 128_000) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Chat size exceeds limit' });
+    }
+  });
+
+export const storedChatsFileSchema = z
+  .object({
+    version: z.literal(1),
+    chats: z.array(storedChatSchema).max(100),
+  })
+  .superRefine((val, ctx) => {
+    const ids = new Set(val.chats.map((c) => c.id));
+    if (ids.size !== val.chats.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Duplicate chat IDs' });
+    }
+  });
+
+export const saveChatRequestSchema = z.object({
+  projectId: z.string().max(256),
+  chat: storedChatSchema,
+});
+
+export const deleteChatRequestSchema = z
+  .object({
+    projectId: z.string().max(256),
+    chatId: z.string().regex(/^[A-Za-z0-9-]{1,64}$/),
+  })
+  .strict();
+
+export function validateChat(value: unknown): AIStoredChat {
+  const result = storedChatSchema.safeParse(value);
+  if (!result.success) return invalid();
+  return result.data as AIStoredChat;
 }
 
 /** Local user-data history keyed by canonical workspace, independent of ephemeral project tokens. */
@@ -83,7 +106,8 @@ export class AIChatStore {
       const file = await lstat(path);
       if (!file.isFile() || file.isSymbolicLink() || file.size > MAX_BYTES) return invalid();
     } catch (error) {
-      if (!object(error) || error.code !== 'ENOENT') throw error;
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT')
+        throw error;
     }
     return path;
   }
@@ -91,39 +115,24 @@ export class AIChatStore {
     if (waitForWrites) await this.mutex.flush();
     const path = await this.check(scope);
     try {
-      const value: unknown = JSON.parse(await readFile(path, 'utf8'));
-      if (
-        !object(value) ||
-        value.version !== 1 ||
-        !Array.isArray(value.chats) ||
-        value.chats.length > 100
-      )
-        return invalid();
-      const chats = value.chats.map(validateChat);
-      if (new Set(chats.map((chat) => chat.id)).size !== chats.length) return invalid();
-      return chats.sort((a, b) => b.updatedAt - a.updatedAt);
+      const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+      const result = storedChatsFileSchema.safeParse(parsed);
+      if (!result.success) return invalid();
+      return (result.data.chats as AIStoredChat[]).sort((a, b) => b.updatedAt - a.updatedAt);
     } catch (error) {
-      if (object(error) && error.code === 'ENOENT') return [];
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
+        return [];
       return invalid();
     }
   }
   private async write(scope: string, chats: AIStoredChat[]): Promise<void> {
     const content = JSON.stringify({ version: 1, chats });
     if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) return invalid();
-    const temporary = join(this.directory, `.chat-${randomUUID()}.tmp`);
-    try {
-      const file = await open(temporary, 'wx', 0o600);
-      try {
-        await file.writeFile(content, 'utf8');
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      const path = await this.check(scope);
-      await retryTransient(() => rename(temporary, path));
-    } finally {
-      await unlink(temporary).catch(() => undefined);
-    }
+    const path = await this.check(scope);
+    await writeAtomic(path, content, {
+      prefix: 'chat',
+      tempDirectory: this.directory,
+    });
   }
   async list(projectId: unknown): Promise<AIStoredChat[]> {
     const scope = this.scope(projectId);
@@ -131,10 +140,11 @@ export class AIChatStore {
     return this.read(scope, false);
   }
   save(value: unknown): Promise<void> {
-    if (!object(value))
+    if (!value || typeof value !== 'object' || Array.isArray(value))
       return Promise.reject(new AIError('AI_CHAT_STORAGE', 'Provide a workspace chat.'));
-    const scope = this.scope(value.projectId);
-    const chat = validateChat(value.chat);
+    const candidate = value as Record<string, unknown>;
+    const scope = this.scope(candidate.projectId);
+    const chat = validateChat(candidate.chat);
     return this.mutex.run(async () => {
       const existing = await this.read(scope, false);
       const previous = existing.find((item) => item.id === chat.id);
@@ -146,17 +156,11 @@ export class AIChatStore {
     });
   }
   deleteChat(value: unknown): Promise<boolean> {
-    if (
-      !object(value) ||
-      Object.keys(value).length !== 2 ||
-      !Object.hasOwn(value, 'projectId') ||
-      !Object.hasOwn(value, 'chatId') ||
-      typeof value.chatId !== 'string' ||
-      !/^[A-Za-z0-9-]{1,64}$/.test(value.chatId)
-    )
+    const parsed = deleteChatRequestSchema.safeParse(value);
+    if (!parsed.success)
       return Promise.reject(new AIError('AI_CHAT_STORAGE', 'Provide a valid workspace chat ID.'));
-    const scope = this.scope(value.projectId);
-    const chatId = value.chatId;
+    const scope = this.scope(parsed.data.projectId);
+    const chatId = parsed.data.chatId;
     return this.mutex.run(async () => {
       const existing = await this.read(scope, false);
       const chats = existing.filter((chat) => chat.id !== chatId);

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
+import treeKill from 'tree-kill';
 
 export class OwnedProcessError extends Error {
   constructor(
@@ -42,7 +43,11 @@ export async function terminateProcessTree(child: ChildProcess): Promise<void> {
     try {
       process.kill(-child.pid, 'SIGKILL');
     } catch {
-      child.kill('SIGKILL');
+      try {
+        treeKill(child.pid, 'SIGKILL');
+      } catch {
+        child.kill('SIGKILL');
+      }
     }
   } else child.kill();
 }

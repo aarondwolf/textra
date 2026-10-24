@@ -1,19 +1,10 @@
-import { retryTransient } from './retry';
+import { AsyncMutex } from './mutex';
+import { writeAtomic } from './atomic-write';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import {
-  access,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  realpath,
-  rename,
-  stat,
-  unlink,
-} from 'node:fs/promises';
+import { access, lstat, mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { z } from 'zod';
 import which from 'which';
 import type { AIProviderSettings, AISettings, OllamaLocalStatus } from '../../shared/api';
 import {
@@ -366,7 +357,7 @@ export class AIService {
   private reserved = false;
   private activeContext: { model: AIModelRef; role: AIRole } | null = null;
   private cancellationVersion = 0;
-  private queue: Promise<unknown> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
   private migration: Promise<void> | null = null;
   private readonly list: ModelLister;
   private readonly ollama: OllamaLauncher;
@@ -523,8 +514,6 @@ export class AIService {
     if (chosen) settings.roleDefaults.completion = { provider: 'ollama-local', model: chosen.id };
   }
 
-  
-
   private async write(settings: StoredSettings): Promise<void> {
     await this.checkPaths();
     const serialized = JSON.stringify(settings);
@@ -533,27 +522,20 @@ export class AIService {
         'AI_STORAGE',
         'AI settings exceed the storage limit. Reduce the saved model lists.',
       );
-    const temporary = join(this.directory, `.ai-${randomUUID()}.tmp`);
-    try {
-      const file = await open(temporary, 'wx', 0o600);
-      try {
-        await file.writeFile(serialized, 'utf8');
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await this.checkPaths();
-      await retryTransient(() => rename(temporary, join(this.directory, 'ai.json')));
-    } finally {
-      await unlink(temporary).catch(() => undefined);
-    }
+    await writeAtomic(join(this.directory, 'ai.json'), serialized, {
+      prefix: 'ai',
+      tempDirectory: this.directory,
+      prePublish: async () => {
+        await this.checkPaths();
+      },
+    });
   }
   /** Serializes read-modify-write cycles so concurrent model refreshes cannot drop data. */
   private update(
     change: (settings: StoredSettings) => void,
     affectedProvider?: AIProviderId,
   ): Promise<AISettings> {
-    const run = this.queue.then(async () => {
+    return this.mutex.run(async () => {
       const settings = await this.read();
       this.normalize(settings);
       change(settings);
@@ -565,8 +547,6 @@ export class AIService {
       }
       return this.view(settings);
     });
-    this.queue = run.catch(() => undefined);
-    return run;
   }
   /** Clears unavailable role bindings without selecting another destination. */
   private normalize(settings: StoredSettings): void {
@@ -628,7 +608,7 @@ export class AIService {
     };
   }
   async settings(): Promise<AISettings> {
-    await this.queue;
+    await this.mutex.flush();
     const settings = await this.read();
     this.normalize(settings);
     return this.view(settings);
@@ -822,7 +802,7 @@ export class AIService {
         throw new AIError('INVALID_ARGUMENT', `Paste a ${info.keyLabel} (up to 8,192 characters).`);
       this.requireCipher();
     }
-    await this.queue;
+    await this.mutex.flush();
     const connection = (await this.read()).providers[provider];
     const models = await this.fetchModels({
       provider,
@@ -861,7 +841,7 @@ export class AIService {
   }
   async refreshModels(value: unknown): Promise<AISettings> {
     const provider = this.providerArgument(value);
-    await this.queue;
+    await this.mutex.flush();
     const stored = (await this.read()).providers[provider];
     if (!isConfigured(provider, stored))
       throw new AIError('AI_KEY_REQUIRED', `Set up ${AI_PROVIDERS[provider].label} first.`);
@@ -1057,7 +1037,7 @@ export class AIService {
     role: AIRole = 'assistant',
   ): Promise<{ access: ProviderAccess; model: string; info: AIModelInfo }> {
     const ref = this.modelArgument(value);
-    await this.queue;
+    await this.mutex.flush();
     const settings = await this.read();
     this.normalize(settings);
     const stored = settings.providers[ref.provider];
@@ -1370,37 +1350,49 @@ export class AIService {
   }
 }
 
+export const completionRequestSchema = z
+  .object({
+    role: z.enum(['completion', 'inlineCompletion']),
+    requestId: z.string().regex(/^[A-Za-z0-9-]{1,64}$/),
+    projectId: z.string().min(1).max(200),
+    path: z
+      .string()
+      .max(4096)
+      .regex(/\.tex$/i),
+    revision: z.string().max(200),
+    modelVersion: z.number().int().min(1),
+    offset: z.number().int().min(0),
+    prefix: z.string(),
+    suffix: z.string(),
+    metadata: z.string(),
+  })
+  .superRefine((val, ctx) => {
+    const manual = val.role === 'inlineCompletion';
+    if (
+      val.prefix.length > (manual ? 16000 : 8000) ||
+      val.suffix.length > (manual ? 4000 : 2000) ||
+      val.metadata.length > (manual ? 4000 : 2000) ||
+      val.prefix.length > val.offset
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Completion context exceeds its bounded limits.',
+      });
+    }
+  });
+
 export function validateCompletionRequest(value: unknown): asserts value is AICompletionRequest {
-  if (
-    !record(value) ||
-    !['completion', 'inlineCompletion'].includes(String(value.role)) ||
-    typeof value.requestId !== 'string' ||
-    !/^[A-Za-z0-9-]{1,64}$/.test(value.requestId) ||
-    typeof value.projectId !== 'string' ||
-    !value.projectId ||
-    value.projectId.length > 200 ||
-    typeof value.path !== 'string' ||
-    value.path.length > 4096 ||
-    !/\.tex$/i.test(value.path) ||
-    typeof value.revision !== 'string' ||
-    value.revision.length > 200 ||
-    !Number.isSafeInteger(value.modelVersion) ||
-    Number(value.modelVersion) < 1 ||
-    !Number.isSafeInteger(value.offset) ||
-    Number(value.offset) < 0 ||
-    typeof value.prefix !== 'string' ||
-    typeof value.suffix !== 'string' ||
-    typeof value.metadata !== 'string'
-  )
+  const result = completionRequestSchema.safeParse(value);
+  if (!result.success) {
+    if (
+      result.error.issues.some(
+        (i) => i.message === 'Completion context exceeds its bounded limits.',
+      )
+    ) {
+      throw new AIError('INVALID_ARGUMENT', 'Completion context exceeds its bounded limits.');
+    }
     throw new AIError('INVALID_ARGUMENT', 'Provide a valid active TeX buffer completion snapshot.');
-  const manual = value.role === 'inlineCompletion';
-  if (
-    value.prefix.length > (manual ? 16000 : 8000) ||
-    value.suffix.length > (manual ? 4000 : 2000) ||
-    value.metadata.length > (manual ? 4000 : 2000) ||
-    value.prefix.length > Number(value.offset)
-  )
-    throw new AIError('INVALID_ARGUMENT', 'Completion context exceeds its bounded limits.');
+  }
 }
 
 export function normalizeCompletion(

@@ -1,18 +1,9 @@
 import { AsyncMutex } from './mutex';
-import { retryTransient } from './retry';
+import { writeAtomic } from './atomic-write';
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  link,
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  unlink,
-} from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { lstat, mkdir, open, readdir, readFile, realpath, rename } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
+import { z } from 'zod';
 import type {
   CreateRequest,
   FileEntry,
@@ -47,6 +38,53 @@ function record(value: unknown): Record<string, unknown> {
     throw new ProjectError('INVALID_ARGUMENT', 'Invalid request.');
   return value as Record<string, unknown>;
 }
+
+export const fileRefSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+});
+
+export const saveRequestSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+  content: z.string(),
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const createRequestSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+  kind: z.enum(['file', 'directory']),
+  content: z.string().optional(),
+});
+
+export const renameRequestSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+  newPath: z.string(),
+});
+
+export const fileRevisionsRequestSchema = z.object({
+  projectId: z.string(),
+  paths: z.array(z.string()).max(50),
+});
+
+export const recentProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  rootPath: z.string().refine((p) => isAbsolute(p)),
+  pinned: z.boolean(),
+});
+
+export const recentProjectsFileSchema = z.object({
+  version: z.literal(1),
+  projects: z.array(recentProjectSchema).max(100),
+});
+
+export const setProjectPinnedSchema = z.object({
+  id: z.string(),
+  pinned: z.boolean(),
+});
 
 export function validateRelativePath(value: unknown): string {
   if (
@@ -111,11 +149,12 @@ export class ProjectService {
   }
 
   private validateRef(value: unknown): FileRef {
-    const request = record(value);
-    if (typeof request.projectId !== 'string')
+    const result = fileRefSchema.safeParse(value);
+    if (!result.success) {
       throw new ProjectError('INVALID_ARGUMENT', 'Invalid project identifier.');
-    this.getRoot(request.projectId);
-    return { projectId: request.projectId, path: validateRelativePath(request.path) };
+    }
+    this.getRoot(result.data.projectId);
+    return { projectId: result.data.projectId, path: validateRelativePath(result.data.path) };
   }
 
   async resolvePath(value: FileRef, allowRoot = false, allowMissing = false): Promise<string> {
@@ -228,14 +267,16 @@ export class ProjectService {
 
   saveFile(value: SaveRequest): Promise<FileSnapshot> {
     return this.serialize(async () => {
+      const parsed = saveRequestSchema.safeParse(value);
+      if (!parsed.success) {
+        if (parsed.error.issues.some((i) => i.path.includes('expectedRevision'))) {
+          throw new ProjectError('INVALID_ARGUMENT', 'A valid file revision is required to save.');
+        }
+        throw new ProjectError('INVALID_ARGUMENT', 'Invalid request.');
+      }
       const ref = this.validateRef(value);
-      const request = record(value);
+      const request = parsed.data;
       const bytes = this.encode(request.content);
-      if (
-        typeof request.expectedRevision !== 'string' ||
-        !/^[a-f0-9]{64}$/.test(request.expectedRevision)
-      )
-        throw new ProjectError('INVALID_ARGUMENT', 'A valid file revision is required to save.');
       const current = await this.snapshot(ref);
       if (current.revision !== request.expectedRevision)
         throw new ProjectError(
@@ -244,28 +285,19 @@ export class ProjectService {
         );
       const target = await this.resolvePath(ref);
       const mode = (await lstat(target)).mode;
-      const temporary = join(dirname(target), `.textra-save-${randomUUID()}.tmp`);
-      try {
-        const file = await open(temporary, 'wx', mode);
-        try {
-          await file.writeFile(bytes);
-          await file.sync();
-        } finally {
-          await file.close();
-        }
-        // Recheck immediately before replacement, after preparing the complete file.
-        if ((await this.snapshot(ref)).revision !== request.expectedRevision)
-          throw new ProjectError(
-            'CONFLICT',
-            'The file changed while saving. Your edits are still open.',
-          );
-        await this.resolvePath(ref);
-        await retryTransient(() => rename(temporary, target));
-      } finally {
-        await unlink(temporary).catch((error: unknown) => {
-          if (!missing(error)) throw error;
-        });
-      }
+      await writeAtomic(target, bytes, {
+        mode,
+        prefix: 'textra-save',
+        prePublish: async () => {
+          // Recheck immediately before replacement, after preparing the complete file.
+          if ((await this.snapshot(ref)).revision !== request.expectedRevision)
+            throw new ProjectError(
+              'CONFLICT',
+              'The file changed while saving. Your edits are still open.',
+            );
+          await this.resolvePath(ref);
+        },
+      });
       return { ...ref, content: request.content as string, revision: revision(bytes) };
     });
   }
@@ -401,31 +433,27 @@ export class ProjectService {
 
   createEntry(value: CreateRequest): Promise<ProjectInfo> {
     return this.serialize(async () => {
+      const parsed = createRequestSchema.safeParse(value);
+      if (!parsed.success) {
+        if (parsed.error.issues.some((i) => i.path.includes('kind'))) {
+          throw new ProjectError('INVALID_ARGUMENT', 'Choose a file or folder.');
+        }
+        throw new ProjectError('INVALID_ARGUMENT', 'Invalid request.');
+      }
       const ref = this.validateRef(value);
-      const request = record(value);
-      if (request.kind !== 'file' && request.kind !== 'directory')
-        throw new ProjectError('INVALID_ARGUMENT', 'Choose a file or folder.');
+      const request = parsed.data;
       const bytes = this.encode(request.content ?? '');
       const target = await this.resolvePath(ref, false, true);
       if (request.kind === 'directory') await mkdir(target);
       else {
-        const temporary = join(dirname(target), `.textra-save-${randomUUID()}.tmp`);
-        try {
-          const file = await open(temporary, 'wx', 0o600);
-          try {
-            await file.writeFile(bytes);
-            await file.sync();
-          } finally {
-            await file.close();
-          }
-          await this.resolvePath(ref, false, true);
-          // Publish the complete file atomically and fail if the destination exists.
-          await link(temporary, target);
-        } finally {
-          await unlink(temporary).catch((error: unknown) => {
-            if (!missing(error)) throw error;
-          });
-        }
+        await writeAtomic(target, bytes, {
+          mode: 0o600,
+          prefix: 'textra-save',
+          prePublish: async () => {
+            await this.resolvePath(ref, false, true);
+          },
+          publish: 'link',
+        });
       }
       return this.scan(ref.projectId);
     });
@@ -433,8 +461,12 @@ export class ProjectService {
 
   renameEntry(value: RenameRequest): Promise<ProjectInfo> {
     return this.serialize(async () => {
+      const parsed = renameRequestSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new ProjectError('INVALID_ARGUMENT', 'Invalid request.');
+      }
       const ref = this.validateRef(value);
-      const newPath = validateRelativePath(record(value).newPath);
+      const newPath = validateRelativePath(parsed.data.newPath);
       const source = await this.resolvePath(ref);
       const destination = await this.resolvePath(
         { projectId: ref.projectId, path: newPath },
@@ -467,17 +499,14 @@ export class ProjectService {
   }
 
   async getFileRevisions(value: { projectId: string; paths: string[] }): Promise<FileRevision[]> {
-    const request = record(value);
-    if (
-      typeof request.projectId !== 'string' ||
-      !Array.isArray(request.paths) ||
-      request.paths.length > 50
-    )
+    const parsed = fileRevisionsRequestSchema.safeParse(value);
+    if (!parsed.success) {
       throw new ProjectError('INVALID_ARGUMENT', 'Poll up to 50 open files at a time.');
-    const projectId = request.projectId;
+    }
+    const { projectId, paths } = parsed.data;
     this.getRoot(projectId);
     const revisions: FileRevision[] = [];
-    for (const path of request.paths as unknown[]) {
+    for (const path of paths) {
       const ref = this.validateRef({ projectId, path });
       try {
         revisions.push({ path: ref.path, revision: (await this.snapshot(ref)).revision });
@@ -493,27 +522,14 @@ export class ProjectService {
   private async loadRecent(): Promise<RecentProject[]> {
     try {
       const parsed: unknown = JSON.parse(await readFile(this.recentFile, 'utf8'));
-      const data = record(parsed);
-      if (data.version !== 1 || !Array.isArray(data.projects) || data.projects.length > 100)
+      const result = recentProjectsFileSchema.safeParse(parsed);
+      if (!result.success) {
         throw new ProjectError(
           'INVALID_SETTINGS',
           'Recent project settings are invalid and were preserved.',
         );
-      return data.projects.map((value: unknown) => {
-        const item = record(value);
-        if (
-          typeof item.id !== 'string' ||
-          typeof item.name !== 'string' ||
-          typeof item.rootPath !== 'string' ||
-          !isAbsolute(item.rootPath) ||
-          typeof item.pinned !== 'boolean'
-        )
-          throw new ProjectError(
-            'INVALID_SETTINGS',
-            'Recent project settings are invalid and were preserved.',
-          );
-        return { id: item.id, name: item.name, rootPath: item.rootPath, pinned: item.pinned };
-      });
+      }
+      return result.data.projects;
     } catch (error) {
       if (missing(error)) return [];
       throw error;
@@ -521,22 +537,11 @@ export class ProjectService {
   }
 
   private async writeRecent(projects: RecentProject[]): Promise<void> {
-    await mkdir(this.userData, { recursive: true });
-    const temporary = join(this.userData, `.recent-${randomUUID()}.tmp`);
-    try {
-      const file = await open(temporary, 'wx', 0o600);
-      try {
-        await file.writeFile(`${JSON.stringify({ version: 1, projects }, null, 2)}\n`);
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await retryTransient(() => rename(temporary, this.recentFile));
-    } finally {
-      await unlink(temporary).catch((error: unknown) => {
-        if (!missing(error)) throw error;
-      });
-    }
+    await writeAtomic(this.recentFile, `${JSON.stringify({ version: 1, projects }, null, 2)}\n`, {
+      prefix: 'recent',
+      tempDirectory: this.userData,
+      ensureDir: true,
+    });
   }
 
   async getRecentProjects(): Promise<RecentProject[]> {
@@ -557,9 +562,11 @@ export class ProjectService {
 
   setProjectPinned(value: { id: string; pinned: boolean }): Promise<RecentProject[]> {
     return this.serialize(async () => {
-      const request = record(value);
-      if (typeof request.id !== 'string' || typeof request.pinned !== 'boolean')
+      const parsed = setProjectPinnedSchema.safeParse(value);
+      if (!parsed.success) {
         throw new ProjectError('INVALID_ARGUMENT', 'Invalid recent project preference.');
+      }
+      const request = parsed.data;
       const recent = await this.loadRecent();
       const entry = recent.find((item) => item.id === request.id);
       if (!entry)

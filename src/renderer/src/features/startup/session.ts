@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { afterPaint } from './scheduling';
 import {
   openDocument,
@@ -17,30 +18,46 @@ export interface WorkspaceSession {
   activePath: string | null;
 }
 
-function safePath(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= 4096 &&
-    !/^[\\/]|^[a-z]:|\0/i.test(value) &&
-    !value.split(/[\\/]/).some((part) => part === '..')
+const safePathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine(
+    (val) => !/^[\\/]|^[a-z]:|\0/i.test(val) && !val.split(/[\\/]/).some((part) => part === '..'),
   );
-}
+
+export const workspaceSessionSchema = z
+  .object({
+    version: z.literal(1).optional(),
+    recentId: z.string().max(256).optional(),
+    projectId: z.string().max(256).optional(),
+    paths: z.array(z.unknown()),
+    activePath: z.unknown().optional(),
+  })
+  .transform((data) => {
+    const recentId = data.recentId ?? data.projectId;
+    if (!recentId) return null;
+    const paths = [
+      ...new Set(data.paths.filter((p): p is string => safePathSchema.safeParse(p).success)),
+    ].slice(0, 50);
+    const activeResult = safePathSchema.safeParse(data.activePath);
+    const activePath = activeResult.success ? activeResult.data : null;
+    return {
+      version: 1 as const,
+      recentId,
+      paths,
+      activePath,
+    };
+  });
 
 /** Read the legacy unversioned shape too, without accepting arbitrary storage paths. */
 export function parseWorkspaceSession(raw: string | null): WorkspaceSession | null {
   if (!raw || raw.length > 256_000) return null;
   try {
     const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const saved = value as Record<string, unknown>;
-    if (saved.version !== undefined && saved.version !== 1) return null;
-    const recentId = saved.recentId ?? saved.projectId;
-    if (typeof recentId !== 'string' || recentId.length > 256 || !Array.isArray(saved.paths))
-      return null;
-    const paths = [...new Set(saved.paths.filter(safePath))].slice(0, 50);
-    const activePath = safePath(saved.activePath) ? saved.activePath : null;
-    return { version: 1, recentId, paths, activePath };
+    const result = workspaceSessionSchema.safeParse(value);
+    if (!result.success || !result.data) return null;
+    return result.data;
   } catch {
     return null;
   }

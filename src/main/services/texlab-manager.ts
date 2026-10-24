@@ -11,6 +11,7 @@ import type {
   TexlabRequest,
   TexlabStatus,
 } from '../../shared/api';
+import { AsyncMutex } from './mutex';
 import { ProjectError, ProjectService } from './projects';
 import { TexlabError, TexlabService, type JsonValue } from './texlab';
 
@@ -48,7 +49,6 @@ async function executableOnPath(): Promise<string | null> {
   }
 }
 
-
 function parseVersion(output: string): string | null {
   const match = /(?:texlab\s+)?v?(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/i.exec(output);
   return match?.[1] ?? null;
@@ -62,7 +62,7 @@ export class TexlabManager {
   private readonly service: TexlabService;
   private readonly diagnostics = new Map<string, Diagnostic[]>();
   private currentProjectId: string | null = null;
-  private syncQueue: Promise<void> = Promise.resolve();
+  private readonly mutex = new AsyncMutex();
   private queuedSyncs = 0;
   private generation = 0;
   private stopping: Promise<void> | null = null;
@@ -72,19 +72,14 @@ export class TexlabManager {
       return Promise.reject(new TexlabError('TEXLAB_BUSY', 'TexLab synchronization is busy.'));
     const generation = this.generation;
     this.queuedSyncs++;
-    const run = this.syncQueue
-      .then(() => {
+    return this.mutex
+      .run(async () => {
         this.assertCurrent(generation);
         return action(generation);
       })
       .finally(() => {
         this.queuedSyncs--;
       });
-    this.syncQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
   }
 
   private assertCurrent(generation: number): void {
@@ -259,21 +254,16 @@ export class TexlabManager {
   async stop(): Promise<void> {
     if (this.stopping) return this.stopping;
     this.generation++;
-    const queued = this.syncQueue;
     // Teardown has a reserved lane even when all user work slots are occupied.
     this.stopping = (async () => {
       await this.service.stop();
-      await queued;
+      await this.mutex.flush();
       await this.service.stop();
       this.currentProjectId = null;
       this.diagnostics.clear();
     })().finally(() => {
       this.stopping = null;
     });
-    this.syncQueue = this.stopping.then(
-      () => undefined,
-      () => undefined,
-    );
     return this.stopping;
   }
 

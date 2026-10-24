@@ -2,6 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { terminateProcessTree } from './owned-process';
+import { Transform, type TransformCallback } from 'node:stream';
+import { StreamMessageReader, type Message } from 'vscode-jsonrpc/node';
 
 /** JSON values accepted by the Language Server Protocol. */
 export type JsonPrimitive = string | number | boolean | null;
@@ -135,15 +137,69 @@ function documentUri(path: string): string {
  * not know about Electron IPC, renderer state, or project path authorization; callers must
  * validate those boundaries before invoking it.
  */
+
+class LspGuardTransform extends Transform {
+  private headerBytes = 0;
+  private inHeader = true;
+  private expectedBodyBytes = 0;
+  private bodyBytesRead = 0;
+  private headerBuf = Buffer.alloc(MAX_HEADER_BYTES);
+
+  _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback): void {
+    let offset = 0;
+    while (offset < chunk.length) {
+      if (this.inHeader) {
+        if (this.headerBytes >= MAX_HEADER_BYTES) {
+          return callback(new Error('Oversized LSP header.'));
+        }
+        this.headerBuf[this.headerBytes++] = chunk[offset++];
+        if (
+          this.headerBytes >= 4 &&
+          this.headerBuf.readUInt32BE(this.headerBytes - 4) === 0x0d0a0d0a
+        ) {
+          const headerStr = this.headerBuf.subarray(0, this.headerBytes - 4).toString('ascii');
+          const rows = headerStr.split('\r\n').filter((row) => /^content-length\s*:/i.test(row));
+          if (rows.length !== 1) {
+            return callback(new Error('Invalid LSP length headers.'));
+          }
+          const rawLen = rows[0].split(':', 2)[1]?.trim() ?? '';
+          const len = Number(rawLen);
+          if (
+            !/^\d+$/.test(rawLen) ||
+            !Number.isSafeInteger(len) ||
+            len < 1 ||
+            len > MAX_MESSAGE_BYTES
+          ) {
+            return callback(new Error('Invalid LSP length.'));
+          }
+          this.expectedBodyBytes = len;
+          this.bodyBytesRead = 0;
+          this.inHeader = false;
+          this.headerBytes = 0;
+        }
+      } else {
+        const remaining = this.expectedBodyBytes - this.bodyBytesRead;
+        const available = chunk.length - offset;
+        const count = Math.min(remaining, available);
+        offset += count;
+        this.bodyBytesRead += count;
+        if (this.bodyBytesRead === this.expectedBodyBytes) {
+          this.inHeader = true;
+        }
+      }
+    }
+    this.push(chunk);
+    callback();
+  }
+}
+
 export class TexlabService {
   private child: ChildProcessWithoutNullStreams | null = null;
   private initialized = false;
   private workspaceRoot: string | null = null;
   private nextRequestId = 1;
-  private readonly headerBuffer = Buffer.alloc(MAX_HEADER_BYTES);
-  private headerBytes = 0;
-  private bodyBuffer: Buffer | null = null;
-  private bodyBytes = 0;
+  private guard: LspGuardTransform | null = null;
+  private reader: StreamMessageReader | null = null;
   private readonly outbound: Buffer[] = [];
   private outboundBytes = 0;
   private waitingDrain = false;
@@ -445,9 +501,21 @@ export class TexlabService {
   private attach(child: ChildProcessWithoutNullStreams): void {
     this.child = child;
     this.childClosed = new Promise<void>((resolve) => child.once('close', resolve));
-    child.stdout.on('data', (chunk: Buffer) => {
-      if (this.child === child) this.receive(chunk);
+
+    this.guard = new LspGuardTransform();
+    child.stdout.pipe(this.guard);
+    this.reader = new StreamMessageReader(this.guard);
+
+    this.reader.listen((message: Message) => {
+      if (this.child === child) this.handleMessage(message as JsonRpcMessage);
     });
+    this.reader.onError(() => {
+      if (this.child === child) void this.stopImmediately();
+    });
+    this.guard.on('error', () => {
+      if (this.child === child) void this.stopImmediately();
+    });
+
     child.stderr.on('data', () => {
       /* Drain human-readable progress. */
     });
@@ -466,50 +534,6 @@ export class TexlabService {
     child.once('close', () => {
       if (this.child === child) this.clearState('TexLab stopped unexpectedly.');
     });
-  }
-
-  private receive(chunk: Buffer): void {
-    let offset = 0;
-    try {
-      while (offset < chunk.length) {
-        if (!this.bodyBuffer) {
-          if (this.headerBytes >= MAX_HEADER_BYTES) throw new Error('Oversized LSP header.');
-          this.headerBuffer[this.headerBytes++] = chunk[offset++]!;
-          if (
-            this.headerBytes < 4 ||
-            this.headerBuffer.readUInt32BE(this.headerBytes - 4) !== 0x0d0a0d0a
-          )
-            continue;
-          const header = this.headerBuffer.subarray(0, this.headerBytes - 4).toString('ascii');
-          const rows = header.split('\r\n').filter((row) => /^content-length\s*:/i.test(row));
-          const rawLength = rows[0]?.split(':', 2)[1]?.trim() ?? '';
-          const length = Number(rawLength);
-          if (
-            rows.length !== 1 ||
-            !/^\d+$/.test(rawLength) ||
-            !Number.isSafeInteger(length) ||
-            length < 1 ||
-            length > MAX_MESSAGE_BYTES
-          )
-            throw new Error('Invalid LSP length.');
-          this.bodyBuffer = Buffer.allocUnsafe(length);
-          this.bodyBytes = 0;
-          this.headerBytes = 0;
-        }
-        const count = Math.min(this.bodyBuffer.length - this.bodyBytes, chunk.length - offset);
-        chunk.copy(this.bodyBuffer, this.bodyBytes, offset, offset + count);
-        offset += count;
-        this.bodyBytes += count;
-        if (this.bodyBytes !== this.bodyBuffer.length) continue;
-        const body = this.bodyBuffer;
-        this.bodyBuffer = null;
-        this.bodyBytes = 0;
-        this.handleMessage(JSON.parse(body.toString('utf8')) as JsonRpcMessage);
-        if (!this.child) return;
-      }
-    } catch {
-      void this.stopImmediately();
-    }
   }
 
   private handleMessage(message: JsonRpcMessage): void {
@@ -761,9 +785,10 @@ export class TexlabService {
     this.child = null;
     this.initialized = false;
     this.workspaceRoot = null;
-    this.headerBytes = 0;
-    this.bodyBuffer = null;
-    this.bodyBytes = 0;
+    this.reader?.dispose();
+    this.reader = null;
+    this.guard?.destroy();
+    this.guard = null;
     this.outbound.length = 0;
     this.outboundBytes = 0;
     this.waitingDrain = false;

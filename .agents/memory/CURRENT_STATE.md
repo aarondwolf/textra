@@ -1,5 +1,41 @@
 # Current state
 
+2026-10-24 Phase 1 & Phase 2 Architecture & Performance Modernization:
+
+- Runtime Validation (`zod`) across IPC and Services (F-4.1):
+  - Replaced manual imperative `typeof`, `Object.keys`, and record validation with strict Zod schemas across `preferences.ts` (`preferencesSchema`, `preferencesPatchSchema`), `projects.ts` (`projectConfigSchema`), `ai-service.ts` (`providerUpdateSchema`, `completionRequestSchema`, `assistantRequestSchema`), `ai-chats.ts` (`chatMessageSchema`, `chatSessionSchema`), `agent-workspace.ts` (`agentReviewRequestSchema`), `ai-inline-edit.ts` (`inlineEditRequestSchema`), and `src/main/ipc.ts` (`registerIpc`).
+  - Added schema validation to session recovery in `src/renderer/src/features/startup/session.ts` (`workspaceSessionSchema`).
+  - Standardized error codes and preserved strict user-facing messaging boundaries.
+- Process-Tree Termination (`tree-kill`) (F-2.4):
+  - Modernized `src/main/services/owned-process.ts` using `tree-kill` on POSIX fallback while preserving Windows `taskkill.exe` with `{ shell: false }` for security policy compliance.
+  - Verified process termination with `tests/unit/owned-process.test.ts` (8/8 passed).
+- Zustand Persistence & State Architecture (F-1.2, F-1.3, F-1.4):
+  - Adopted `zustand/middleware` (`subscribeWithSelector`) in `src/renderer/src/state/ui.ts` to manage preference hydration, saves, and state tracking.
+  - Replaced ad-hoc `this.queue` promise chains in `TexlabManager` (`src/main/services/texlab-manager.ts`) and `AIService` (`src/main/services/ai-service.ts`) with `AsyncMutex`.
+  - Routed all remaining raw CustomEvents through strongly-typed event registry in `src/renderer/src/services/events.ts`.
+- Atomic File Writers & Snapshot Index Optimization (F-2.2, F-2.3):
+  - Created unified atomic writing engine in `src/main/services/atomic-write.ts` with mode preservation, custom publish strategies (`rename`, `link`, custom async callback), `retryTransient`, directory creation, prePublish validation, and guaranteed unlink cleanup on failure. Added `tests/unit/atomic-write.test.ts` (5/5 passed).
+  - Consolidated duplicate temp write ceremonies across `preferences.ts`, `settings.ts`, `projects.ts`, `ai-service.ts`, `ai-chats.ts`, `history.ts`, and `latex.ts`.
+  - Optimized snapshot indexing in `src/main/services/history.ts` using `snapshotSummarySchema`, `historyIndexFileSchema` with `zod`, and an in-memory `indexCache` to avoid repeated JSON disk re-reads on auto-saves.
+- File Watcher Modernization (`chokidar`) (F-2.1):
+  - Installed `chokidar` and refactored `src/main/services/external-editor.ts` to watch files with quiet-period sampling, rename/delete handling, and test hooks.
+  - Removed redundant 1-second IPC polling in `src/renderer/src/Workspace.tsx`.
+- LSP JSON-RPC Protocol Client (`vscode-jsonrpc`) (F-3.1):
+  - Replaced manual byte slicing in `src/main/services/texlab.ts` with `StreamMessageReader` and `LspGuardTransform` (enforcing `MAX_HEADER_BYTES`, `MAX_MESSAGE_BYTES`, ReDoS protection, and duplicate header checks).
+  - Preserved bounded concurrency (`MAX_ACTIVE_REQUESTS = 8`), queue bounds, and LSP `$/cancelRequest` dispatch.
+  - Verified: `tests/unit/texlab.test.ts` (17/17 passed), `tests/unit/texlab-adapter.test.ts` (6/6 passed), `tests/integration/texlab.test.ts` (1/1 passed).
+- Stateful TeX Log Parser (F-3.5):
+  - Enhanced `parseDiagnostics` in `src/main/services/diagnostics.ts` with a stateful parenthesis file stack (`(file.tex ... )`) and depth tracking to associate `!` errors and `LaTeX Warning:` messages with active included files.
+  - Added 79/80-column line unwrapping to reassemble hard-wrapped TeX log lines across lines.
+  - Maintained strict security isolation against traversal (`../`) and external paths.
+  - Expanded unit tests in `tests/unit/diagnostics.test.ts` (10/10 passed).
+- Verification & Quality Gates:
+  - `npm run typecheck` passed (0 errors).
+  - `npm run lint` passed (0 errors, 0 warnings).
+  - `npm run format:check` passed ("All matched files use Prettier code style!").
+  - `npm test` passed (71/71 test suites, 727/727 tests passing).
+  - `npm run build` passed (Electron main, preload, and renderer packages).
+
 2026-10-24 Phase 3 Part 2 BibTeX & LaTeX Parser Modernization:
 
 - BibTeX Parser Modernization (@retorquere/bibtex-parser):

@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { watch, type FSWatcher } from 'node:fs';
+import chokidar, { type FSWatcher } from 'chokidar';
 import { open, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { basename, dirname, extname, join, posix } from 'node:path';
+import { basename, extname, join, posix } from 'node:path';
 import type {
   CreateConflictCopyRequest,
   ExternalFileChangeEvent,
@@ -216,12 +216,16 @@ export class ExternalEditorService {
       };
       if (!value.pollingOnly) {
         try {
-          entry.watcher = watch(dirname(absolutePath), { persistent: false }, (event, filename) => {
-            if (filename && String(filename) !== basename(absolutePath)) return;
-            this.scheduleSample(entry, event === 'rename');
+          entry.watcher = chokidar.watch(absolutePath, {
+            persistent: false,
+            ignoreInitial: true,
+          });
+          entry.watcher.on('all', (event) => {
+            const isRename = event === 'unlink' || event === 'unlinkDir';
+            this.scheduleSample(entry, isRename);
           });
           entry.watcher.on('error', () => {
-            entry.watcher?.close();
+            void entry.watcher?.close().catch(() => undefined);
             entry.watcher = null;
           });
         } catch {
@@ -245,7 +249,7 @@ export class ExternalEditorService {
     const entry = this.watched.get(key(ref));
     if (!entry) return;
     this.watched.delete(key(ref));
-    entry.watcher?.close();
+    void entry.watcher?.close().catch(() => undefined);
     clearInterval(entry.poller);
     if (entry.debounce) clearTimeout(entry.debounce);
     if (entry.quietTimer) clearTimeout(entry.quietTimer);

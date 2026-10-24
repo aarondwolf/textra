@@ -1,7 +1,6 @@
 import { AsyncMutex } from './mutex';
-import { retryTransient } from './retry';
-import { randomUUID } from 'node:crypto';
-import { link, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
+import { writeAtomic } from './atomic-write';
+import { link, lstat, mkdir, open, realpath, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BuildEngine, Preferences, ProjectConfig } from '../../shared/api';
 import { z } from 'zod';
@@ -312,10 +311,7 @@ export class ConfigService {
       const projectId = request.projectId;
       const config = validateProjectConfig(request.config);
       const before = await this.read(projectId);
-      if (
-        hasExpected &&
-        !sameConfig(validateProjectConfig(request.expectedConfig), before.config)
-      )
+      if (hasExpected && !sameConfig(validateProjectConfig(request.expectedConfig), before.config))
         conflict();
       return this.write(projectId, config, before);
     });
@@ -339,36 +335,26 @@ export class ConfigService {
       }
       paths = await this.paths(projectId);
     }
-    const temporary = join(paths.directory, `.settings-${randomUUID()}.tmp`);
-    try {
-      const file = await open(temporary, 'wx', 0o600);
-      try {
-        await file.writeFile(serialized, 'utf8');
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await retryTransient(async () => {
+    await writeAtomic(paths.filename, serialized, {
+      prefix: 'settings',
+      tempDirectory: paths.directory,
+      publish: async (temporary, target) => {
         // Revalidate every retry: a lock must never turn into permission to overwrite new edits.
         const current = await this.read(projectId);
         if (current.text !== before.text || current.filename !== before.filename) conflict();
         await this.paths(projectId);
-        if (existed) await rename(temporary, paths.filename);
+        if (existed) await rename(temporary, target);
         else {
           try {
-            await link(temporary, paths.filename);
+            await link(temporary, target);
           } catch (error) {
             if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')
               conflict();
             throw error;
           }
         }
-      });
-    } finally {
-      await retryTransient(() => unlink(temporary)).catch((error: unknown) => {
-        if (!missing(error)) throw error;
-      });
-    }
+      },
+    });
     return config;
   }
 }

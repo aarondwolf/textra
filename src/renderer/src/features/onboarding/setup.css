@@ -96,9 +96,9 @@
   border-radius: calc(var(--radius-surface) - 3px);
 }
 .setup-dialog
-  button:not(.icon-button):not(.settings-nav button):not(.dropdown-menu-item):not(
-    .dropdown-menu-trigger
-  ):not(.dropdown-menu-popup button) {
+  button:not(.icon-button):not(.help-tooltip-trigger):not(.settings-nav button):not(
+    .dropdown-menu-item
+  ):not(.dropdown-menu-trigger):not(.dropdown-menu-popup button) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -121,9 +121,9 @@
     color 120ms ease;
 }
 .setup-dialog
-  button:not(.icon-button):not(.settings-nav button):not(.dropdown-menu-item):not(
-    .dropdown-menu-trigger
-  ):not(.dropdown-menu-popup button):hover:not(:disabled) {
+  button:not(.icon-button):not(.help-tooltip-trigger):not(.settings-nav button):not(
+    .dropdown-menu-item
+  ):not(.dropdown-menu-trigger):not(.dropdown-menu-popup button):hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text);
 }

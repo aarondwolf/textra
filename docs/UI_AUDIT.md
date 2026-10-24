@@ -45,7 +45,7 @@ continues to use the installed Radix UI packages and `cmdk` for model navigation
   recipe state, Escape dismissal, Settings menu hit-testing and theme changes, and
   preview switching at a compact width. It captures wide, compact, light-theme,
   Settings-menu, and preview-menu screenshots under Playwright's test-results output.
-- The Radix UI test also verifies styled tooltip content, radio controls, recipe
+- The Radix UI test also verifies styled tooltip content, switch controls, recipe
   step edits/default selection, and saving a global recipe. It captures Appearance,
   Editor, Files, Shortcuts, LaTeX tools, Compilation, AI, Import & export, workspace,
   and compact preview screenshots; the AI screenshot waits for its asynchronous

@@ -6,8 +6,8 @@
 - [x] Align History and Recent Projects section controls/headings/counters on one row; correct the Recent Projects count label.
 - [x] Harmonize Editor and Files settings with consistent key/control rows and right-aligned control columns.
 - [x] Appearance: provide installed system fonts in a dropdown, with the system default pinned first.
-- [x] Editor: use concise accessible radios for binary choices and a same-height integer input for autosave debounce.
-- [x] Files: use aligned rows/radio choices, an integer input for quiet period, and collapsible retention/pruning options.
+- [x] Editor: use concise accessible toggle switches for binary choices and a same-height integer input for autosave debounce.
+- [x] Files: use aligned rows/toggle switches, an integer input for quiet period, and collapsible retention/pruning options.
 - [x] LaTeX tools: use the existing LaTeX mark/icon if available; preserve current tool behavior. (No LaTeX logo/mark exists in the app icon set.)
 - [x] Compilation: align selectors/actions and add user-level recipes while preserving project-local recipe overrides and migration behavior.
 - [x] AI Settings: rename “Models” and the autocomplete card/controls as requested; keep provider behavior intact.

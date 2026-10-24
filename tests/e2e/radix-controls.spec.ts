@@ -76,11 +76,13 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.getByRole('button', { name: 'Editor', exact: true }).click();
     const minimapHelp = page.getByRole('button', { name: 'Help: Show minimap', exact: true });
+    await expect(minimapHelp).toHaveCSS('font-size', '9px');
+    await expect(minimapHelp).toHaveCSS('opacity', '0.58');
     await minimapHelp.hover();
     await expect(page.getByRole('tooltip')).toContainText('compact overview');
-    const minimapChoices = page.getByRole('group', { name: 'Show minimap', exact: true });
-    await minimapChoices.getByRole('radio', { name: 'On', exact: true }).check();
-    await expect(minimapChoices.getByRole('radio', { name: 'On', exact: true })).toBeChecked();
+    const minimapSwitch = page.getByRole('switch', { name: 'Show minimap', exact: true });
+    await minimapSwitch.check();
+    await expect(minimapSwitch).toBeChecked();
     await page.screenshot({ path: test.info().outputPath('settings-editor.png') });
     await expect(page.locator('.setting-pair-control .setting-integer').first()).toHaveCSS(
       'height',

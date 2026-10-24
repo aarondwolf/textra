@@ -33,7 +33,7 @@ import { Button } from '../../components/Button';
 import { StatusMessage } from '../../components/Layout';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import { SaveFooter } from '../save-status/SaveFooter';
-import { RadioChoice, SettingPair } from '../../components/SettingsControls';
+import { RadioChoice, SettingPair, SettingSwitch } from '../../components/SettingsControls';
 import { aiSavesSettled, currentAISaveState, useAISaveState } from '../chat/useAISettings';
 import { validateRecipeSettings } from '../../../../shared/recipes';
 import {
@@ -841,10 +841,10 @@ export default function SetupDialog({
                       label="Show minimap"
                       help="A compact overview of long source files. Off by default to keep the editor uncluttered."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Show minimap"
-                        value={preferences.editorMinimap ? 'on' : 'off'}
-                        onChange={(value) => updatePreferences({ editorMinimap: value === 'on' })}
+                        checked={preferences.editorMinimap}
+                        onCheckedChange={(checked) => updatePreferences({ editorMinimap: checked })}
                       />
                     </SettingPair>
                   </div>
@@ -854,10 +854,10 @@ export default function SetupDialog({
                       label="Save after typing stops"
                       help="Uses the same conflict checks as Ctrl/Cmd+S. Autosave is off by default."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Save after typing stops"
-                        value={preferences.autoSave ? 'on' : 'off'}
-                        onChange={(value) => updatePreferences({ autoSave: value === 'on' })}
+                        checked={preferences.autoSave}
+                        onCheckedChange={(checked) => updatePreferences({ autoSave: checked })}
                       />
                     </SettingPair>
                     <SettingPair
@@ -887,20 +887,22 @@ export default function SetupDialog({
                       label="Restore previous session"
                       help="Reopen your projects, tabs, and layout after restarting TeXtra."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Restore previous session"
-                        value={preferences.restoreSession ? 'on' : 'off'}
-                        onChange={(value) => updatePreferences({ restoreSession: value === 'on' })}
+                        checked={preferences.restoreSession}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ restoreSession: checked })
+                        }
                       />
                     </SettingPair>
                     <SettingPair
                       label="Preview tabs"
                       help="Open unedited files in a reusable tab until you make a change."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Preview tabs"
-                        value={preferences.previewTabs ? 'on' : 'off'}
-                        onChange={(value) => updatePreferences({ previewTabs: value === 'on' })}
+                        checked={preferences.previewTabs}
+                        onCheckedChange={(checked) => updatePreferences({ previewTabs: checked })}
                       />
                     </SettingPair>
                     <SettingPair
@@ -923,20 +925,20 @@ export default function SetupDialog({
                   <h3>Snippets & Symbols</h3>
                   <div className="settings-pairs">
                     <SettingPair label="Math Symbols open by default">
-                      <RadioChoice
+                      <SettingSwitch
                         label="Math Symbols open by default"
-                        value={preferences.snippetsSymbolsOpenDefault ? 'on' : 'off'}
-                        onChange={(value) =>
-                          updatePreferences({ snippetsSymbolsOpenDefault: value === 'on' })
+                        checked={preferences.snippetsSymbolsOpenDefault ?? false}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ snippetsSymbolsOpenDefault: checked })
                         }
                       />
                     </SettingPair>
                     <SettingPair label="Templates & Snippets open by default">
-                      <RadioChoice
+                      <SettingSwitch
                         label="Templates & Snippets open by default"
-                        value={preferences.snippetsTemplatesOpenDefault ? 'on' : 'off'}
-                        onChange={(value) =>
-                          updatePreferences({ snippetsTemplatesOpenDefault: value === 'on' })
+                        checked={preferences.snippetsTemplatesOpenDefault ?? false}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ snippetsTemplatesOpenDefault: checked })
                         }
                       />
                     </SettingPair>
@@ -951,10 +953,12 @@ export default function SetupDialog({
                       label="Automatic file history"
                       help="Keep compressed snapshots in .textra/history/ inside each project."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Automatic file history"
-                        value={preferences.historyEnabled ? 'on' : 'off'}
-                        onChange={(value) => updatePreferences({ historyEnabled: value === 'on' })}
+                        checked={preferences.historyEnabled}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ historyEnabled: checked })
+                        }
                       />
                     </SettingPair>
                   </div>
@@ -1022,11 +1026,11 @@ export default function SetupDialog({
                       label="Detect external changes"
                       help="Protects the open buffer when another app edits the file. TeXtra never overwrites the original after detecting a change."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Detect external changes"
-                        value={preferences.externalChangeDetection ? 'on' : 'off'}
-                        onChange={(value) =>
-                          updatePreferences({ externalChangeDetection: value === 'on' })
+                        checked={preferences.externalChangeDetection}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ externalChangeDetection: checked })
                         }
                       />
                     </SettingPair>
@@ -1060,11 +1064,11 @@ export default function SetupDialog({
                       label="Use polling only"
                       help="Use this when file watching is unreliable on network or synchronized folders. Polling may respond less quickly."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Use polling only"
-                        value={preferences.externalChangePollingOnly ? 'on' : 'off'}
-                        onChange={(value) =>
-                          updatePreferences({ externalChangePollingOnly: value === 'on' })
+                        checked={preferences.externalChangePollingOnly}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ externalChangePollingOnly: checked })
                         }
                       />
                     </SettingPair>
@@ -1075,11 +1079,11 @@ export default function SetupDialog({
                       label="Open diff after conflict copy"
                       help="Open a read-only comparison after creating the safety copy."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Open diff after conflict copy"
-                        value={preferences.openDiffAfterConflictCopy ? 'on' : 'off'}
-                        onChange={(value) =>
-                          updatePreferences({ openDiffAfterConflictCopy: value === 'on' })
+                        checked={preferences.openDiffAfterConflictCopy}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ openDiffAfterConflictCopy: checked })
                         }
                       />
                     </SettingPair>
@@ -1094,11 +1098,11 @@ export default function SetupDialog({
                       label="Explain common TeX errors"
                       help="Show a short plain-language explanation and link for recognized build errors."
                     >
-                      <RadioChoice
+                      <SettingSwitch
                         label="Explain common TeX errors"
-                        value={preferences.commonProblemHelp ? 'on' : 'off'}
-                        onChange={(value) =>
-                          updatePreferences({ commonProblemHelp: value === 'on' })
+                        checked={preferences.commonProblemHelp}
+                        onCheckedChange={(checked) =>
+                          updatePreferences({ commonProblemHelp: checked })
                         }
                       />
                     </SettingPair>

@@ -52,3 +52,25 @@ export function RadioChoice({
     </fieldset>
   );
 }
+
+export function SettingSwitch({
+  label,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="texlab-toggle setting-switch">
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={label}
+        checked={checked}
+        onChange={(event) => onCheckedChange(event.target.checked)}
+      />
+    </label>
+  );
+}

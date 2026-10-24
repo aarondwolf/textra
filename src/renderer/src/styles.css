@@ -700,41 +700,50 @@
   opacity: 1;
 }
 .help-tooltip-trigger {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 50%;
-  color: var(--muted);
+  display: inline-flex;
+  align-items: baseline;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: super;
+  opacity: 0.58;
   background: transparent;
   cursor: help;
 }
 .help-tooltip-trigger:hover,
 .help-tooltip-trigger:focus-visible {
   color: var(--accent);
-  border-color: var(--border);
+  opacity: 1;
   outline: none;
 }
 .setup-dialog button.help-tooltip-trigger {
-  width: 20px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 50%;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--faint);
+  font-size: 9px;
   font-weight: 600;
+  line-height: 1;
+  vertical-align: super;
+  opacity: 0.58;
 }
 .setup-dialog button.help-tooltip-trigger:hover,
 .setup-dialog button.help-tooltip-trigger:focus-visible {
   color: var(--accent);
-  background: var(--hover);
-  border-color: var(--border);
+  background: transparent;
+  opacity: 1;
 }
 .help-tooltip-content {
   z-index: 1000;

@@ -1,5 +1,12 @@
 # Known issues
 
+- 2026-10-25 collaboration milestone remains incomplete: plain-file auto-merge is
+  intentionally deferred and uses manual review; watcher/outbox failure injection,
+  delayed-sidecar/copy-folder cases, concurrent history-index mutation, and
+  macOS/Linux gates remain unverified on `feature/crdt`. The Windows native suite
+  includes and passes a two-profile shared-folder collaboration case; see
+  `docs/TESTING.md`.
+
 - 2026-10-24 UI audit follow-up: no reproducible UI defects remain from the
   requested views. The app has no existing LaTeX logo asset; the current tool icon
   remains. The narrow editor toolbar is horizontally scrollable within its pane.

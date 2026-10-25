@@ -122,6 +122,31 @@ writes and explicit native consent after crashing its disposable renderer. The c
 test intentionally emits a renderer-process-gone diagnostic. These cases do not
 exercise a live AI provider or the user's normal application profile.
 
+## 2026-10-25 Yjs collaboration branch verification
+
+- `npm test -- --cache=false`: 74 files, 736 tests passed. Vitest's default cache
+  directory was held busy in the Dropbox checkout, so this run disabled only the
+  cache.
+- `npm run typecheck`, `npm run lint`, and `npm run format:check`: passed.
+- `TEXTRA_PRESERVE_RENDERER_OUTPUT=true npm run build`: passed. The normal build
+  could not remove the existing generated renderer assets directory due to a
+  Windows/Dropbox `EPERM`; preserve-output mode is supported by the Vite config.
+- `npm run test:e2e`: 17 passed, 2 skipped in the serial native suite. Skips are
+  opt-in live AI and the startup benchmark. Existing project editing, real compile
+  and PDF rendering, editor sessions, lifecycle, shell IPC inventory, and UI cases
+  passed. The new `collaboration.spec.ts` case launches two isolated Electron
+  profiles against one real shared project folder, publishes an initial Yjs record,
+  then verifies saved concurrent changes merge while the receiving profile's local
+  typing remains present.
+- `npm run test:dev -- --restart-check`: passed native development startup, theme
+  interaction, CSS HMR, preload reload, main restart, and preference restoration.
+- Focused Yjs, collaboration-storage, policy, and history tests pass 39/39. The
+  Yjs coverage checks concurrent update convergence, duplicate delivery, local
+  undo isolation, save captures, and discard. Plain-file auto-merge remains
+  deliberately deferred; outbox/publication failure injection, delayed-sidecar
+  reconciliation, concurrent history-index mutation, and copied-folder tests remain
+  open integration gates.
+
 ## Remaining gate checks
 
 The 2026-10-24 Electron architecture milestone passed 704 unit/integration tests

@@ -1,9 +1,34 @@
 # Current state
 
+2026-10-25 Yjs collaboration implementation (in progress, `feature/crdt`):
+
+- Commits `eddee9a` (local conflict policy) and `0994f35` (recoverable History
+  receipts) are complete. Current working slice adds bounded portable Yjs state
+  records, per-profile outbox recovery, split shared/local document sessions,
+  y-monaco binding, Y.UndoManager, guarded save integration, policy UI, and a
+  watcher path that auto-applies only matching durable Yjs records after recovery
+  snapshots. Discard resets unpublished local operations to accepted shared state.
+- Plain-file auto-merge is explicitly deferred. All unmatched plain-file changes,
+  mismatched records, competing initialization, deletion, rename, and unsupported
+  formats use manual review. The evaluated `node-diff3` dependency was removed
+  until a thin safe Yjs edit translation can be demonstrated.
+- Evidence: `npm test -- --cache=false` passes 736/736; typecheck, lint and format
+  pass; build passes with `TEXTRA_PRESERVE_RENDERER_OUTPUT=true`; native suite is
+  17 passed / 2 skipped, including the new two-profile shared-folder merge test;
+  `npm run test:dev -- --restart-check` passes. Focused collaboration/policy/history
+  coverage passes 39/39. Exact evidence is in `docs/TESTING.md`.
+- Still open: watcher/outbox fault injection, delayed-sidecar and copied-folder
+  scenarios, concurrent history-index mutation, and macOS/Linux gates.
+  Plain-file auto-merge is intentionally deferred. This work remains a partial
+  milestone until those collaboration-specific integration gates are addressed.
+- Next: review and commit validated implementation slices; retain the deferred
+  plain-file merge and remaining platform/storage integration gates in the status.
+
 2026-10-25 Collaboration foundation (in progress, `feature/crdt`):
 
-- Selected Yjs 13.6.33, y-monaco 0.1.6 and node-diff3 3.2.1; decision and
-  provider/plain-file limitations are recorded in `docs/decisions/CRDT-COLLABORATION.md`.
+- Selected Yjs 13.6.33 and y-monaco 0.1.6; node-diff3 3.2.1 was evaluated but
+  removed because plain-file-to-Yjs edit translation is deferred. Decision and
+  provider limitations are recorded in `docs/decisions/CRDT-COLLABORATION.md`.
 - Added a typed conflict-policy API and app-local persistence keyed by a digest of
   each canonical project root. Default is manual review. This foundation has no
   UI and background merging is not active yet.
@@ -11,8 +36,8 @@
   passes 2/2 when run with desktop filesystem permissions. Sandbox execution blocks
   the atomic rename. Initial full-suite attempt hit sandbox EACCES in existing
   localhost and filesystem integration tests; full-suite result remains unverified.
-- Next: add bounded portable collaboration record storage and mandatory recovery
-  receipts, then wire Yjs sessions, guarded save/merge, policy UI, and native tests.
+- This foundation has since been extended by the current working slice; see the
+  current collaboration entry above for status and remaining gates.
 
 2026-10-25 Recovery history slice:
 
@@ -25,7 +50,7 @@
 - Evidence: typecheck passes; `npm test -- tests/unit/history.test.ts` passes 32/32
   with desktop filesystem permissions. New coverage checks independent discovery,
   pruning protection, and delayed-receipt deletion.
-- Next: portable Yjs record store and document session integration.
+- This recovery-history slice is committed as `0994f35`.
 
 2026-10-24 Welcome page recent-project layout:
 

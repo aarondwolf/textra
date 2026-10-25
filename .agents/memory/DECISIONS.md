@@ -1,5 +1,17 @@
 # Decisions
 
+- 2026-10-25 Background collaboration implementation:
+  - Yjs 13.x stores CRDT operations; y-monaco binds editor models and
+    `Y.UndoManager` tracks local edits. Shared accepted state remains separate from
+    editable local state so unsaved typing is not published by incoming merges.
+  - Save records are immutable `.textra/crdt` files; a non-portable userData
+    outbox is recoverable only after the guarded writer confirms the captured
+    revision. Incoming records require matching `.tex` revision, document init,
+    and mandatory recovery snapshots before applying.
+  - `node-diff3` was evaluated but not retained as a dependency because this slice
+    lacks a proven thin mapping from merge regions to Yjs edits. Unmatched plain
+    files stay in manual review; do not build a custom diff engine.
+
 - 2026-10-24 Electron audit implementation (user-approved comprehensive plan):
   - One instance per user profile; acquire the lock before loading services. A second
     launch focuses or recreates the primary window instead of writing shared stores.

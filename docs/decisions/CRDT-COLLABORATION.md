@@ -6,9 +6,12 @@ Date: 2026-10-25
 
 - Use Yjs 13.x for document state, update encoding/application, state vectors,
   and `Y.UndoManager`; use `y-monaco` for the editor binding.
-- Use `node-diff3` for plain-file three-way merge regions. Accept only a fully
-  conflict-free result. If the baseline or edit provenance cannot be established,
-  retain the buffer and use manual review.
+- Add `y-protocols` explicitly because `y-monaco` 0.1.6 imports its `Awareness`
+  type at runtime without declaring the dependency. Alias its legacy Monaco import
+  to the package export already used by TeXtra.
+- Keep unmatched plain-file edits in manual review. `node-diff3` was evaluated as
+  a suitable region-producing merge library, but this slice does not yet have a
+  reliable thin translation from its accepted edits into Yjs operations.
 - Keep Chokidar as the filesystem change detector and extend the existing guarded
   save and History services. The renderer owns live editor bindings; main owns
   project storage, validation, atomic writes, and shutdown draining.
@@ -32,19 +35,18 @@ network provider is included.
 ## Plain-file merge assessment
 
 `node-diff3` is MIT-licensed, ships ESM and CJS, and exposes structured `ok` and
-`conflict` regions through `diff3Merge`. It is selected for line-preserving inputs
-and overlap detection. `merge()`'s marker output will not be used. The adapter
-will only translate an accepted conflict-free result into Yjs text changes when
-its captured baseline is still current. Ambiguous import provenance, unsupported
-edit mapping, or exhausted limits falls back to manual review; no custom diff3
+`conflict` regions through `diff3Merge`. It was evaluated for line-preserving
+inputs and overlap detection; `merge()`'s marker output would not be used. The
+dependency is deferred until conflict-free regions can be translated into Yjs
+operations using a thin adapter and a captured baseline. No custom diff3
 algorithm or distributed reconciliation subsystem will be built.
 
 ## Deliberately deferred
 
 - Network collaboration, presence, remote cursors, live database synchronization,
   automatic compaction, recovery-retention controls, and formats beyond `.tex`.
-- Plain-file auto-merge when a reliable baseline-to-Yjs edit translation cannot
-  be proven with the selected library and a thin adapter.
+- Plain-file auto-merge; all external plain-file edits currently require manual
+  review.
 - Recovery metadata editing and a custom distributed history catalog.
 
 ## Limits

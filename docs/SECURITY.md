@@ -136,6 +136,15 @@ replacement. Pruning publishes the surviving index before removing unreferenced 
 Legacy app-data UUID stores remain intact; explicit recovery requires selecting a store
 and confirming its import in a native dialog because the original project identity is unknown.
 
+Yjs collaboration records are also portable plaintext project data under
+`.textra/crdt`; project enumeration excludes this managed subtree. Main validates
+project/file references and record structure, enforces per-record and per-document
+size/count limits, rejects incompatible initialization for publication, and uses
+create-only writes. The renderer receives records through typed narrow IPC and
+never chooses storage paths. A local app-data outbox is not synchronized; startup
+publishes an interrupted entry only when the exact saved file revision is confirmed.
+No networking, live database, credentials, or remote presence data is added.
+
 One instance owns each user profile. Closing awaits the renderer's persistence
 acknowledgement, native discard confirmation when needed, resource cancellation,
 and persistence queues. A failed acknowledgement or flush keeps the window open.

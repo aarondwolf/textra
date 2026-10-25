@@ -51,12 +51,15 @@ Dependencies: renderer -> shared/preload bridge -> main handlers -> services -> 
 Services do not depend on renderer. Build processes use argument arrays and no
 shell, bounded logs/timeouts, one active build, and no shell escape.
 
-External-change collaboration is being added for `.tex` documents. The default
-manual-review workflow remains the existing write-lock and recovery-copy flow.
-Conflict policy is stored per device in app userData, keyed by a SHA256 digest of
-the canonical project root; portable settings and project files do not carry this
-preference. See [the collaboration decision](decisions/CRDT-COLLABORATION.md) for
-the selected Yjs, Monaco binding, plain-file merge and folder-transport boundaries.
+`.tex` documents can use Yjs sessions bound to Monaco. Shared saved state and the
+editable local state are separate; Save, Compile and autosave publish immutable
+portable records under `.textra/crdt` after the guarded `.tex` write. External
+changes with a matching saved Yjs record are merged after a mandatory History
+recovery snapshot. Manual review remains the default and handles unmatched plain
+file edits, ambiguity, and non-TeX formats. Conflict policy is stored per device
+in app userData, keyed by a SHA256 digest of the canonical project root. See
+[the collaboration decision](decisions/CRDT-COLLABORATION.md) for provider,
+plain-file merge, storage limits, and intentionally deferred behavior.
 
 Startup separates shell, editor, tree, recipe configuration, tool discovery and
 optional-feature readiness. Project opening returns a canonical root token and an

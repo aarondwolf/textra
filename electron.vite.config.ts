@@ -23,6 +23,16 @@ export default defineConfig({
         createHash('sha256').update(process.cwd()).digest('hex').slice(0, 16),
       ),
     plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: [
+        {
+          // y-monaco 0.1.6 uses Monaco's pre-0.57 internal path. Keep the app
+          // and binding on the same supported package export.
+          find: 'monaco-editor/esm/vs/editor/editor.api.js',
+          replacement: 'monaco-editor/editor/editor.api.js',
+        },
+      ],
+    },
     build: {
       minify: true,
       // Allow constrained UI-test hosts to refresh the manifest without
@@ -53,6 +63,8 @@ export default defineConfig({
         '@tanstack/react-virtual',
         'cmdk',
         'diff',
+        'yjs',
+        'y-monaco',
         'jsonc-parser',
         'zod',
         'react-markdown',

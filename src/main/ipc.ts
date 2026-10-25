@@ -53,6 +53,7 @@ import { AgentWorkspaceService } from './services/agent-workspace';
 import { AI_PROVIDERS, isAIProviderId } from '../shared/ai';
 import { AIChatStore, deleteChatRequestSchema } from './services/ai-chats';
 import { ProjectConflictPolicyService } from './services/project-conflict-policy';
+import { CollaborationStorage } from './services/collaboration-storage';
 
 import {
   LifecycleError,
@@ -70,6 +71,7 @@ interface IpcServices {
   preferences: PreferencesStore;
   projects: ProjectService;
   conflictPolicy: ProjectConflictPolicyService;
+  collaboration: CollaborationStorage;
   ai: AIService;
   inlineEdits: AIInlineEditService;
   agentWorkspace: AgentWorkspaceService;
@@ -101,6 +103,7 @@ function isWorkspaceChannel(channel: string): boolean {
       'textra:project:prepare',
       'textra:project:conflict-policy:get',
       'textra:project:conflict-policy:set',
+      'textra:collaboration:records',
       'textra:ai:completion:request',
       'textra:ai:inline-edit:request',
       'textra:ai:assistant:run',
@@ -116,6 +119,7 @@ export function registerApplicationIpc(services: IpcServices): void {
     preferences,
     projects,
     conflictPolicy,
+    collaboration,
     ai,
     inlineEdits,
     agentWorkspace,
@@ -431,11 +435,24 @@ export function registerApplicationIpc(services: IpcServices): void {
   handleRequest<'prepareProject'>('textra:project:prepare', async (id) => {
     await config.ensureProjectConfig(id);
     await history.prune(id);
+    await collaboration.recoverOutbox(id);
   });
   handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
   handleRequest<'saveFile'>('textra:file:save', async (request) => {
+    const outbox = request.collaboration
+      ? await collaboration.prepareOutbox(request, request.collaboration, request.content)
+      : null;
     const snapshot = await projects.saveFile(request);
     await externalEditor.noteLocalSave(snapshot);
+    if (outbox && request.collaboration) {
+      try {
+        await collaboration.publish(request, request.collaboration, request.content);
+        await collaboration.acknowledgeOutbox(outbox);
+      } catch (err) {
+        log('warn', 'collaboration-publication-pending', { code: errorResult(err).code });
+        return { ...snapshot, synchronizationPending: true };
+      }
+    }
     const prefs = await preferences.get();
     if (prefs.historyEnabled) {
       await history
@@ -446,6 +463,9 @@ export function registerApplicationIpc(services: IpcServices): void {
     }
     return snapshot;
   });
+  handleRequest<'getCollaborationRecords'>('textra:collaboration:records', (request) =>
+    collaboration.list(request),
+  );
   handleRequest<'createEntry'>('textra:file:create', (request) => projects.createEntry(request));
   handleRequest<'renameEntry'>('textra:file:rename', async (request) => {
     requireIdleProject();

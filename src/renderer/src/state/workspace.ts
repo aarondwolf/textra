@@ -301,6 +301,14 @@ export function saveDocument(path: string): Promise<boolean> {
   );
 }
 
+function encodeBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  return btoa(binary);
+}
+
 export function documentSavesSettled(): Promise<void> {
   return documentSessions.savesSettled();
 }
@@ -312,11 +320,26 @@ async function saveDocumentOnce(projectId: string, path: string): Promise<boolea
   try {
     if (document.conflict)
       throw new Error('The file changed on disk. Reload it or save your edits to a new file.');
+    const collaboration = documentSessions.collaborationFor(projectId, path);
+    const collabCapture = collaboration?.captureForSave();
+    if (collabCapture && collabCapture.text !== document.content)
+      throw new Error(
+        'The collaborative editor state changed unexpectedly. Save again after it settles.',
+      );
     const result = await window.textra.saveFile({
       projectId: document.projectId,
       path,
       content: document.content,
       expectedRevision: document.revision,
+      ...(collaboration && collabCapture
+        ? {
+            collaboration: {
+              initializationId: collaboration.initializationId,
+              stateBase64: encodeBase64(collabCapture.state),
+              importProvenance: null,
+            },
+          }
+        : {}),
     });
     if (!result.ok) {
       if (result.code === 'CONFLICT' || /changed|conflict|revision/i.test(result.error))
@@ -332,6 +355,18 @@ async function saveDocumentOnce(projectId: string, path: string): Promise<boolea
         }));
       throw new Error(result.error);
     }
+    if (collaboration && collabCapture && capture && documentSessions.owns(capture))
+      collaboration.acknowledgeSaved(collabCapture.state);
+    if (result.value.synchronizationPending)
+      window.dispatchEvent(
+        new CustomEvent('textra:notify', {
+          detail: {
+            message:
+              'Saved to disk; collaboration sync is pending and will retry when the project opens.',
+            tone: 'warning',
+          },
+        }),
+      );
     useWorkspace.setState((state) => ({
       documents: state.documents.map((item) =>
         item.path === path &&
@@ -367,9 +402,20 @@ export async function saveAll(): Promise<boolean> {
   return !hasDirty;
 }
 export async function discardAll(): Promise<void> {
+  if (typeof window.dispatchEvent === 'function')
+    window.dispatchEvent(new Event('textra:collaboration:discard-start'));
+  documentSessions.discardCollaborationLocals();
   useWorkspace.setState((state) => ({
-    documents: state.documents.map((document) => ({ ...document, content: document.savedContent })),
+    documents: state.documents.map((document) => {
+      const accepted =
+        documentSessions
+          .collaborationFor(document.projectId, document.path)
+          ?.sharedText.toString() ?? document.savedContent;
+      return { ...document, content: accepted, savedContent: accepted };
+    }),
   }));
+  if (typeof window.dispatchEvent === 'function')
+    window.dispatchEvent(new Event('textra:collaboration:discard-complete'));
   const result = await window.textra.setDirty(false);
   if (!result.ok) throw new Error(result.error);
 }

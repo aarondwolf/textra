@@ -112,6 +112,7 @@ const api: TextraAPI = {
     ipcRenderer.invoke('textra:project:conflict-policy:get', projectId),
   setProjectConflictPolicy: (request) =>
     ipcRenderer.invoke('textra:project:conflict-policy:set', request),
+  getCollaborationRecords: (request) => ipcRenderer.invoke('textra:collaboration:records', request),
   chooseProject: () => ipcRenderer.invoke('textra:project:choose'),
   refreshProject: (projectId) => ipcRenderer.invoke('textra:project:refresh', projectId),
   prepareProject: (projectId) => ipcRenderer.invoke('textra:project:prepare', projectId),

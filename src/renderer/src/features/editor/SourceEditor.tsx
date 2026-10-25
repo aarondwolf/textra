@@ -36,6 +36,7 @@ import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
 import { editDocument, saveDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
 import { documentSessions } from '../../state/document-sessions';
 import { useUI } from '../../state/ui';
+import { emitTextraEvent } from '../../services/events';
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
   getWorker: () => new EditorWorker(),
@@ -615,6 +616,8 @@ export function SourceEditor({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const collaborationBinding = useRef<{ destroy(): void } | null>(null);
+  const collaborationUndoListener = useRef<(() => void) | null>(null);
   const models = useRef(new Map<string, monaco.editor.ITextModel>());
   const modelOwners = useRef(new Map<string, () => void>());
   const synchronizingModel = useRef(false);
@@ -1332,6 +1335,10 @@ export function SourceEditor({
     const retainedOwners = modelOwners.current;
     return () => {
       disposed = true;
+      collaborationUndoListener.current?.();
+      collaborationUndoListener.current = null;
+      collaborationBinding.current?.destroy();
+      collaborationBinding.current = null;
       cancelPreparation();
       keyboardHost?.removeEventListener('keydown', prepareOnKey, true);
       inlineEdit.current?.dispose();
@@ -1441,6 +1448,157 @@ export function SourceEditor({
       if (current.current && previousView) views.current.set(current.current, previousView);
       current.current = activePath;
       instance.setModel(models.current.get(activePath)!);
+      collaborationUndoListener.current?.();
+      collaborationUndoListener.current = null;
+      collaborationBinding.current?.destroy();
+      collaborationBinding.current = null;
+      const activeModel = models.current.get(activePath);
+      if (activeModel && isTexPath(activePath)) {
+        void (async () => {
+          const policy = await window.textra.getProjectConflictPolicy(active.projectId);
+          if (
+            !policy.ok ||
+            policy.value !== 'background-merge' ||
+            current.current !== activePath ||
+            editor.current !== instance
+          )
+            return;
+          const latest = useWorkspace
+            .getState()
+            .documents.find(
+              (item) => item.projectId === active.projectId && item.path === activePath,
+            );
+          if (!latest || latest.content !== latest.savedContent) return;
+          const recordsResult = await window.textra.getCollaborationRecords({
+            projectId: active.projectId,
+            path: activePath,
+          });
+          if (!recordsResult.ok) throw new Error(recordsResult.error);
+          if (recordsResult.value.competingInitializations) {
+            window.dispatchEvent(
+              new CustomEvent('textra:notify', {
+                detail: {
+                  message:
+                    'This file has competing collaboration histories and needs manual review.',
+                  tone: 'error',
+                },
+              }),
+            );
+            return;
+          }
+          const records = [...recordsResult.value.records].sort((a, b) =>
+            a.createdAt.localeCompare(b.createdAt),
+          );
+          const diskRecord = records.find((record) => record.sourceRevision === latest.revision);
+          if (records.length && !diskRecord) {
+            window.dispatchEvent(
+              new CustomEvent('textra:notify', {
+                detail: {
+                  message: 'The shared history does not match this saved file. Use manual review.',
+                  tone: 'error',
+                },
+              }),
+            );
+            return;
+          }
+          const decodeState = (state: string) => {
+            const bytes = atob(state);
+            return Uint8Array.from(bytes, (character) => character.charCodeAt(0));
+          };
+          const session = await documentSessions.collaboration(
+            active.projectId,
+            activePath,
+            diskRecord ? [decodeState(diskRecord.stateBase64)] : [],
+            diskRecord?.initializationId,
+          );
+          const incoming = records.filter((record) => record.id !== diskRecord?.id);
+          if (incoming.length) {
+            for (;;) {
+              const currentDocument = useWorkspace
+                .getState()
+                .documents.find(
+                  (item) => item.projectId === active.projectId && item.path === activePath,
+                );
+              if (!currentDocument || currentDocument.content !== currentDocument.savedContent)
+                throw new Error('The document changed while recovery was being prepared.');
+              const captured = currentDocument.content;
+              const backup = await window.textra.createFileHistorySnapshot({
+                projectId: active.projectId,
+                path: activePath,
+                content: captured,
+                trigger: 'manual',
+                force: true,
+                purpose: 'recovery',
+                label: 'Before merging saved collaboration updates',
+              });
+              if (!backup.ok) throw new Error(backup.error);
+              const afterBackup = useWorkspace
+                .getState()
+                .documents.find(
+                  (item) => item.projectId === active.projectId && item.path === activePath,
+                );
+              if (afterBackup?.content === captured && afterBackup.savedContent === captured) break;
+            }
+            emitTextraEvent('textra:history:updated');
+            for (const record of incoming) session.applyIncoming(decodeState(record.stateBase64));
+          }
+          const { MonacoBinding } = await import('y-monaco');
+          if (current.current !== activePath || editor.current !== instance) return;
+          const binding = new MonacoBinding(session.localText, activeModel, new Set([instance]));
+          session.trackEditorBinding(binding);
+          collaborationBinding.current = binding;
+          const host = instance.getDomNode();
+          if (host) {
+            const keydown = (event: KeyboardEvent) => {
+              const command = event.ctrlKey || event.metaKey;
+              if (!command || event.altKey) return;
+              const key = event.key.toLowerCase();
+              if (key === 'z') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if (event.shiftKey) session.undoManager.redo();
+                else session.undoManager.undo();
+              } else if (key === 'y' && event.ctrlKey) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                session.undoManager.redo();
+              }
+            };
+            host.addEventListener('keydown', keydown, true);
+            collaborationUndoListener.current = () =>
+              host.removeEventListener('keydown', keydown, true);
+          }
+          if (incoming.length) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            if (current.current === activePath && editor.current === instance) {
+              if (!(await saveDocument(activePath)))
+                throw new Error(
+                  'The shared updates were merged locally; review the file before saving again.',
+                );
+              window.dispatchEvent(
+                new CustomEvent('textra:notify', {
+                  detail: {
+                    message: 'Saved shared changes. A pre-merge copy is available in History.',
+                    tone: 'success',
+                  },
+                }),
+              );
+            }
+          }
+        })().catch((error: unknown) => {
+          window.dispatchEvent(
+            new CustomEvent('textra:notify', {
+              detail: {
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : 'Background collaboration could not be opened.',
+                tone: 'error',
+              },
+            }),
+          );
+        });
+      }
       instance.restoreViewState(views.current.get(activePath) ?? null);
       const enhancedTexFeatures = isTexPath(active.path);
       instance.updateOptions({
@@ -1549,6 +1707,59 @@ export function SourceEditor({
   useEffect(() => {
     window.addEventListener('textra:goto-line', handleGotoLine);
     return () => window.removeEventListener('textra:goto-line', handleGotoLine);
+  }, []);
+
+  useEffect(() => {
+    const discardStart = () => {
+      collaborationUndoListener.current?.();
+      collaborationUndoListener.current = null;
+      collaborationBinding.current?.destroy();
+      collaborationBinding.current = null;
+    };
+    const discardComplete = () => {
+      const instance = editor.current;
+      const path = current.current;
+      if (!instance || !path || !isTexPath(path)) return;
+      const activeDocument = useWorkspace
+        .getState()
+        .documents.find((document) => document.path === path);
+      if (!activeDocument) return;
+      const session = documentSessions.collaborationFor(activeDocument.projectId, path);
+      if (!session) return;
+      void import('y-monaco').then(({ MonacoBinding }) => {
+        if (editor.current !== instance || current.current !== path) return;
+        const model = models.current.get(path);
+        if (!model) return;
+        const binding = new MonacoBinding(session.localText, model, new Set([instance]));
+        session.trackEditorBinding(binding);
+        collaborationBinding.current = binding;
+        const host = instance.getDomNode();
+        if (!host) return;
+        const keydown = (event: KeyboardEvent) => {
+          if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+          const key = event.key.toLowerCase();
+          if (key === 'z') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (event.shiftKey) session.undoManager.redo();
+            else session.undoManager.undo();
+          } else if (key === 'y' && event.ctrlKey) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            session.undoManager.redo();
+          }
+        };
+        host.addEventListener('keydown', keydown, true);
+        collaborationUndoListener.current = () =>
+          host.removeEventListener('keydown', keydown, true);
+      });
+    };
+    window.addEventListener('textra:collaboration:discard-start', discardStart);
+    window.addEventListener('textra:collaboration:discard-complete', discardComplete);
+    return () => {
+      window.removeEventListener('textra:collaboration:discard-start', discardStart);
+      window.removeEventListener('textra:collaboration:discard-complete', discardComplete);
+    };
   }, []);
 
   return (

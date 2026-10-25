@@ -88,6 +88,7 @@ import {
   type TexlabStatus,
 } from '../../shared/api';
 import { useUI } from './state/ui';
+import { documentSessions } from './state/document-sessions';
 import { flushWorkspacePersistence } from './state/shutdown';
 import {
   applyFormatting,
@@ -130,6 +131,7 @@ import { extractPromptContext, moveSectionInLatex } from '../../shared/writing-a
 const loadSourceEditor = () =>
   import('./features/editor/SourceEditor').then((module) => ({ default: module.SourceEditor }));
 const SourceEditor = lazyFeature(loadSourceEditor, 'Editor');
+const backgroundMergeOperations = new Map<string, Promise<boolean>>();
 const ChatPanel = lazyFeature<ComponentProps<typeof import('./features/chat/ChatPanel').ChatPanel>>(
   () => import('./features/chat/ChatPanel').then((module) => ({ default: module.ChatPanel })),
   'Assistant',
@@ -1351,6 +1353,149 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       )
         return;
       if (event.state === 'watching') return;
+      if (event.state === 'stable') {
+        const operationKey = `${event.projectId}\0${event.path}`;
+        if (!backgroundMergeOperations.has(operationKey)) {
+          const operation = (async (): Promise<boolean> => {
+            const policy = await window.textra.getProjectConflictPolicy(event.projectId);
+            if (!policy.ok || policy.value !== 'background-merge') return false;
+            const before = useWorkspace
+              .getState()
+              .documents.find(
+                (document) =>
+                  document.projectId === event.projectId && document.path === event.path,
+              );
+            if (!before || !/\.tex$/i.test(before.path)) return false;
+            const session = documentSessions.collaborationFor(event.projectId, event.path);
+            if (!session) return false;
+            const external = await window.textra.readFile({
+              projectId: event.projectId,
+              path: event.path,
+            });
+            if (!external.ok || !external.value.revision) return false;
+            if (external.value.revision === before.revision) return true;
+            const records = await window.textra.getCollaborationRecords({
+              projectId: event.projectId,
+              path: event.path,
+            });
+            if (!records.ok || records.value.competingInitializations) return false;
+            const matching = records.value.records.filter(
+              (record) =>
+                record.sourceRevision === external.value.revision &&
+                record.initializationId === session.initializationId,
+            );
+            if (!matching.length) return false;
+            const decodeState = (state: string): Uint8Array => {
+              const binary = atob(state);
+              return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+            };
+            const localBackup = await window.textra.createFileHistorySnapshot({
+              projectId: event.projectId,
+              path: event.path,
+              content: before.content,
+              trigger: 'manual',
+              force: true,
+              purpose: 'recovery',
+              label: 'Before merging shared changes',
+            });
+            if (!localBackup.ok) throw new Error(localBackup.error);
+            if (external.value.content !== before.content) {
+              const diskBackup = await window.textra.createFileHistorySnapshot({
+                projectId: event.projectId,
+                path: event.path,
+                content: external.value.content,
+                trigger: 'manual',
+                force: true,
+                purpose: 'recovery',
+                label: 'External file before merging shared changes',
+              });
+              if (!diskBackup.ok) throw new Error(diskBackup.error);
+            }
+            const beforeApply = useWorkspace
+              .getState()
+              .documents.find(
+                (document) =>
+                  document.projectId === event.projectId && document.path === event.path,
+              );
+            if (
+              !beforeApply ||
+              beforeApply.content !== before.content ||
+              beforeApply.revision !== before.revision
+            )
+              return false;
+            for (const record of matching) session.applyIncoming(decodeState(record.stateBase64));
+            const now = useWorkspace.getState();
+            const live = now.documents.find(
+              (document) => document.projectId === event.projectId && document.path === event.path,
+            );
+            if (!live || now.project?.id !== event.projectId || live.revision !== before.revision)
+              return false;
+            useWorkspace.setState((state) => ({
+              documents: state.documents.map((document) =>
+                document.projectId === event.projectId && document.path === event.path
+                  ? {
+                      ...document,
+                      revision: external.value.revision!,
+                      conflict: false,
+                      externalState: null,
+                    }
+                  : document,
+              ),
+            }));
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            if (!(await saveDocument(event.path))) return false;
+            setExternalChange(null);
+            setConflictPath((path) => (path === event.path ? null : path));
+            emitTextraEvent('textra:history:updated');
+            notify('Saved shared changes. A pre-merge copy is available in History.');
+            return true;
+          })()
+            .catch((error: unknown) => {
+              showError(error);
+              return false;
+            })
+            .finally(() => backgroundMergeOperations.delete(operationKey));
+          backgroundMergeOperations.set(operationKey, operation);
+          void operation.then((merged) => {
+            if (merged) return;
+            const latest = useWorkspace
+              .getState()
+              .documents.find(
+                (document) =>
+                  document.projectId === event.projectId && document.path === event.path,
+              );
+            if (!latest) return;
+            markExternalChange(
+              event.path,
+              event.state as Exclude<ExternalFileChangeEvent['state'], 'watching'>,
+            );
+            setExternalChange(event);
+            setConflictPath((existing) => {
+              if (existing) return existing;
+              setConflictSnapshotPath(undefined);
+              setComparison(null);
+              setCompareWhenStable(false);
+              return event.path;
+            });
+          });
+        }
+        return;
+      }
+      if (event.state === 'changing') {
+        void window.textra.getProjectConflictPolicy(event.projectId).then((policy) => {
+          if (policy.ok && policy.value === 'background-merge') {
+            setExternalChange(event);
+            return;
+          }
+          markExternalChange(
+            event.path,
+            event.state as Exclude<ExternalFileChangeEvent['state'], 'watching'>,
+          );
+          setExternalChange(event);
+          setConflictPath((existing) => existing ?? event.path);
+        });
+        return;
+      }
       markExternalChange(event.path, event.state);
       setExternalChange(event);
       setConflictPath((existing) => {

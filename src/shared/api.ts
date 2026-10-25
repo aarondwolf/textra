@@ -221,10 +221,24 @@ export interface FileRef {
 export interface FileSnapshot extends FileRef {
   content: string;
   revision: string;
+  synchronizationPending?: boolean;
 }
 export interface SaveRequest extends FileRef {
   content: string;
   expectedRevision: string;
+  collaboration?: CollaborationSaveRecord;
+}
+export interface CollaborationSaveRecord {
+  initializationId: string;
+  stateBase64: string;
+  importProvenance: string | null;
+}
+export interface CollaborationRecord extends CollaborationSaveRecord {
+  id: string;
+  path: string;
+  sourceRevision: string;
+  exportedTextHash: string;
+  createdAt: string;
 }
 export interface CreateRequest extends FileRef {
   kind: 'file' | 'directory';
@@ -525,6 +539,9 @@ export interface TextraAPI {
     projectId: string;
     policy: ConflictPolicy;
   }): Promise<Result<ConflictPolicy>>;
+  getCollaborationRecords(
+    request: FileRef,
+  ): Promise<Result<{ records: CollaborationRecord[]; competingInitializations: boolean }>>;
   getWindowState(): Promise<Result<WindowState>>;
   controlWindow(action: WindowAction): Promise<Result<void>>;
   onWindowState(listener: (state: WindowState) => void): () => void;

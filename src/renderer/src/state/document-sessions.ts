@@ -17,6 +17,7 @@ export interface AttachedDocumentModel {
 interface Session {
   capture: DocumentCapture;
   model?: AttachedDocumentModel;
+  collaboration?: import('./collaboration-session').CollaborationSession;
 }
 const key = (projectId: string, path: string) => `${projectId}\0${path}`;
 
@@ -93,7 +94,12 @@ export class DocumentSessionController {
       )
         session.model.replace(document.content);
     }
-    for (const id of this.sessions.keys()) if (!open.has(id)) this.sessions.delete(id);
+    for (const [id, session] of this.sessions) {
+      if (!open.has(id)) {
+        session.collaboration?.destroy();
+        this.sessions.delete(id);
+      }
+    }
   }
 
   capture(projectId: string, path: string): DocumentCapture | null {
@@ -111,6 +117,46 @@ export class DocumentSessionController {
     return (
       this.sessions.get(key(capture.projectId, capture.path))?.capture.lifetime === capture.lifetime
     );
+  }
+
+  collaborationFor(
+    projectId: string,
+    path: string,
+  ): import('./collaboration-session').CollaborationSession | null {
+    return this.sessions.get(key(projectId, path))?.collaboration ?? null;
+  }
+
+  discardCollaborationLocals(): void {
+    for (const session of this.sessions.values()) session.collaboration?.discardLocal();
+  }
+
+  async collaboration(
+    projectId: string,
+    path: string,
+    initialStates: readonly Uint8Array[] = [],
+    initializationId?: string,
+  ): Promise<import('./collaboration-session').CollaborationSession> {
+    const id = key(projectId, path);
+    const session = this.sessions.get(id);
+    if (!session) throw new Error('The document is no longer open.');
+    if (session.collaboration) return session.collaboration;
+    const capture = { ...session.capture };
+    const { CollaborationSession } = await import('./collaboration-session');
+    if (!this.owns(capture))
+      throw new Error('The document changed while collaboration was opening.');
+    const collaboration = new CollaborationSession(
+      capture.content,
+      initialStates,
+      initializationId,
+    );
+    const current = this.sessions.get(id);
+    if (!current || current.capture.lifetime !== capture.lifetime) {
+      collaboration.destroy();
+      throw new Error('The document is no longer open.');
+    }
+    current.collaboration ??= collaboration;
+    if (current.collaboration !== collaboration) collaboration.destroy();
+    return current.collaboration;
   }
 
   attach(projectId: string, path: string, model: AttachedDocumentModel): () => void {

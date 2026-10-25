@@ -330,7 +330,8 @@ export class ProjectService {
         if (
           entry.isSymbolicLink() ||
           (!entry.isFile() && !entry.isDirectory()) ||
-          entry.name.startsWith('.textra-save-')
+          entry.name.startsWith('.textra-save-') ||
+          child === '.textra/crdt'
         )
           continue;
         files.push({
@@ -342,7 +343,8 @@ export class ProjectService {
           !initialTree &&
           entry.isDirectory() &&
           !unexpandedNames.has(entry.name.toLowerCase()) &&
-          child !== '.textra/history'
+          child !== '.textra/history' &&
+          child !== '.textra/crdt'
         )
           await walk(child, depth + 1);
       }

@@ -60,7 +60,6 @@
     "jsonc-parser": "3.3.1",
     "material-icon-theme": "5.39.0",
     "monaco-editor": "0.57.0",
-    "node-diff3": "^3.2.1",
     "pdfjs-dist": "6.4.299",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -71,6 +70,7 @@
     "vscode-languageserver-protocol": "^3.18.5",
     "which": "^6.0.1",
     "y-monaco": "^0.1.6",
+    "y-protocols": "^1.0.7",
     "yjs": "^13.6.33",
     "zod": "4.6.7",
     "zustand": "5.0.15"

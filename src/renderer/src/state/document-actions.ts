@@ -1,6 +1,6 @@
 import type { HistorySnapshotSummary, FileSnapshot, Result } from '../../../shared/api';
 import { documentSessions, type DocumentCapture } from './document-sessions';
-import { replaceDocument, useWorkspace } from './workspace';
+import { replaceDocument, saveDocument, useWorkspace } from './workspace';
 import { runLanguageRequest } from './language-requests';
 
 export interface FormattingPreview {
@@ -45,6 +45,27 @@ export async function restoreHistoryDocument(
     recoveryBuffer: original.content,
   });
   if (!result.ok || !capture || !documentSessions.owns(capture)) return result;
+  const collaboration = documentSessions.collaborationFor(projectId, snapshot.path);
+  if (collaboration) {
+    if (!replaceDocument(capture, result.value.content)) return result;
+    useWorkspace.setState((state) => ({
+      documents: state.documents.map((document) =>
+        document.projectId === projectId && document.path === snapshot.path
+          ? {
+              ...document,
+              revision: result.value.revision,
+              // Keep the old editor baseline so the restored text goes through Yjs and save.
+              savedContent: capture.content,
+              conflict: false,
+              externalState: null,
+            }
+          : document,
+      ),
+    }));
+    if (!(await saveDocument(snapshot.path)))
+      return { ok: false, code: 'SAVE_FAILED', error: 'The restored text is still unsaved.' };
+    return result;
+  }
   const unchanged = documentSessions.matches(capture);
   useWorkspace.setState((state) => ({
     documents: state.documents.map((document) =>

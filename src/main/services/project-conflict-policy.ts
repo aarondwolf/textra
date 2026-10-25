@@ -57,11 +57,17 @@ export class ProjectConflictPolicyService {
         entries.some(([key, policy]) => !/^[a-f0-9]{64}$/.test(key) || !validPolicy(policy))
       )
         throw new Error('invalid');
-      return { version: 1, policies: Object.fromEntries(entries) as Record<string, ConflictPolicy> };
+      return {
+        version: 1,
+        policies: Object.fromEntries(entries) as Record<string, ConflictPolicy>,
+      };
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
         return { version: 1, policies: {} };
-      throw new ProjectError('INVALID_SETTINGS', 'Local project collaboration settings are invalid.');
+      throw new ProjectError(
+        'INVALID_SETTINGS',
+        'Local project collaboration settings are invalid.',
+      );
     }
   }
 

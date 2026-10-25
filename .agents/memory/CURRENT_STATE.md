@@ -1,5 +1,19 @@
 # Current state
 
+2026-10-25 Collaboration foundation (in progress, `feature/crdt`):
+
+- Selected Yjs 13.6.33, y-monaco 0.1.6 and node-diff3 3.2.1; decision and
+  provider/plain-file limitations are recorded in `docs/decisions/CRDT-COLLABORATION.md`.
+- Added a typed conflict-policy API and app-local persistence keyed by a digest of
+  each canonical project root. Default is manual review. This foundation has no
+  UI and background merging is not active yet.
+- Evidence: `npm run typecheck` passes; focused `tests/unit/project-conflict-policy.test.ts`
+  passes 2/2 when run with desktop filesystem permissions. Sandbox execution blocks
+  the atomic rename. Initial full-suite attempt hit sandbox EACCES in existing
+  localhost and filesystem integration tests; full-suite result remains unverified.
+- Next: add bounded portable collaboration record storage and mandatory recovery
+  receipts, then wire Yjs sessions, guarded save/merge, policy UI, and native tests.
+
 2026-10-24 Welcome page recent-project layout:
 
 - Fixed the welcome content width to account for its horizontal inset so it cannot

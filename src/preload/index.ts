@@ -108,6 +108,10 @@ const api: TextraAPI = {
     ipcRenderer.invoke('textra:preferences:get') as Promise<Result<Preferences>>,
   setPreferences: (value) =>
     ipcRenderer.invoke('textra:preferences:set', value) as Promise<Result<Preferences>>,
+  getProjectConflictPolicy: (projectId) =>
+    ipcRenderer.invoke('textra:project:conflict-policy:get', projectId),
+  setProjectConflictPolicy: (request) =>
+    ipcRenderer.invoke('textra:project:conflict-policy:set', request),
   chooseProject: () => ipcRenderer.invoke('textra:project:choose'),
   refreshProject: (projectId) => ipcRenderer.invoke('textra:project:refresh', projectId),
   prepareProject: (projectId) => ipcRenderer.invoke('textra:project:prepare', projectId),

@@ -22,6 +22,7 @@ import { BoundedAgentService } from './services/agent';
 import { AgentWorkspaceService } from './services/agent-workspace';
 import { AI_PROVIDERS } from '../shared/ai';
 import { AIChatStore } from './services/ai-chats';
+import { ProjectConflictPolicyService } from './services/project-conflict-policy';
 import { registerApplicationIpc, type RuntimeState } from './ipc';
 import {
   ApplicationTasks,
@@ -123,6 +124,9 @@ const ai = new AIService(
   },
 );
 const projects = new ProjectService(app.getPath('userData'));
+const conflictPolicy = new ProjectConflictPolicyService(app.getPath('userData'), (id) =>
+  projects.getRoot(id),
+);
 const inlineEdits = new AIInlineEditService(ai);
 const agent = new BoundedAgentService(ai);
 const agentWorkspace = new AgentWorkspaceService(projects, agent);
@@ -339,6 +343,7 @@ const initialized = app.whenReady().then(async () => {
   registerApplicationIpc({
     preferences,
     projects,
+    conflictPolicy,
     ai,
     inlineEdits,
     agentWorkspace,

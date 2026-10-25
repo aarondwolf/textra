@@ -52,6 +52,7 @@ import { AIInlineEditService, validateInlineEditRequest } from './services/ai-in
 import { AgentWorkspaceService } from './services/agent-workspace';
 import { AI_PROVIDERS, isAIProviderId } from '../shared/ai';
 import { AIChatStore, deleteChatRequestSchema } from './services/ai-chats';
+import { ProjectConflictPolicyService } from './services/project-conflict-policy';
 
 import {
   LifecycleError,
@@ -68,6 +69,7 @@ export interface RuntimeState {
 interface IpcServices {
   preferences: PreferencesStore;
   projects: ProjectService;
+  conflictPolicy: ProjectConflictPolicyService;
   ai: AIService;
   inlineEdits: AIInlineEditService;
   agentWorkspace: AgentWorkspaceService;
@@ -97,6 +99,8 @@ function isWorkspaceChannel(channel: string): boolean {
     [
       'textra:project:refresh',
       'textra:project:prepare',
+      'textra:project:conflict-policy:get',
+      'textra:project:conflict-policy:set',
       'textra:ai:completion:request',
       'textra:ai:inline-edit:request',
       'textra:ai:assistant:run',
@@ -111,6 +115,7 @@ export function registerApplicationIpc(services: IpcServices): void {
   const {
     preferences,
     projects,
+    conflictPolicy,
     ai,
     inlineEdits,
     agentWorkspace,
@@ -364,6 +369,12 @@ export function registerApplicationIpc(services: IpcServices): void {
     return aiChats.deleteChat(parsed.data);
   });
   handle('textra:preferences:get', 0, () => preferences.get());
+  handleRequest<'getProjectConflictPolicy'>('textra:project:conflict-policy:get', (id) =>
+    conflictPolicy.get(id),
+  );
+  handleRequest<'setProjectConflictPolicy'>('textra:project:conflict-policy:set', (request) =>
+    conflictPolicy.set(request.projectId, request.policy),
+  );
   handle('textra:window:get', 0, () => readWindowState(requireWindow()));
   handle('textra:window:control', 1, (action) => {
     if (action !== 'minimize' && action !== 'toggle-maximize' && action !== 'close')

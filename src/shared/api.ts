@@ -29,6 +29,8 @@ export const PRODUCT_NAME = 'TeXtra';
 export type Theme =
   'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand' | (string & {});
 export type ChktexRunMode = 'save' | 'live';
+/** Policy for external changes to open .tex documents. Local to this device. */
+export type ConflictPolicy = 'manual-review' | 'background-merge';
 export type DiagnosticSeverity = Diagnostic['severity'];
 export interface AppInfo {
   name: string;
@@ -516,6 +518,8 @@ export interface TextraAPI {
   getAppInfo(): Promise<Result<AppInfo>>;
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;
+  getProjectConflictPolicy(projectId: string): Promise<Result<ConflictPolicy>>;
+  setProjectConflictPolicy(request: { projectId: string; policy: ConflictPolicy }): Promise<Result<ConflictPolicy>>;
   getWindowState(): Promise<Result<WindowState>>;
   controlWindow(action: WindowAction): Promise<Result<void>>;
   onWindowState(listener: (state: WindowState) => void): () => void;

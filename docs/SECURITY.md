@@ -1,5 +1,12 @@
 # Security model
 
+Conflict policy is a device-local preference persisted in app userData. The
+renderer passes only an opaque active project ID; main resolves and hashes the
+canonical root before reading or writing policy. Collaboration storage uses
+validated relative project references and bounded immutable records under
+`.textra/crdt`; decoded Yjs state is checked away from the Electron main event
+loop. No network provider or automatic AI/source sharing is introduced.
+
 Renderer uses context isolation, sandbox, disabled Node integration and a CSP.
 Navigation and new windows are denied. Main validates IPC sender and arguments.
 The bridge never exposes raw ipcRenderer or a generic exec operation.

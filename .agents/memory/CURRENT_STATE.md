@@ -1,13 +1,14 @@
 # Current state
 
-2026-10-25 Yjs collaboration implementation (in progress, `feature/crdt`):
+2026-10-25 Yjs collaboration implementation (`feature/crdt`):
 
-- Commits `eddee9a` (local conflict policy) and `0994f35` (recoverable History
-  receipts) are complete. Current working slice adds bounded portable Yjs state
-  records, per-profile outbox recovery, split shared/local document sessions,
-  y-monaco binding, Y.UndoManager, guarded save integration, policy UI, and a
-  watcher path that auto-applies only matching durable Yjs records after recovery
-  snapshots. Discard resets unpublished local operations to accepted shared state.
+- Commits `eddee9a` (local conflict policy), `0994f35` (recoverable History
+  receipts), `6bbbffb` (background Yjs pipeline), `e264148` (policy UI and native
+  collaboration coverage), and `231fab0` (architecture and evidence) are complete.
+  The implementation adds bounded portable Yjs records, per-profile outbox recovery,
+  split shared/local sessions, y-monaco binding, Y.UndoManager, guarded save, and a
+  watcher path that applies matching durable records after recovery snapshots.
+  Discard resets unpublished local operations to accepted shared state.
 - Plain-file auto-merge is explicitly deferred. All unmatched plain-file changes,
   mismatched records, competing initialization, deletion, rename, and unsupported
   formats use manual review. The evaluated `node-diff3` dependency was removed
@@ -21,8 +22,9 @@
   scenarios, concurrent history-index mutation, and macOS/Linux gates.
   Plain-file auto-merge is intentionally deferred. This work remains a partial
   milestone until those collaboration-specific integration gates are addressed.
-- Next: review and commit validated implementation slices; retain the deferred
-  plain-file merge and remaining platform/storage integration gates in the status.
+- Next: exercise outbox/publication failures, delayed-sidecar and copied-folder
+  reconciliation, concurrent history-index mutation, then run macOS/Linux gates.
+  Keep this milestone partial until those integration gates are complete.
 
 2026-10-25 Collaboration foundation (in progress, `feature/crdt`):
 

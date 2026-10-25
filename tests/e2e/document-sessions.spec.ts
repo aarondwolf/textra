@@ -67,6 +67,7 @@ test('approved formatting stays undoable and history restore preserves dirty tex
     await expect(input).toHaveAttribute('aria-autocomplete', 'both');
     await input.focus();
     await page.keyboard.press('Control+End');
+    await page.waitForTimeout(100);
     await page.keyboard.type('\n% New writing');
     await expect(editor).toContainText('% New writing');
     const save = page.getByRole('button', { name: 'Save file', exact: true });
@@ -94,7 +95,8 @@ test('approved formatting stays undoable and history restore preserves dirty tex
     await input.focus();
     await expect(input).toBeFocused();
     await page.keyboard.press('Control+End');
-    await input.pressSequentially(dirtySuffix, { delay: 20 });
+    await page.waitForTimeout(100);
+    await page.keyboard.type(dirtySuffix, { delay: 20 });
     await expect(editor).toContainText('Dirty text must survive history restoration exactly.');
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeEnabled();
     const dirtyText = savedText + dirtySuffix;

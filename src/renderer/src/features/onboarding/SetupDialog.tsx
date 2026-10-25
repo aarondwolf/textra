@@ -21,6 +21,7 @@ import {
   type BuildEngine,
   type ConfigurableTool,
   type CustomTheme,
+  type ConflictPolicy,
   type DiagnosticSeverity,
   type ProjectConfig,
   type SetupLink,
@@ -28,7 +29,12 @@ import {
   type TexlabStatus,
 } from '../../../../shared/api';
 import { preferencesSaved, useUI } from '../../state/ui';
-import { sortProjectTexFiles, useWorkspace } from '../../state/workspace';
+import {
+  documentSavesSettled,
+  dirty,
+  sortProjectTexFiles,
+  useWorkspace,
+} from '../../state/workspace';
 import { Button } from '../../components/Button';
 import { StatusMessage } from '../../components/Layout';
 import { DropdownMenu } from '../../components/DropdownMenu';
@@ -57,7 +63,15 @@ const CompileRecipeEditor = lazy(() =>
 const RecipeDialog = lazy(() => import('./RecipeDialog'));
 
 export type SectionId =
-  'appearance' | 'editor' | 'preferences' | 'shortcuts' | 'tools' | 'compilation' | 'backup' | 'ai';
+  | 'appearance'
+  | 'editor'
+  | 'preferences'
+  | 'shortcuts'
+  | 'tools'
+  | 'compilation'
+  | 'collaboration'
+  | 'backup'
+  | 'ai';
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'editor', label: 'Editor', icon: Code },
@@ -65,6 +79,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = 
   { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
+  { id: 'collaboration', label: 'Collaboration', icon: Files },
   { id: 'ai', label: 'AI Settings', icon: AIChat },
   { id: 'backup', label: 'Import & export', icon: Save },
 ];
@@ -305,7 +320,52 @@ export default function SetupDialog({
 }) {
   const tools = useWorkspace((state) => state.tools);
   const buildRunning = useWorkspace((state) => state.build.running);
+  const project = useWorkspace((state) => state.project);
   const { preferences, updatePreferences, saveState, error: preferenceError } = useUI();
+  const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>('manual-review');
+  const [collaborationError, setCollaborationError] = useState<string | null>(null);
+  const [savingConflictPolicy, setSavingConflictPolicy] = useState(false);
+  useEffect(() => {
+    if (!open || !project) return;
+    let current = true;
+    void window.textra.getProjectConflictPolicy(project.id).then((result) => {
+      if (!current) return;
+      if (result.ok) setConflictPolicy(result.value);
+      else setCollaborationError(result.error);
+    });
+    return () => {
+      current = false;
+    };
+  }, [open, project]);
+  async function changeConflictPolicy(policy: ConflictPolicy): Promise<void> {
+    if (!project || savingConflictPolicy) return;
+    setSavingConflictPolicy(true);
+    setCollaborationError(null);
+    try {
+      await documentSavesSettled();
+      const openDocuments = useWorkspace
+        .getState()
+        .documents.filter((document) => document.projectId === project.id);
+      if (openDocuments.some((document) => dirty(document) || document.conflict))
+        throw new Error(
+          'Save every document and resolve external changes before switching policy.',
+        );
+      if (policy === 'background-merge' && !preferences.externalChangeDetection)
+        throw new Error('Enable external change detection before using background merge.');
+      const result = await window.textra.setProjectConflictPolicy({
+        projectId: project.id,
+        policy,
+      });
+      if (!result.ok) throw new Error(result.error);
+      setConflictPolicy(result.value);
+    } catch (error) {
+      setCollaborationError(
+        error instanceof Error ? error.message : 'Could not change collaboration policy.',
+      );
+    } finally {
+      setSavingConflictPolicy(false);
+    }
+  }
   const aiSaveState = useAISaveState();
   const combinedSaveState = [saveState, aiSaveState].includes('error')
     ? 'error'
@@ -339,7 +399,6 @@ export default function SetupDialog({
   const [newThemeAccentBg, setNewThemeAccentBg] = useState('#293e37');
   const [selectedActionId, setSelectedActionId] = useState('');
   const [recordingShortcutId, setRecordingShortcutId] = useState<string | null>(null);
-  const project = useWorkspace((state) => state.project);
   const projectConfig = useWorkspace((state) => state.projectConfig);
   const workspaceRootFile = useWorkspace((state) => state.rootFile);
   const sortedTexFiles = useMemo(() => {
@@ -501,6 +560,44 @@ export default function SetupDialog({
                     }}
                   />
                 </Suspense>
+              )}
+              {section === 'collaboration' && (
+                <>
+                  <h3>Collaboration</h3>
+                  <p>
+                    The conflict policy is stored on this device for the selected project. Choose
+                    manual review to preserve the existing write lock and comparison workflow.
+                  </p>
+                  {project ? (
+                    <>
+                      <RadioChoice
+                        label="Conflict policy"
+                        value={conflictPolicy}
+                        options={[
+                          { value: 'manual-review', label: 'Manual review' },
+                          { value: 'background-merge', label: 'Background merge' },
+                        ]}
+                        onChange={(value) => void changeConflictPolicy(value as ConflictPolicy)}
+                      />
+                      <p>
+                        Background merge combines saved Yjs updates for .tex files. External edits
+                        without a matching collaboration record, plain-file edits, renames,
+                        deletions and invalid history require manual review. Other file types keep
+                        their current workflow.
+                      </p>
+                      {!preferences.externalChangeDetection && (
+                        <p role="status">
+                          Turn on external change detection in Files settings before selecting
+                          background merge.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p>Open a project to choose its conflict policy.</p>
+                  )}
+                  {savingConflictPolicy && <p role="status">Saving collaboration policy…</p>}
+                  {collaborationError && <p role="alert">{collaborationError}</p>}
+                </>
               )}
               {section === 'appearance' && (
                 <>

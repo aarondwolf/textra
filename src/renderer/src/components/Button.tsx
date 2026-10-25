@@ -36,7 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={[variantClass, className].filter(Boolean).join(' ') || undefined}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
-      title={undefined}
+      title={disabled || busy ? title : undefined}
       {...props}
     />
   );

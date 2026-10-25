@@ -35,6 +35,11 @@ export interface AppInfo {
   version: string;
   platform: string;
 }
+export type WindowAction = 'minimize' | 'toggle-maximize' | 'close';
+export interface WindowState {
+  maximized: boolean;
+  customControls: boolean;
+}
 export interface CustomTheme {
   id: string;
   name: string;
@@ -511,6 +516,9 @@ export interface TextraAPI {
   getAppInfo(): Promise<Result<AppInfo>>;
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;
+  getWindowState(): Promise<Result<WindowState>>;
+  controlWindow(action: WindowAction): Promise<Result<void>>;
+  onWindowState(listener: (state: WindowState) => void): () => void;
   /** Flush renderer-owned persistence before the native close decision. */
   onBeforeClose(listener: (requestId: string) => void): () => void;
   onCloseCancelled(listener: () => void): () => void;

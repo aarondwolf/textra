@@ -90,6 +90,20 @@ const api: TextraAPI = {
     return () => ipcRenderer.removeListener('textra:ai:inline-edit:chunk', receive);
   },
   getAppInfo: () => ipcRenderer.invoke('textra:app-info') as Promise<Result<AppInfo>>,
+  getWindowState: () => ipcRenderer.invoke('textra:window:get'),
+  controlWindow: (action) => ipcRenderer.invoke('textra:window:control', action),
+  onWindowState: (listener) => {
+    const receive = (_event: IpcRendererEvent, state: unknown) => {
+      if (
+        isRecord(state) &&
+        typeof state.maximized === 'boolean' &&
+        typeof state.customControls === 'boolean'
+      )
+        listener({ maximized: state.maximized, customControls: state.customControls });
+    };
+    ipcRenderer.on('textra:window:state', receive);
+    return () => ipcRenderer.removeListener('textra:window:state', receive);
+  },
   getPreferences: () =>
     ipcRenderer.invoke('textra:preferences:get') as Promise<Result<Preferences>>,
   setPreferences: (value) =>

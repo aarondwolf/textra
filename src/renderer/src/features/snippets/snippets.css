@@ -6,11 +6,11 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  padding: 4px 10px 16px;
+  padding: 0 0 16px;
 }
 .palette-search-bar {
   flex-shrink: 0;
-  margin-bottom: 8px;
+  margin: 4px 10px 8px;
 }
 .palette-search-bar input {
   width: 100%;
@@ -30,34 +30,27 @@
 .palette-section {
   flex: 0 0 auto;
   border: 0;
-  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   overflow: hidden;
 }
-.palette-section-header-row {
-  display: flex;
+.palette-lock-btn {
+  display: inline-flex;
+  flex: 0 0 22px;
   align-items: center;
-  justify-content: space-between;
-  padding-right: 8px;
-}
-.palette-section-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 7px 8px;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  border: none;
-  border-radius: 0;
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: left;
+  color: var(--faint);
 }
-.palette-section-header:hover {
+.palette-lock-btn:hover,
+.palette-lock-btn.locked {
   background: var(--hover);
+  color: var(--text);
 }
 .palette-count {
   margin-left: auto;
@@ -85,7 +78,7 @@
   background: var(--hover);
 }
 .palette-section-content {
-  padding: 4px 8px 8px;
+  padding: 6px 10px;
 }
 .palette-symbol-group {
   margin-bottom: 10px;

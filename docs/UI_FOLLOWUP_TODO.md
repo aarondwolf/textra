@@ -2,14 +2,26 @@
 
 Track and verify the requested UI fixes. Blank categories are intentionally clean.
 
+## Caption and section follow-up
+
+- [x] Replace Windows/Linux caption buttons with themed Phosphor controls and Radix
+      tooltips, as approved by the user. Keep native macOS traffic lights.
+- [x] Dim caption controls with modal backdrops, preserve their window actions while
+      Settings is open, and restore brightness on close/reload and theme changes.
+- [x] Remove native tooltips from Snippets and from the replaced caption controls.
+- [x] Use identical shared section-header styling in Snippets, Writing, and History;
+      position the Snippets lock immediately before the count.
+- [x] Verify minimize/maximize/restore, unsaved-close cancellation, tooltip styling,
+      section geometry, lock behavior, dark/light themes, and reload.
+
 ## General UI
 
 - [x] Find and migrate remaining native/default tooltips in Problems, the
       editor formatting toolbar, resizers, and renderer title-bar controls to
       the shared styled Radix tooltip.
-- [x] Make custom renderer title-bar controls use the shared tooltip. Electron's
-      OS-rendered minimize/maximize/close controls cannot be dimmed or have their
-      tooltip surface themed from renderer CSS; that native limitation remains.
+- [x] Use shared styled tooltips for renderer title-bar actions, including the
+      replacement caption buttons. Main validates a fixed window-action allowlist
+      and preserves the existing close/persistence safeguards.
 - [x] Create one shared “Add” button using TeXtra's Button component, subdued
       treatment and dashed border; migrate recipe, snippet, provider, and step
       add actions.

@@ -25,11 +25,11 @@ import {
   CONFIGURABLE_TOOLS,
   PRODUCT_NAME,
   type ConfigurableTool,
-  type Preferences,
   type Result,
   type TextraAPI,
 } from '../shared/api';
 import { isTrustedRendererUrl } from './security';
+import { readWindowState } from './window';
 import { log } from './services/logger';
 import { PreferencesStore } from './services/preferences';
 import { ProjectError, ProjectService, validateRelativePath } from './services/projects';
@@ -85,7 +85,6 @@ interface IpcServices {
   rendererUrl: string;
   requireWindow: () => BrowserWindow;
   requireIdleProject: () => void;
-  syncTitleBarOverlay: (saved: Preferences) => void;
 }
 function isControlChannel(channel: string): boolean {
   return channel === 'textra:close:ack' || channel.endsWith(':cancel');
@@ -129,7 +128,6 @@ export function registerApplicationIpc(services: IpcServices): void {
     rendererUrl,
     requireWindow,
     requireIdleProject,
-    syncTitleBarOverlay,
   } = services;
   function errorResult(error: unknown): { ok: false; error: string; code: string } {
     if (error instanceof AIError) return { ok: false, error: error.message, code: error.code };
@@ -366,17 +364,26 @@ export function registerApplicationIpc(services: IpcServices): void {
     return aiChats.deleteChat(parsed.data);
   });
   handle('textra:preferences:get', 0, () => preferences.get());
+  handle('textra:window:get', 0, () => readWindowState(requireWindow()));
+  handle('textra:window:control', 1, (action) => {
+    if (action !== 'minimize' && action !== 'toggle-maximize' && action !== 'close')
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a supported window action.');
+    const window = requireWindow();
+    if (action === 'minimize') window.minimize();
+    else if (action === 'toggle-maximize') {
+      if (window.isMaximized()) window.unmaximize();
+      else window.maximize();
+    } else window.close(); // The existing close handler owns persistence and discard confirmation.
+  });
   void preferences
     .get()
     .then((saved) => {
       setToolPaths(saved.toolPaths);
-      syncTitleBarOverlay(saved);
     })
     .catch(() => undefined);
   handle('textra:preferences:set', 1, async (value) => {
     const saved = await preferences.set(value);
     setToolPaths(saved.toolPaths);
-    syncTitleBarOverlay(saved);
     if (!saved.texlabEnabled) await texlab.stop();
     return saved;
   });
@@ -889,7 +896,6 @@ export function registerApplicationIpc(services: IpcServices): void {
     if (answer.response !== 1) return null;
     const saved = await preferences.set(next);
     setToolPaths(saved.toolPaths);
-    syncTitleBarOverlay(saved);
     return saved;
   });
   handle('textra:appdata:open', 0, async () => {

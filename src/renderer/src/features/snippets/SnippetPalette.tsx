@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkle } from '@phosphor-icons/react';
+import { Code, MathOperations, Sparkle } from '@phosphor-icons/react';
 import { Check, Copy, Lock, LockOpen, Pencil, Plus, Trash2 } from '../../icons';
 import { insertIntoSource } from '../equations/EquationPalette';
 import { SYMBOL_GROUPS } from '../equations/symbols';
@@ -7,7 +7,7 @@ import { DEFAULT_SNIPPETS, type Snippet } from './snippets';
 import { createSnippetPrompt } from './snippet-prompt';
 import { useUI } from '../../state/ui';
 import { CollapsibleSection } from '../../components/CollapsibleSection';
-import { AddButton } from '../../components/Button';
+import { AddButton, TooltipButton } from '../../components/Button';
 import '../equations/equations.css';
 import './snippets.css';
 
@@ -205,6 +205,8 @@ export default function SnippetPalette({
         <CollapsibleSection
           className="palette-section"
           title="Math Symbols"
+          icon={<MathOperations size={13} aria-hidden="true" />}
+          actionsBeforeCount
           count={filteredSymbolGroups.reduce((acc, g) => acc + g.symbols.length, 0)}
           open={symbolsOpen}
           onOpenChange={setSymbolsOpen}
@@ -212,7 +214,7 @@ export default function SnippetPalette({
           headerRowClassName="palette-section-header-row"
           bodyClassName="palette-section-content"
           headerActions={
-            <button
+            <TooltipButton
               type="button"
               className={`palette-lock-btn ${preferences.snippetsSymbolsOpenDefault ? 'locked' : ''}`}
               title={
@@ -221,6 +223,7 @@ export default function SnippetPalette({
                   : 'Keep open by default: Off (click to keep this section open by default)'
               }
               aria-label="Keep Math Symbols open by default"
+              aria-pressed={Boolean(preferences.snippetsSymbolsOpenDefault)}
               onClick={() => {
                 const next = !preferences.snippetsSymbolsOpenDefault;
                 updatePreferences({ snippetsSymbolsOpenDefault: next });
@@ -228,7 +231,7 @@ export default function SnippetPalette({
               }}
             >
               {preferences.snippetsSymbolsOpenDefault ? <Lock size={12} /> : <LockOpen size={12} />}
-            </button>
+            </TooltipButton>
           }
         >
           {symbolsOpen && (
@@ -238,7 +241,7 @@ export default function SnippetPalette({
                   <h4 className="palette-group-name">{group.name}</h4>
                   <div className={group.wide ? 'symbol-grid wide' : 'symbol-grid'}>
                     {group.symbols.map((symbol) => (
-                      <button
+                      <TooltipButton
                         key={symbol.tex}
                         type="button"
                         className="symbol"
@@ -265,7 +268,7 @@ export default function SnippetPalette({
                         }}
                       >
                         {symbol.glyph ?? symbol.tex}
-                      </button>
+                      </TooltipButton>
                     ))}
                   </div>
                 </div>
@@ -281,6 +284,8 @@ export default function SnippetPalette({
         <CollapsibleSection
           className="palette-section"
           title="Templates & Snippets"
+          icon={<Code size={13} aria-hidden="true" />}
+          actionsBeforeCount
           count={totalSnippetsCount}
           open={snippetsOpen}
           onOpenChange={setSnippetsOpen}
@@ -289,7 +294,7 @@ export default function SnippetPalette({
           bodyClassName="palette-section-content"
           headerActions={
             <div className="palette-header-actions">
-              <button
+              <TooltipButton
                 type="button"
                 className={`palette-lock-btn ${preferences.snippetsTemplatesOpenDefault ? 'locked' : ''}`}
                 title={
@@ -298,6 +303,7 @@ export default function SnippetPalette({
                     : 'Keep open by default: Off (click to keep this section open by default)'
                 }
                 aria-label="Keep Templates & Snippets open by default"
+                aria-pressed={Boolean(preferences.snippetsTemplatesOpenDefault)}
                 onClick={() => {
                   const next = !preferences.snippetsTemplatesOpenDefault;
                   updatePreferences({ snippetsTemplatesOpenDefault: next });
@@ -309,7 +315,7 @@ export default function SnippetPalette({
                 ) : (
                   <LockOpen size={12} />
                 )}
-              </button>
+              </TooltipButton>
             </div>
           }
         >
@@ -336,11 +342,11 @@ export default function SnippetPalette({
                     required
                   />
                   <div className="palette-prompt-actions">
-                    <button type="button" onClick={() => void copySnippetPrompt()}>
+                    <TooltipButton type="button" onClick={() => void copySnippetPrompt()}>
                       {promptCopied ? <Check size={13} /> : <Copy size={13} />}
                       {promptCopied ? 'Copied' : 'Copy prompt'}
-                    </button>
-                    <button
+                    </TooltipButton>
+                    <TooltipButton
                       type="button"
                       className="primary-pill"
                       disabled={!onAskChat}
@@ -348,15 +354,15 @@ export default function SnippetPalette({
                     >
                       <Sparkle size={13} />
                       Ask in Chat
-                    </button>
+                    </TooltipButton>
                   </div>
                   <div className="palette-form-actions">
-                    <button type="button" onClick={() => setIsAdding(false)}>
+                    <TooltipButton type="button" onClick={() => setIsAdding(false)}>
                       Cancel
-                    </button>
-                    <button type="submit" className="primary-pill">
+                    </TooltipButton>
+                    <TooltipButton type="submit" className="primary-pill">
                       Save
-                    </button>
+                    </TooltipButton>
                   </div>
                 </form>
               )}
@@ -371,7 +377,7 @@ export default function SnippetPalette({
                   return (
                     <li key={key} className="snippet-item-wrap">
                       <div className="custom-snippet-item">
-                        <button
+                        <TooltipButton
                           type="button"
                           className={`snippet ${isExpanded ? 'expanded' : ''}`}
                           title={snippet.tex.replace('$0', '')}
@@ -394,7 +400,7 @@ export default function SnippetPalette({
                         >
                           <strong>{snippet.name}</strong>
                           <span>{snippet.description}</span>
-                        </button>
+                        </TooltipButton>
                         <div
                           style={{
                             position: 'absolute',
@@ -404,7 +410,7 @@ export default function SnippetPalette({
                             gap: 2,
                           }}
                         >
-                          <button
+                          <TooltipButton
                             type="button"
                             className="snippet-icon-btn"
                             title="Edit snippet"
@@ -415,8 +421,8 @@ export default function SnippetPalette({
                             }}
                           >
                             <Pencil size={13} />
-                          </button>
-                          <button
+                          </TooltipButton>
+                          <TooltipButton
                             type="button"
                             className="snippet-icon-btn danger"
                             title="Delete custom snippet"
@@ -424,7 +430,7 @@ export default function SnippetPalette({
                             onClick={() => handleDeleteCustomSnippet(idx)}
                           >
                             <Trash2 size={13} />
-                          </button>
+                          </TooltipButton>
                         </div>
                       </div>
 
@@ -453,12 +459,12 @@ export default function SnippetPalette({
                               required
                             />
                             <div className="palette-form-actions">
-                              <button type="button" onClick={() => setEditingIndex(null)}>
+                              <TooltipButton type="button" onClick={() => setEditingIndex(null)}>
                                 Cancel
-                              </button>
-                              <button type="submit" className="primary-pill">
+                              </TooltipButton>
+                              <TooltipButton type="submit" className="primary-pill">
                                 Save
-                              </button>
+                              </TooltipButton>
                             </div>
                           </form>
                         ) : (
@@ -466,7 +472,7 @@ export default function SnippetPalette({
                             <div className="snippet-expanded-header">
                               <span className="snippet-expanded-title">{snippet.name}</span>
                               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                <button
+                                <TooltipButton
                                   type="button"
                                   className="snippet-icon-btn"
                                   title="Edit snippet"
@@ -474,8 +480,8 @@ export default function SnippetPalette({
                                   onClick={() => handleStartEdit(idx, snippet)}
                                 >
                                   <Pencil size={13} />
-                                </button>
-                                <button
+                                </TooltipButton>
+                                <TooltipButton
                                   type="button"
                                   className="snippet-icon-btn danger"
                                   title="Delete custom snippet"
@@ -483,7 +489,7 @@ export default function SnippetPalette({
                                   onClick={() => handleDeleteCustomSnippet(idx)}
                                 >
                                   <Trash2 size={13} />
-                                </button>
+                                </TooltipButton>
                               </div>
                             </div>
                             {snippet.description && (
@@ -491,7 +497,7 @@ export default function SnippetPalette({
                             )}
                             <pre className="snippet-expanded-code">{snippet.tex}</pre>
                             <div className="snippet-expanded-actions">
-                              <button
+                              <TooltipButton
                                 type="button"
                                 className="text-button"
                                 style={{
@@ -504,8 +510,8 @@ export default function SnippetPalette({
                                 onClick={() => insertSnippet(snippet)}
                               >
                                 <Plus size={12} /> Insert
-                              </button>
-                              <button
+                              </TooltipButton>
+                              <TooltipButton
                                 type="button"
                                 className="text-button"
                                 style={{
@@ -518,7 +524,7 @@ export default function SnippetPalette({
                                 onClick={() => void copySnippetCode(snippet.tex)}
                               >
                                 <Copy size={12} /> Copy code
-                              </button>
+                              </TooltipButton>
                             </div>
                           </div>
                         ))}
@@ -533,7 +539,7 @@ export default function SnippetPalette({
 
                   return (
                     <li key={snippet.name} className="snippet-item-wrap">
-                      <button
+                      <TooltipButton
                         type="button"
                         className={`snippet ${isExpanded ? 'expanded' : ''}`}
                         title={snippet.tex.replace('$0', '')}
@@ -562,7 +568,7 @@ export default function SnippetPalette({
                       >
                         <strong>{snippet.name}</strong>
                         <span>{snippet.description}</span>
-                      </button>
+                      </TooltipButton>
 
                       {isExpanded && (
                         <div className="snippet-expanded-card">
@@ -574,7 +580,7 @@ export default function SnippetPalette({
                           )}
                           <pre className="snippet-expanded-code">{snippet.tex}</pre>
                           <div className="snippet-expanded-actions">
-                            <button
+                            <TooltipButton
                               type="button"
                               className="text-button"
                               style={{
@@ -587,8 +593,8 @@ export default function SnippetPalette({
                               onClick={() => insertSnippet(snippet)}
                             >
                               <Plus size={12} /> Insert
-                            </button>
-                            <button
+                            </TooltipButton>
+                            <TooltipButton
                               type="button"
                               className="text-button"
                               style={{
@@ -601,7 +607,7 @@ export default function SnippetPalette({
                               onClick={() => void copySnippetCode(snippet.tex)}
                             >
                               <Copy size={12} /> Copy code
-                            </button>
+                            </TooltipButton>
                           </div>
                         </div>
                       )}

@@ -28,6 +28,8 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
   try {
     application = await electron.launch({ args: ['.'], env });
     const page = await application.firstWindow();
+    const customCaptions = process.platform !== 'darwin';
+    const captionControls = page.getByRole('group', { name: 'Window controls' });
     const rendererErrors: string[] = [];
     page.on('pageerror', (error) => rendererErrors.push(error.message));
     await application.evaluate(({ BrowserWindow }) => {
@@ -73,6 +75,79 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
       await editorPane.evaluate((pane, style) => pane.setAttribute('style', style), savedPaneStyle);
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await expect(page.locator('.source-editor')).toBeVisible();
+    if (customCaptions) {
+      await expect(captionControls).toBeVisible();
+      await expect(captionControls.locator('[title]')).toHaveCount(0);
+      await captionControls.getByRole('button', { name: 'Minimize window' }).hover();
+      await expect(page.getByRole('tooltip')).toHaveText('Minimize window');
+      expect(
+        await page.evaluate(() => window.textra.controlWindow('destroy' as never)),
+      ).toMatchObject({ ok: false, code: 'INVALID_ARGUMENT' });
+      await captionControls.getByRole('button', { name: 'Maximize window' }).click();
+      await expect(captionControls.getByRole('button', { name: 'Restore window' })).toBeVisible();
+      expect(
+        await application.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].isMaximized(),
+        ),
+      ).toBe(true);
+      await captionControls.getByRole('button', { name: 'Restore window' }).click();
+      await expect(captionControls.getByRole('button', { name: 'Maximize window' })).toBeVisible();
+      await captionControls.getByRole('button', { name: 'Minimize window' }).click();
+      await expect
+        .poll(() =>
+          application!.evaluate(({ BrowserWindow }) =>
+            BrowserWindow.getAllWindows()[0].isMinimized(),
+          ),
+        )
+        .toBe(true);
+      await application.evaluate(({ BrowserWindow }) => {
+        const nativeWindow = BrowserWindow.getAllWindows()[0];
+        nativeWindow.restore();
+        nativeWindow.focus();
+      });
+
+      const editorInput = page.getByRole('textbox', { name: 'LaTeX source editor', exact: true });
+      await expect(editorInput).toHaveAttribute('aria-autocomplete', 'both');
+      await editorInput.focus();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.insertText('\n% Unsaved caption-close fixture.');
+      const save = page.getByRole('button', { name: 'Save file', exact: true });
+      await expect(save).toBeEnabled();
+      await application.evaluate(({ dialog, BrowserWindow }) => {
+        const nativeWindow = BrowserWindow.getAllWindows()[0];
+        const original = dialog.showMessageBox;
+        Reflect.set(nativeWindow, 'restoreTestCloseDialog', () => {
+          dialog.showMessageBox = original;
+        });
+        dialog.showMessageBox = async (...args: unknown[]) => {
+          const options = args.at(-1);
+          if (options && typeof options === 'object' && 'message' in options)
+            Reflect.set(nativeWindow, 'captionCloseMessage', options.message);
+          return { response: 0, checkboxChecked: false };
+        };
+      });
+      await captionControls.getByRole('button', { name: 'Close window' }).click();
+      await expect
+        .poll(() =>
+          application!.evaluate(
+            ({ BrowserWindow }) =>
+              Reflect.get(BrowserWindow.getAllWindows()[0], 'captionCloseMessage') as
+                string | undefined,
+          ),
+        )
+        .toBe('Discard unsaved edits and close TeXtra?');
+      await expect(page.getByText('Saving session before closing…')).toBeHidden();
+      await expect(page.locator('.source-editor')).toContainText('Unsaved caption-close fixture.');
+      await save.click();
+      await expect(save).toBeDisabled();
+      await application.evaluate(({ BrowserWindow }) => {
+        const restore: unknown = Reflect.get(
+          BrowserWindow.getAllWindows()[0],
+          'restoreTestCloseDialog',
+        );
+        if (typeof restore === 'function') restore();
+      });
+    }
     const fontSizeControl = page.locator('.editor-format-font-size');
     const wrapControl = page.locator('.editor-format-wrap-control');
     const [fontSizeBounds, wrapBounds] = await Promise.all([
@@ -98,6 +173,49 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await outlineSection.click();
     await expect(outlineSection).toHaveAttribute('aria-expanded', 'false');
     await outlineSection.click();
+    await page.locator('.source-editor').hover();
+    const sharedHeaderStyle = await outlineSection.evaluate((header) => {
+      const style = getComputedStyle(header);
+      return {
+        height: style.height,
+        padding: style.padding,
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        color: style.color,
+        borderRadius: style.borderRadius,
+      };
+    });
+    await page.getByRole('button', { name: 'Snippets & Symbols', exact: true }).click();
+    const symbols = page.getByRole('button', { name: 'Math Symbols', exact: true });
+    expect(
+      await symbols.evaluate((header) => {
+        const style = getComputedStyle(header);
+        return {
+          height: style.height,
+          padding: style.padding,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          color: style.color,
+          borderRadius: style.borderRadius,
+        };
+      }),
+    ).toEqual(sharedHeaderStyle);
+    const symbolsSection = page.locator('.palette-section').first();
+    const lock = symbolsSection.getByRole('button', { name: 'Keep Math Symbols open by default' });
+    await expect(lock).not.toHaveAttribute('title');
+    await expect(page.locator('.snippet-palette [title]')).toHaveCount(0);
+    const [lockBounds, countBounds] = await Promise.all([
+      lock.boundingBox(),
+      symbolsSection.locator('.collapsible-section-count').boundingBox(),
+    ]);
+    expect(lockBounds).not.toBeNull();
+    expect(countBounds).not.toBeNull();
+    expect(lockBounds!.x + lockBounds!.width).toBeLessThan(countBounds!.x);
+    await lock.click();
+    await expect(lock).toHaveAttribute('aria-pressed', 'true');
+    await expect(symbols).toHaveAttribute('aria-expanded', 'true');
+    await page.screenshot({ path: test.info().outputPath('snippets-shared-sections.png') });
+    await lock.click();
     await page.getByRole('button', { name: 'History & Projects' }).click();
     const historySection = page.getByRole('button', { name: 'File History', exact: true });
     const recentProjectsSection = page.getByRole('button', {
@@ -170,6 +288,14 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+    if (customCaptions) {
+      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466/);
+      await captionControls.getByRole('button', { name: 'Minimize window' }).hover();
+      await expect(page.getByRole('tooltip')).toHaveText('Minimize window');
+      await captionControls.getByRole('button', { name: 'Maximize window' }).click();
+      await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
+      await captionControls.getByRole('button', { name: 'Restore window' }).click();
+    }
     const theme = page.getByRole('button', { name: 'Theme', exact: true });
     await theme.click();
     const themeMenu = page.getByRole('menu', { name: 'Theme', exact: true });
@@ -183,6 +309,10 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await page.screenshot({ path: test.info().outputPath('settings-theme-menu.png') });
     await themeMenu.getByRole('menuitemradio', { name: 'Light', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    if (customCaptions) {
+      await expect(captionControls).toHaveCSS('background-color', 'rgb(239, 238, 233)');
+      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466/);
+    }
     await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('settings-light.png') });
     await theme.click();
@@ -238,6 +368,7 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
       await page.screenshot({ path: test.info().outputPath(screenshot) });
     }
     await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+    if (customCaptions) await expect(captionControls).toHaveCSS('filter', 'brightness(1)');
 
     const tabsMenuButton = page.getByRole('button', { name: 'Preview menu', exact: true });
     await application.evaluate(({ BrowserWindow }) => {
@@ -257,6 +388,11 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await views.getByRole('button', { name: 'Problems', exact: true }).click();
     await expect(views).toBeHidden();
     await expect(page.getByRole('tabpanel')).toContainText('No diagnostics yet.');
+    await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
+    if (customCaptions) await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466/);
+    await page.reload();
+    await expect(page.getByRole('main', { name: 'Document workspace' })).toBeVisible();
+    if (customCaptions) await expect(captionControls).toHaveCSS('filter', 'brightness(1)');
     expect(rendererErrors).toEqual([]);
   } finally {
     await application?.close();

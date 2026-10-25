@@ -1,5 +1,13 @@
-import { createContext, forwardRef, useContext, type ComponentProps, type ReactNode } from 'react';
+import {
+  createContext,
+  forwardRef,
+  useContext,
+  useEffect,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
 import * as RadixDialog from '@radix-ui/react-dialog';
+import { useWindowChrome } from '../state/window-chrome';
 
 const OverlayDepth = createContext(0);
 
@@ -31,6 +39,12 @@ const LayeredOverlay = forwardRef<HTMLDivElement, OverlayProps>(function Layered
   { style, ...props },
   ref,
 ) {
+  useEffect(() => {
+    useWindowChrome.getState().changeModalCount(1);
+    return () => {
+      useWindowChrome.getState().changeModalCount(-1);
+    };
+  }, []);
   return (
     <RadixDialog.Overlay
       ref={ref}
@@ -42,7 +56,7 @@ const LayeredOverlay = forwardRef<HTMLDivElement, OverlayProps>(function Layered
 
 type ContentProps = ComponentProps<typeof RadixDialog.Content>;
 const LayeredContent = forwardRef<HTMLDivElement, ContentProps>(function LayeredContent(
-  { style, ...props },
+  { style, onPointerDownOutside, ...props },
   ref,
 ) {
   return (
@@ -50,6 +64,12 @@ const LayeredContent = forwardRef<HTMLDivElement, ContentProps>(function Layered
       ref={ref}
       {...props}
       style={{ ...style, zIndex: useOverlayZIndex('dialog') }}
+      onPointerDownOutside={(event) => {
+        const target = event.detail.originalEvent.target;
+        if (target instanceof Element && target.closest('[data-window-controls]'))
+          event.preventDefault();
+        else onPointerDownOutside?.(event);
+      }}
     />
   );
 });

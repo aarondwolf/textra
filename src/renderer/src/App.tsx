@@ -39,6 +39,7 @@ import type { SectionId } from './features/onboarding/SetupDialog';
 import { ToastViewport } from './features/notifications/ToastViewport';
 import { installShutdown, useShutdown } from './state/shutdown';
 import { AppTooltip } from './components/HelpTooltip';
+import { WindowControls } from './components/WindowControls';
 
 const SetupDialog = lazyFeature(() => import('./features/onboarding/SetupDialog'), 'Settings');
 
@@ -707,6 +708,7 @@ export function App() {
               </button>
             </AppTooltip>
           </div>
+          <WindowControls />
         </header>
         {error && (
           <div className="error-banner" role="alert">

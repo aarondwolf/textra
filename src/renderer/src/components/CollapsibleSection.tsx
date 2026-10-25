@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { ChevronDown, ChevronRight } from '../icons';
+import './collapsible-section.css';
 
 export interface CollapsibleSectionProps {
   title: string;
@@ -15,6 +16,7 @@ export interface CollapsibleSectionProps {
   headerRowClassName?: string;
   bodyClassName?: string;
   headerActions?: ReactNode;
+  actionsBeforeCount?: boolean;
   style?: CSSProperties;
   headerStyle?: CSSProperties;
   bodyStyle?: CSSProperties;
@@ -35,6 +37,7 @@ export function CollapsibleSection({
   headerRowClassName,
   bodyClassName,
   headerActions,
+  actionsBeforeCount = false,
   style,
   headerStyle,
   bodyStyle,
@@ -45,14 +48,20 @@ export function CollapsibleSection({
       asChild
       open={open}
       onOpenChange={onOpenChange}
-      className={[className, open ? 'expanded' : 'collapsed'].filter(Boolean).join(' ')}
+      className={['collapsible-section', className, open ? 'expanded' : 'collapsed']
+        .filter(Boolean)
+        .join(' ')}
     >
       <section style={style}>
-        <div className={headerRowClassName}>
+        <div
+          className={['collapsible-section-header-row', headerRowClassName]
+            .filter(Boolean)
+            .join(' ')}
+        >
           <Collapsible.Trigger asChild>
             <button
               type="button"
-              className={headerClassName}
+              className={['collapsible-section-toggle', headerClassName].filter(Boolean).join(' ')}
               aria-label={title}
               style={headerStyle}
             >
@@ -66,10 +75,17 @@ export function CollapsibleSection({
                 <span>{title}</span>
               </span>
               {detail}
-              {count !== undefined && <span className="writing-count">{count}</span>}
+              {!actionsBeforeCount && count !== undefined && (
+                <span className="writing-count collapsible-section-count">{count}</span>
+              )}
             </button>
           </Collapsible.Trigger>
           {headerActions}
+          {actionsBeforeCount && count !== undefined && (
+            <span className="writing-count collapsible-section-count collapsible-section-external-count">
+              {count}
+            </span>
+          )}
         </div>
         <Collapsible.Content className={bodyClassName} style={bodyStyle}>
           {children}

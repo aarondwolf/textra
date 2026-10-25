@@ -61,6 +61,12 @@ extensions follow the first editor frame. Shared button, pane-header, compile,
 problems, field and dialog components retain existing classes and layout.
 Core editor host styles load with the shell. Monaco's ghost-text contribution
 registers before editor construction; AI adapters and request handlers remain deferred.
+Windows/Linux caption buttons render with shared icons and Radix tooltips. A narrow,
+validated IPC exposes minimize, toggle-maximize, and close; close goes through the
+existing shutdown coordinator. Main publishes maximize-state changes to preload.
+Renderer-only modal state dims the caption controls while keeping their actions
+available above dialog backdrops. macOS retains native window buttons. Custom caption
+buttons do not provide Windows' native maximize-hover Snap Layout flyout.
 Project analysis reads at most four files per yielded batch, prioritizes the active
 file and its dependencies, and caches parses by content with a 300ms edit debounce.
 

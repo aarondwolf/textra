@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, mkdir, lstat } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { type Preferences } from '../shared/api';
 import { isTrustedRendererUrl } from './security';
 import { log } from './services/logger';
 import { PreferencesStore } from './services/preferences';
@@ -30,7 +29,7 @@ import {
   ShutdownCoordinator,
   WorkspaceSession,
 } from './lifecycle';
-import { applyTitleBarOverlay, createSecureWindow } from './window';
+import { createSecureWindow } from './window';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const rendererFile = join(directory, '../renderer/index.html');
@@ -188,10 +187,6 @@ function requireWindow(): BrowserWindow {
   return mainWindow;
 }
 
-function syncTitleBarOverlay(saved: Preferences): void {
-  applyTitleBarOverlay(mainWindow, saved);
-}
-
 async function flushPersistence(): Promise<void> {
   await Promise.all([
     preferences.flush(),
@@ -255,10 +250,6 @@ function createWindow(): void {
     return answer.response === 1;
   };
   mainWindow = window;
-  void preferences
-    .get()
-    .then(syncTitleBarOverlay)
-    .catch(() => undefined);
   window.on('close', (event) => {
     if (shutdown.ready) return;
     event.preventDefault();
@@ -365,7 +356,6 @@ const initialized = app.whenReady().then(async () => {
     rendererUrl,
     requireWindow,
     requireIdleProject,
-    syncTitleBarOverlay,
   });
   createWindow();
   app.on('activate', () => {

@@ -1576,6 +1576,51 @@ kbd {
   color: var(--text);
 }
 
+.window-caption-controls {
+  position: fixed;
+  top: 0;
+  right: 4px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 31px;
+  padding: 0 2px;
+  background: var(--sidebar);
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+.window-caption-controls .window-caption-button {
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+}
+.window-caption-controls .window-caption-button:hover {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--text);
+}
+.window-caption-controls .window-caption-close:hover {
+  border-color: #ff6b6b66;
+  background: #ff6b6b22;
+  color: #ff6b6b;
+}
+.window-caption-error {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+:root[data-window-controls='native'] .window-titlebar {
+  padding-left: 80px;
+  padding-right: 12px;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -3524,9 +3569,9 @@ select option {
 
 /* Consistent control shape and interaction states across feature stylesheets. */
 :root
-  button:not(.icon-button):not(.icon-button-small):not(.setting-switch-root):not(
-    [role='switch']
-  ):not([role='radio']):not([role='tab']):not([data-radius='pill']):not(
+  button:not(.collapsible-section-toggle):not(.icon-button):not(.icon-button-small):not(
+    .setting-switch-root
+  ):not([role='switch']):not([role='radio']):not([role='tab']):not([data-radius='pill']):not(
     .editor-layout-presets button
   ):not(.ai-mode-switch button):not(.recipe-mode button):not(.preview-tabs button):not(
     .compile-control button

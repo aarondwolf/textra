@@ -294,3 +294,5 @@
 - 2026-10-21: Settings v5: Assistant takes the saved Chat model, else Agent (an obsolete
   Codestral ref is skipped). Unavailable selections are preserved, never substituted. A running
   assistant request is cancelled when its connection's tool capability changes.
+
+- 2026-10-24 User-approved caption replacement: use Phosphor renderer controls and Radix tooltips on Windows/Linux, with native macOS traffic lights. The user accepted replacing native controls despite the missing maximize-hover Snap Layout flyout. Keep all OS actions in validated, fixed main-process handlers; Close must use the existing shutdown and unsaved-work safeguards. Modal dimming stays session-only in the renderer. Sidebar disclosure headers share one stylesheet; Snippets places its independent lock before the count.

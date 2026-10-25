@@ -35,6 +35,15 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await application.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0].setSize(1440, 940);
     });
+    const emptyFileState = page.locator('.sidebar-empty-home');
+    await expect(emptyFileState).toBeVisible();
+    const [emptyIconBounds, emptyTitleBounds] = await Promise.all([
+      emptyFileState.locator('.panel-state-icon').boundingBox(),
+      emptyFileState.locator('.panel-state-copy strong').boundingBox(),
+    ]);
+    expect(emptyIconBounds).not.toBeNull();
+    expect(emptyTitleBounds).not.toBeNull();
+    expect(emptyIconBounds!.y + emptyIconBounds!.height).toBeLessThan(emptyTitleBounds!.y);
     await application.evaluate(({ dialog }, selectedRoot) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedRoot] });
     }, projectRoot);
@@ -211,6 +220,16 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     expect(lockBounds).not.toBeNull();
     expect(countBounds).not.toBeNull();
     expect(lockBounds!.x + lockBounds!.width).toBeLessThan(countBounds!.x);
+    await lock.hover();
+    const headerHoverStyle = await symbols.evaluate((header) => {
+      const row = header.parentElement;
+      return {
+        row: row ? getComputedStyle(row).backgroundColor : '',
+        trigger: getComputedStyle(header).backgroundColor,
+      };
+    });
+    expect(headerHoverStyle.row).not.toBe('rgba(0, 0, 0, 0)');
+    expect(headerHoverStyle.trigger).toBe('rgba(0, 0, 0, 0)');
     await lock.click();
     await expect(lock).toHaveAttribute('aria-pressed', 'true');
     await expect(symbols).toHaveAttribute('aria-expanded', 'true');
@@ -289,7 +308,7 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     if (customCaptions) {
-      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466/);
+      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466.*blur\(2px\)/);
       await captionControls.getByRole('button', { name: 'Minimize window' }).hover();
       await expect(page.getByRole('tooltip')).toHaveText('Minimize window');
       await captionControls.getByRole('button', { name: 'Maximize window' }).click();
@@ -311,7 +330,7 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     if (customCaptions) {
       await expect(captionControls).toHaveCSS('background-color', 'rgb(239, 238, 233)');
-      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466/);
+      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466.*blur\(2px\)/);
     }
     await expect(page.getByText('All changes saved', { exact: true })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('settings-light.png') });
@@ -389,7 +408,8 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await expect(views).toBeHidden();
     await expect(page.getByRole('tabpanel')).toContainText('No diagnostics yet.');
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
-    if (customCaptions) await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466/);
+    if (customCaptions)
+      await expect(captionControls).toHaveCSS('filter', /brightness\(0\.466.*blur\(2px\)/);
     await page.reload();
     await expect(page.getByRole('main', { name: 'Document workspace' })).toBeVisible();
     if (customCaptions) await expect(captionControls).toHaveCSS('filter', 'brightness(1)');

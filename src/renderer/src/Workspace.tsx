@@ -3163,7 +3163,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   </>
                 ) : (
                   <PanelState
-                    className="sidebar-empty panel-state-compact"
+                    className="sidebar-empty sidebar-empty-home panel-state-compact"
                     icon={<FolderOpen size={27} weight="thin" />}
                     title="A home for your ideas"
                     description="Open a folder to work with ordinary LaTeX files on your computer."

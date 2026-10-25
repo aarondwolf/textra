@@ -412,7 +412,7 @@ export function App() {
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
   const { preferences, hydrated, error, updatePreferences } = useUI();
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>('0.1.0');
+  const [appVersion, setAppVersion] = useState<string>('0.2.0');
 
   useEffect(() => {
     void window.textra

@@ -34,6 +34,13 @@
   background: transparent;
   overflow: hidden;
 }
+.palette-section-header-row:hover {
+  background: var(--hover);
+}
+.palette-section-header-row:hover > .palette-section-header {
+  background: transparent;
+  color: var(--text);
+}
 .palette-lock-btn {
   display: inline-flex;
   flex: 0 0 22px;

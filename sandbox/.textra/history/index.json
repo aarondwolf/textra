@@ -32,26 +32,6 @@
       "label": null
     },
     {
-      "id": "2026-10-23T16-23-10.744Z",
-      "path": "todo.md",
-      "createdAt": "2026-10-23T16:23:10.744Z",
-      "sizeBytes": 1575,
-      "revision": "1d6ab2ff258a6c7526422ad8a963d14b290f40a38c0b3114081189b56dfaec1c",
-      "trigger": "save",
-      "pinned": false,
-      "label": null
-    },
-    {
-      "id": "2026-10-23T16-49-29.162Z",
-      "path": "todo.md",
-      "createdAt": "2026-10-23T16:49:29.162Z",
-      "sizeBytes": 585,
-      "revision": "36a81e874ecb4a8a777a0e7ee9b27e31b28898a6338f402567dfa4920935201c",
-      "trigger": "save",
-      "pinned": false,
-      "label": null
-    },
-    {
       "id": "2026-10-23T16-56-02.022Z",
       "path": "todo.md",
       "createdAt": "2026-10-23T16:56:02.022Z",
@@ -137,6 +117,136 @@
       "createdAt": "2026-10-24T01:03:47.660Z",
       "sizeBytes": 441,
       "revision": "afa9f11eb6892cdbca9d550188ef2465f1af69e1ea2143fc8d46debe673b5c2e",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-24T20-26-36.774Z-a33122ef-4685-4c01-ad70-5cb7f8840f88",
+      "path": "todo.md",
+      "createdAt": "2026-10-24T20:26:36.774Z",
+      "sizeBytes": 722,
+      "revision": "c0a0ecf4c60ea78743fb31af7885e557efb2bd9b09bc10c3b769dbf9af0ff500",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-24T20-27-50.451Z-17c3fddf-dbe1-4cb1-9736-3ee272caadcf",
+      "path": "demo.tex",
+      "createdAt": "2026-10-24T20:27:50.451Z",
+      "sizeBytes": 1895,
+      "revision": "9dc50b0562fd280e1fb39d2d86fdfddb7ceac13be9d20518eb3a3a2b2bbbadd7",
+      "trigger": "ai",
+      "pinned": true,
+      "label": "Pre-AI review changes"
+    },
+    {
+      "id": "2026-10-24T20-28-02.774Z-1b4437d8-9758-4d47-9e3b-959f7d88a832",
+      "path": "demo.tex",
+      "createdAt": "2026-10-24T20:28:02.774Z",
+      "sizeBytes": 1895,
+      "revision": "9dc50b0562fd280e1fb39d2d86fdfddb7ceac13be9d20518eb3a3a2b2bbbadd7",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-24T20-36-21.227Z-630bd176-7637-4196-87e7-0fff08483139",
+      "path": "todo.md",
+      "createdAt": "2026-10-24T20:36:21.227Z",
+      "sizeBytes": 1798,
+      "revision": "966b7a4565f58b48a5ee84f77c200ed77c23e61711d303ff7b4766e424a2bcde",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-24T22-16-37.777Z-98cc69da-31c2-4c0a-9474-365b13d80f1e",
+      "path": "todo.md",
+      "createdAt": "2026-10-24T22:16:37.777Z",
+      "sizeBytes": 1718,
+      "revision": "600914220ca3066becffee3ee935048f322eb74bd3f2d797c8d12f7c814e9f08",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-24T22-29-27.744Z-8a22a604-134c-4056-9f56-69c2c8778eac",
+      "path": "todo.md",
+      "createdAt": "2026-10-24T22:29:27.744Z",
+      "sizeBytes": 3580,
+      "revision": "ff100a1849e6a213a82be684fb93ceeecdb4999893ae192ab3c22910b6f11e86",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-24T22-39-23.757Z-5325ff67-b62a-48d1-9ec3-9a6f076d0321",
+      "path": "todo.md",
+      "createdAt": "2026-10-24T22:39:23.757Z",
+      "sizeBytes": 4123,
+      "revision": "065b9df85a0674704362449016cf376b322e19d7e304e00b26f41043f87e4cd7",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-25T02-08-12.138Z-9756bbba-bfce-4395-83e1-b17725f96b7c",
+      "path": "todo.md",
+      "createdAt": "2026-10-25T02:08:12.138Z",
+      "sizeBytes": 2203,
+      "revision": "6529a8cdd2ead5636beaf23f83e3572c3fc25d0154dd0e7011b38e6f0849c5d3",
+      "trigger": "interval",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-25T02-09-28.319Z-5bd4f23e-4a9c-4fe3-a952-e3234154d607",
+      "path": "todo.md",
+      "createdAt": "2026-10-25T02:09:28.319Z",
+      "sizeBytes": 2281,
+      "revision": "c4104194cbde3819c3d7e49070f74e54f3cd8771b4bd9dc1964b9a02b96221a6",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-25T02-19-19.960Z-a346dc45-8ee8-4720-acbf-ac98ffead4c8",
+      "path": "todo.md",
+      "createdAt": "2026-10-25T02:19:19.960Z",
+      "sizeBytes": 3788,
+      "revision": "24e352c3e9d290132133dfaccc33e3eafa7b279bb7d9de81c9f55778c650dcaf",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-25T03-09-52.158Z-998899ef-7289-4d66-bb99-128294b7503f",
+      "path": "todo.md",
+      "createdAt": "2026-10-25T03:09:52.158Z",
+      "sizeBytes": 1955,
+      "revision": "8af26433a28a9412d379f36135f9915e2613836c5be3f36e1258e8953c0fb403",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-25T03-11-27.626Z-4c4b17e4-b8d9-4451-8384-3039c1447dcc",
+      "path": "todo.md",
+      "createdAt": "2026-10-25T03:11:27.626Z",
+      "sizeBytes": 1201,
+      "revision": "f8f8f78d8871e1df38e09628621ce4f3fc97167cdbd26e504e4631a65cf273b3",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-25T03-25-01.352Z-78ef106b-c836-4d00-b796-81e5a0c2b5b8",
+      "path": "todo.md",
+      "createdAt": "2026-10-25T03:25:01.352Z",
+      "sizeBytes": 769,
+      "revision": "b98589e579399037666a27a72893d6e982fb2d0812b47ae1d4b315d58787a29f",
       "trigger": "save",
       "pinned": false,
       "label": null

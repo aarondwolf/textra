@@ -3533,7 +3533,10 @@ select option {
 /* Dismissible assistant notice */
 .ai-chat-privacy {
   position: relative;
-  padding: 10px 38px 10px 14px;
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  padding: 10px 12px;
   margin: 8px 12px 0;
   border-radius: 0;
   background: color-mix(in srgb, var(--accent) 9%, var(--surface));
@@ -3544,12 +3547,14 @@ select option {
   line-height: 1.45;
 }
 .ai-chat-privacy p {
+  flex: 1 1 0;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
 }
 .ai-chat-privacy-dismiss {
-  position: absolute;
-  top: 5px;
-  right: 5px;
+  position: static;
+  flex: 0 0 20px;
   width: 20px;
   height: 20px;
   display: inline-flex;
@@ -3705,6 +3710,10 @@ select option {
   flex: 0 1 auto;
   margin: auto 8px;
   padding: 16px 10px;
+}
+.sidebar-empty-home.panel-state {
+  flex-direction: column;
+  gap: 6px;
 }
 .history-empty.panel-state {
   flex-direction: column;

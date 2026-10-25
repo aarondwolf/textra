@@ -51,7 +51,9 @@ export function WindowControls() {
       role="group"
       aria-label="Window controls"
       aria-live="polite"
-      style={{ filter: `brightness(${(7 / 15) ** modalCount})` }}
+      style={{
+        filter: modalCount ? `brightness(${(7 / 15) ** modalCount}) blur(2px)` : 'brightness(1)',
+      }}
     >
       <IconButton
         label="Minimize window"

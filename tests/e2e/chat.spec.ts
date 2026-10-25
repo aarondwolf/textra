@@ -311,6 +311,24 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await aiDialog.getByRole('button', { name: 'Close settings', exact: true }).click();
     const composer = chat.getByRole('textbox', { name: 'Message the assistant', exact: true });
     await expect(composer).toBeVisible();
+    const privacyNotice = chat.locator('.ai-chat-privacy');
+    await expect(privacyNotice).toBeVisible();
+    await privacyNotice.evaluate((notice) => {
+      Object.assign((notice as HTMLElement).style, {
+        width: '220px',
+        marginLeft: '0',
+        marginRight: '0',
+      });
+    });
+    const [privacyTextBounds, privacyDismissBounds] = await Promise.all([
+      privacyNotice.locator('p').boundingBox(),
+      privacyNotice.getByRole('button', { name: 'Dismiss notice' }).boundingBox(),
+    ]);
+    expect(privacyTextBounds).not.toBeNull();
+    expect(privacyDismissBounds).not.toBeNull();
+    expect(privacyTextBounds!.x + privacyTextBounds!.width + 8).toBeLessThanOrEqual(
+      privacyDismissBounds!.x,
+    );
     const headerHeights = await page.evaluate(() =>
       ['.ai-chat-header', '.editor-tab-strip', '.preview-header'].map(
         (selector) => document.querySelector(selector)?.getBoundingClientRect().height,

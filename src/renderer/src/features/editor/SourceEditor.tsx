@@ -502,6 +502,7 @@ function EditorFormattingToolbar({
   return (
     <FormattingToolbar
       disabled={disabled}
+      formattingDisabled={!isTexPath(activePath)}
       hasPdf={hasPdf}
       isMarkdown={isMarkdown}
       onOpenPdf={handleOpenPdf}
@@ -1554,7 +1555,7 @@ export function SourceEditor({
     <div className="source-editor-shell">
       {formatToolbarVisible && (
         <EditorFormattingToolbar
-          disabled={readOnly || !isTexPath(activePath)}
+          disabled={readOnly}
           activePath={activePath}
           onSave={onSave}
           saveDisabled={saveDisabled}

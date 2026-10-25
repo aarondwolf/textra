@@ -15,6 +15,7 @@ import {
   type AIStoredChat,
 } from '../../../../shared/ai';
 import { ModelPicker } from './ModelPicker';
+import { PanelState } from '../../components/PanelState';
 import { modelGroups, useAISettings } from './useAISettings';
 import { getAIRoleSelection, useAIRoleSelection } from '../../state/ai-role-selections';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
@@ -1080,9 +1081,11 @@ export function ChatPanel({
             aria-relevant="additions text"
           >
             {messages.length === 0 && (
-              <div className="ai-chat-empty">
-                <p>Ask a question or describe a change to the open file.</p>
-              </div>
+              <PanelState
+                className="ai-chat-empty"
+                title="Start a conversation"
+                description="Ask a question or describe a change to the open file."
+              />
             )}
             {messages.map((message, index) => (
               <article

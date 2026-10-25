@@ -1,4 +1,5 @@
 import { Component, lazy, Suspense, useState, type ComponentType, type ReactNode } from 'react';
+import { PanelState } from '../../components/PanelState';
 import './startup.css';
 
 class FeatureBoundary extends Component<
@@ -11,10 +12,12 @@ class FeatureBoundary extends Component<
   }
   render() {
     return this.state.failed ? (
-      <div className="feature-loading" role="alert">
-        {this.props.label} could not be loaded.{' '}
-        <button onClick={this.props.retry}>Try again</button>
-      </div>
+      <PanelState
+        className="feature-loading"
+        mode="error"
+        title={`${this.props.label} could not be loaded`}
+        action={<button onClick={this.props.retry}>Try again</button>}
+      />
     ) : (
       this.props.children
     );
@@ -42,9 +45,11 @@ export function lazyFeature<Props extends object>(
       >
         <Suspense
           fallback={
-            <div className="feature-loading" role="status">
-              Loading {label.toLowerCase()}…
-            </div>
+            <PanelState
+              className="feature-loading"
+              mode="loading"
+              title={`Loading ${label.toLowerCase()}…`}
+            />
           }
         >
           <Loaded {...props} />

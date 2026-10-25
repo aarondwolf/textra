@@ -19,6 +19,7 @@ import {
 } from '../../icons';
 import { openDocument, useWorkspace } from '../../state/workspace';
 import { ResizableSeparator } from '../../components/ResizableSeparator';
+import { PanelState } from '../../components/PanelState';
 import './document.css';
 
 const TEX_FILE = /\.(tex|ltx)$/i;
@@ -494,15 +495,17 @@ export function DocumentView({
         </button>
       </div>
       {!project ? (
-        <div className="sidebar-empty">
-          <p>No project open.</p>
-          <span>Open a folder to see how its document fits together.</span>
-        </div>
+        <PanelState
+          className="sidebar-empty panel-state-compact"
+          title="No project open"
+          description="Open a folder to see how its document fits together."
+        />
       ) : !active ? (
-        <div className="sidebar-empty">
-          <p>Nothing to outline.</p>
-          <span>Open a .tex file to see its sections and the files it uses.</span>
-        </div>
+        <PanelState
+          className="sidebar-empty panel-state-compact"
+          title="Nothing to outline"
+          description="Open a .tex file to see its sections and the files it uses."
+        />
       ) : (
         <>
           <div className="project-heading" title={active}>

@@ -73,6 +73,7 @@ import {
 } from './icons';
 import { FileIcon } from './features/files/FileIcon';
 import { DropdownMenu } from './components/DropdownMenu';
+import { PanelState } from './components/PanelState';
 import { ResizableSeparator } from './components/ResizableSeparator';
 import {
   BUILD_RECIPES,
@@ -1221,6 +1222,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     : availableRecipes[0].name;
   const canCompile = configReady && !!active && /\.tex$/i.test(active.path);
   const [recipeOpen, setRecipeOpen] = useState(false);
+  const [buildRecipeOpen, setBuildRecipeOpen] = useState(false);
   const recipeRequest = useRef(0);
   const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
   const [headerNode, setHeaderNode] = useState<HTMLDivElement | null>(null);
@@ -2501,23 +2503,75 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                   className="sidebar-title writing-title build-sidebar-title"
                 >
                   <div className="build-header-actions">
-                    <CompileControl
-                      running={build.running}
-                      feedback={buildFeedback}
-                      canCompile={canCompile}
-                      busy={busy}
-                      missingTool={Boolean(missingTool)}
-                      engine={engine}
-                      activePath={activePath}
-                      stepsDone={build.stepsDone}
-                      stepCount={build.stepCount}
-                      onCompile={() => void compile()}
-                      onCancel={() =>
-                        void run(async () => {
-                          unwrap(await window.textra.cancelBuild());
-                        })
-                      }
-                    />
+                    <DropdownMenuPrimitive.Root
+                      open={buildRecipeOpen}
+                      onOpenChange={setBuildRecipeOpen}
+                    >
+                      <CompileControl
+                        running={build.running}
+                        feedback={buildFeedback}
+                        canCompile={canCompile}
+                        busy={busy}
+                        missingTool={Boolean(missingTool)}
+                        engine={engine}
+                        activePath={activePath}
+                        stepsDone={build.stepsDone}
+                        stepCount={build.stepCount}
+                        onCompile={() => void compile()}
+                        onCancel={() =>
+                          void run(async () => {
+                            unwrap(await window.textra.cancelBuild());
+                          })
+                        }
+                        recipeTrigger={
+                          <CompileRecipeTrigger
+                            feedback={buildFeedback}
+                            engine={engine}
+                            disabled={!canCompile || busy || build.running}
+                          />
+                        }
+                      />
+                      <DropdownMenuPrimitive.Portal>
+                        <DropdownMenuPrimitive.Content
+                          className="recipe-menu"
+                          aria-label="Compile recipe"
+                          side="bottom"
+                          align="start"
+                          sideOffset={6}
+                          collisionPadding={8}
+                          style={{ zIndex: floatingZIndex }}
+                        >
+                          <span className="eyebrow">COMPILE RECIPE</span>
+                          <DropdownMenuPrimitive.RadioGroup
+                            value={engine}
+                            onValueChange={(recipe) => void run(() => selectRecipe(recipe))}
+                          >
+                            {availableRecipes.map((recipe) => (
+                              <DropdownMenuPrimitive.RadioItem
+                                key={recipe.name}
+                                value={recipe.name}
+                              >
+                                <span>
+                                  {BUILD_RECIPES.find((preset) => preset.value === recipe.name)
+                                    ?.label ?? recipe.name}
+                                </span>
+                                <DropdownMenuPrimitive.ItemIndicator>
+                                  <Check size={14} />
+                                </DropdownMenuPrimitive.ItemIndicator>
+                              </DropdownMenuPrimitive.RadioItem>
+                            ))}
+                          </DropdownMenuPrimitive.RadioGroup>
+                          <DropdownMenuPrimitive.Separator />
+                          <DropdownMenuPrimitive.Item
+                            onSelect={() =>
+                              emitTextraEvent('textra:open-settings', { section: 'compilation' })
+                            }
+                          >
+                            Manage recipes…
+                          </DropdownMenuPrimitive.Item>
+                        </DropdownMenuPrimitive.Content>
+                      </DropdownMenuPrimitive.Portal>
+                    </DropdownMenuPrimitive.Root>
                     <ProblemsButton
                       severity={issueSeverity}
                       issueCount={issueCount}
@@ -3108,11 +3162,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     </div>
                   </>
                 ) : (
-                  <div className="sidebar-empty">
-                    <FolderOpen size={27} weight="thin" />
-                    <p>A home for your ideas.</p>
-                    <span>Open a folder to work with ordinary LaTeX files on your computer.</span>
-                  </div>
+                  <PanelState
+                    className="sidebar-empty panel-state-compact"
+                    icon={<FolderOpen size={27} weight="thin" />}
+                    title="A home for your ideas"
+                    description="Open a folder to work with ordinary LaTeX files on your computer."
+                  />
                 )}
               </>
             )}
@@ -3837,9 +3892,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     }}
                   />
                 ) : (
-                  <div className="feature-loading" role="status">
-                    Compile a document to see its PDF preview.
-                  </div>
+                  <PanelState
+                    className="pdf-empty"
+                    title="PDF preview"
+                    description="Compile a document to see its PDF preview."
+                  />
                 )}
               </div>
               {hasMarkdown && (
@@ -3856,9 +3913,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       path={activeMarkdownDoc.path}
                     />
                   ) : (
-                    <div className="feature-loading" role="status">
-                      Open a Markdown document to preview it.
-                    </div>
+                    <PanelState
+                      className="feature-loading"
+                      title="Markdown preview"
+                      description="Open a Markdown document to preview it."
+                    />
                   )}
                 </div>
               )}

@@ -11,6 +11,7 @@ import {
 } from '../../../../shared/recipes';
 import { ToolEditorDialog } from './ToolEditorDialog';
 import { DropdownMenu } from '../../components/DropdownMenu';
+import { AddButton } from '../../components/Button';
 
 interface CompileRecipeEditorProps {
   activePath: string | null;
@@ -328,7 +329,7 @@ export function CompileRecipeEditor({
           );
         })}
 
-        <button
+        <AddButton
           type="button"
           className="recipe-add-step-faded"
           aria-label="Add a step to this recipe"
@@ -339,7 +340,7 @@ export function CompileRecipeEditor({
           title="Add a step to this recipe"
         >
           <Plus size={13} /> Add
-        </button>
+        </AddButton>
 
         <h4 style={{ marginTop: '16px' }}>Output and default</h4>
         <label className="field-label">

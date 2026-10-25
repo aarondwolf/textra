@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { AppTooltip } from './HelpTooltip';
 
 export interface ResizableSeparatorProps {
   orientation: 'horizontal' | 'vertical';
@@ -100,7 +101,7 @@ export function ResizableSeparator({
     }
   };
 
-  return (
+  const separator = (
     <div
       className={className}
       role="separator"
@@ -110,7 +111,6 @@ export function ResizableSeparator({
       aria-valuemax={max}
       aria-valuenow={value}
       tabIndex={tabIndex}
-      title={title}
       onKeyDown={handleKeyDown}
       onDoubleClick={handleDoubleClick}
       onPointerDown={handlePointerDown}
@@ -119,4 +119,5 @@ export function ResizableSeparator({
       onLostPointerCapture={handleLostPointerCapture}
     />
   );
+  return title ? <AppTooltip content={title}>{separator}</AppTooltip> : separator;
 }

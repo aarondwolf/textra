@@ -563,6 +563,16 @@
   height: 24px;
   padding: 0 7px;
 }
+.editor-format-toolbar .editor-format-heading-trigger {
+  flex: 0 1 auto;
+  min-width: 76px;
+  max-width: 110px;
+}
+.editor-format-toolbar .editor-format-heading-trigger .dropdown-menu-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .dropdown-menu-trigger:hover:not(:disabled),
 .dropdown-menu-trigger:focus-visible {
   background: var(--hover);
@@ -698,6 +708,9 @@
 .editor-format-toolbar > .editor-format-hide:hover,
 .editor-format-toolbar > .editor-format-hide:focus-visible {
   opacity: 1;
+}
+.editor-format-wrap-control {
+  margin-left: 5px;
 }
 .help-tooltip-trigger {
   display: inline-flex;
@@ -1262,6 +1275,7 @@
   --font-serif: Georgia, 'Times New Roman', serif;
   --radius-pill: 999px;
   --radius-surface: 12px;
+  --radius-control: 6px;
   --logo-dark-accent: #9bc9bb;
   --logo-light-accent: #ffffff;
 }
@@ -1815,15 +1829,17 @@ kbd {
   letter-spacing: 0.5px;
 }
 .welcome-content {
-  width: 100%;
+  --welcome-inset: clamp(24px, 8vw, 130px);
+  width: min(740px, max(0px, calc(100% - 2 * var(--welcome-inset))));
   max-width: 740px;
   margin-top: auto;
   margin-bottom: auto;
-  margin-left: clamp(36px, 8vw, 130px);
-  margin-right: auto;
+  margin-left: var(--welcome-inset);
+  margin-right: var(--welcome-inset);
   padding: 16px clamp(16px, 2vw, 32px) 40px 0;
   box-sizing: border-box;
   overflow: auto;
+  container-type: inline-size;
 }
 .welcome-logo {
   margin-bottom: 14px;
@@ -1890,6 +1906,8 @@ kbd {
 }
 .welcome-recent-card {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 16px 20px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1939,7 +1957,12 @@ kbd {
 .welcome-recent-name {
   color: var(--accent);
   font-weight: 500;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -1947,12 +1970,31 @@ kbd {
   color: var(--accent-strong);
 }
 .welcome-recent-path {
+  flex: 1 1 0;
   color: var(--faint);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+@container (max-width: 440px) {
+  .welcome-recent-link {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .welcome-recent-name {
+    max-width: 100%;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .welcome-recent-path {
+    width: 100%;
+    flex-basis: auto;
+  }
 }
 .welcome-recent-link:focus-visible {
   outline: 1px solid var(--accent);
@@ -2429,6 +2471,8 @@ h1 > span {
     display: none;
   }
   .welcome-content {
+    --welcome-inset: 0px;
+    width: min(100%, 740px);
     margin: auto;
     padding: 25px;
   }
@@ -2621,7 +2665,7 @@ h1 > span {
   font-size: 10px;
   text-align: center;
 }
-.compile-recipe-step button {
+.compile-recipe-step > button {
   display: grid;
   place-items: center;
   width: 24px;
@@ -2631,11 +2675,12 @@ h1 > span {
   border-radius: 4px;
   color: var(--muted);
 }
-.compile-recipe-step button:hover:not(:disabled) {
+.compile-recipe-step > button:hover:not(:disabled) {
   color: var(--text);
   background: var(--hover);
 }
-.recipe-add-step-faded {
+.recipe-add-step-faded,
+.add-action-button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2645,7 +2690,7 @@ h1 > span {
   padding: 0 10px;
   margin-top: 4px;
   border: 1px dashed var(--border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control, 6px);
   background: transparent;
   color: var(--muted);
   font-size: 11px;
@@ -2656,11 +2701,16 @@ h1 > span {
     border-color 0.2s ease,
     color 0.2s ease;
 }
-.recipe-add-step-faded:hover {
+.recipe-add-step-faded:hover,
+.add-action-button:hover:not(:disabled) {
   opacity: 1;
   color: var(--text);
   border-color: var(--accent);
   background: var(--hover);
+}
+.add-action-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .build-header-actions {
   display: flex;
@@ -3470,4 +3520,200 @@ select option {
 .ai-chat-privacy-dismiss:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Consistent control shape and interaction states across feature stylesheets. */
+:root
+  button:not(.icon-button):not(.icon-button-small):not(.setting-switch-root):not(
+    [role='switch']
+  ):not([role='radio']):not([role='tab']):not([data-radius='pill']):not(
+    .editor-layout-presets button
+  ):not(.ai-mode-switch button):not(.recipe-mode button):not(.preview-tabs button):not(
+    .compile-control button
+  ) {
+  border-radius: var(--radius-control);
+}
+
+:root input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+:root textarea,
+:root select {
+  border-radius: var(--radius-control);
+}
+
+:root button:focus-visible,
+:root input:focus-visible,
+:root textarea:focus-visible,
+:root select:focus-visible,
+:root [role='button']:focus-visible,
+:root [role='combobox']:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: 2px;
+}
+
+.setting-pair {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 260px);
+  gap: 16px;
+}
+.setting-pair-label {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.setting-pair-control > input:not(.setting-integer),
+.setting-pair-control > select {
+  min-height: 30px;
+}
+.setting-integer {
+  border-radius: var(--radius-control);
+}
+.muted,
+.secondary-copy {
+  color: var(--muted);
+}
+
+/* A restrained accent marks the pane receiving keyboard or pointer input. */
+.editor-pane:focus-within,
+.preview-pane:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.preview-pane:focus-within .preview-header,
+.editor-pane:focus-within .pane-header {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.ai-chat:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ai-chat:focus-within .ai-chat-header {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+/* Keep a wide pointer target while the visible separator remains slim. */
+.split-handle::after,
+.doc-splitter::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+}
+.split-handle::after {
+  inset: 0 -5px;
+  cursor: col-resize;
+}
+.doc-splitter::after {
+  inset: -5px 0;
+  cursor: row-resize;
+}
+.writing-resizer {
+  position: relative;
+}
+.writing-resizer::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: -5px 0;
+  cursor: ns-resize;
+}
+.split-handle[data-resizing]::before,
+.doc-splitter[data-resizing]::before {
+  background: var(--accent);
+}
+.writing-resizer:focus-visible,
+.split-handle:focus-visible,
+.doc-splitter:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 1px;
+}
+
+/* Shared empty/loading panel layout, with legacy feature hooks preserved. */
+.history-empty.panel-state,
+.problems-empty.panel-state,
+.writing-empty.panel-state,
+.ai-chat-empty.panel-state,
+.preview-empty.panel-state,
+.sidebar-empty.panel-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 10px;
+  text-align: center;
+}
+.history-empty.panel-state p,
+.problems-empty.panel-state p,
+.writing-empty.panel-state p,
+.ai-chat-empty.panel-state p,
+.preview-empty.panel-state p,
+.sidebar-empty.panel-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.history-empty.panel-state .panel-state-copy,
+.problems-empty.panel-state .panel-state-copy,
+.writing-empty.panel-state .panel-state-copy,
+.ai-chat-empty.panel-state .panel-state-copy,
+.preview-empty.panel-state .panel-state-copy,
+.sidebar-empty.panel-state .panel-state-copy {
+  max-width: 300px;
+}
+.sidebar-empty.panel-state {
+  flex: 0 1 auto;
+  margin: auto 8px;
+  padding: 16px 10px;
+}
+.history-empty.panel-state {
+  flex-direction: column;
+  padding: 24px 16px;
+}
+.preview-empty.panel-state {
+  margin: auto;
+  padding: 24px 18px;
+}
+.pdf-empty.panel-state {
+  flex-direction: column;
+}
+.pdf-empty.panel-state:not(.panel-state-loading) .panel-state-copy strong {
+  font-size: 18px;
+  font-weight: 500;
+}
+.pdf-empty.panel-state .panel-state-copy {
+  max-width: none;
+}
+.ai-chat-empty.panel-state {
+  padding: 20px 12px;
+}
+.writing-empty.panel-state {
+  margin: 8px 6px;
+}
+
+/* Small counts and status badges share a stable baseline and readable shape. */
+.count,
+.writing-count,
+.doc-count,
+.palette-count,
+.badge {
+  display: inline-flex;
+  min-height: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* Keep PDF paper distinct from the surrounding preview surface. */
+.pdf-page {
+  border: 1px solid color-mix(in srgb, #000 12%, transparent);
+  box-shadow: 0 5px 20px color-mix(in srgb, #000 26%, transparent);
+}
+
+@media (max-width: 640px) {
+  .setting-pair {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 42%);
+    gap: 10px;
+  }
 }

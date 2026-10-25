@@ -29,6 +29,7 @@ import { sortProjectTexFiles, useWorkspace } from '../../state/workspace';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import * as RadioGroup from '@radix-ui/react-radio-group';
 import { SettingSwitch } from '../../components/SettingsControls';
+import { AddButton } from '../../components/Button';
 import './recipes.css';
 
 function initial(): ProjectConfig {
@@ -488,10 +489,10 @@ export default function RecipeDialog({
                     </li>
                   ))}
                 </ul>
-                <button type="button" onClick={addRecipe}>
+                <AddButton type="button" onClick={addRecipe}>
                   <Plus size={14} />
                   New recipe
-                </button>
+                </AddButton>
                 <h3>Tools</h3>
                 <p className="recipe-hint">
                   A tool is one program run with its options. Recipes are built from tools, so

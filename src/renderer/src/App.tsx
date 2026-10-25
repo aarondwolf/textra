@@ -38,6 +38,7 @@ import { Workspace } from './Workspace';
 import type { SectionId } from './features/onboarding/SetupDialog';
 import { ToastViewport } from './features/notifications/ToastViewport';
 import { installShutdown, useShutdown } from './state/shutdown';
+import { AppTooltip } from './components/HelpTooltip';
 
 const SetupDialog = lazyFeature(() => import('./features/onboarding/SetupDialog'), 'Settings');
 
@@ -667,38 +668,44 @@ export function App() {
             <kbd className="window-titlebar-search-kbd">Ctrl K</kbd>
           </button>
           <div className="window-titlebar-actions">
-            <button
-              type="button"
-              className={`window-titlebar-action ${preferences.sidebarVisible ? 'active' : ''}`}
-              aria-label="Toggle sidebar"
-              aria-pressed={preferences.sidebarVisible}
-              title={
+            <AppTooltip
+              content={
                 preferences.sidebarVisible ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'
               }
-              onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
             >
-              {preferences.sidebarVisible ? (
-                <PanelLeftClose size={15} />
-              ) : (
-                <PanelLeftOpen size={15} />
-              )}
-            </button>
-            <button
-              type="button"
-              className={`window-titlebar-action ${preferences.previewVisible ? 'active' : ''}`}
-              aria-label="Toggle preview"
-              aria-pressed={preferences.previewVisible}
-              title={
+              <button
+                type="button"
+                className={`window-titlebar-action ${preferences.sidebarVisible ? 'active' : ''}`}
+                aria-label="Toggle sidebar"
+                aria-pressed={preferences.sidebarVisible}
+                onClick={() => updatePreferences({ sidebarVisible: !preferences.sidebarVisible })}
+              >
+                {preferences.sidebarVisible ? (
+                  <PanelLeftClose size={15} />
+                ) : (
+                  <PanelLeftOpen size={15} />
+                )}
+              </button>
+            </AppTooltip>
+            <AppTooltip
+              content={
                 preferences.previewVisible ? 'Collapse preview (Ctrl+J)' : 'Expand preview (Ctrl+J)'
               }
-              onClick={() => updatePreferences({ previewVisible: !preferences.previewVisible })}
             >
-              {preferences.previewVisible ? (
-                <PanelRightClose size={15} />
-              ) : (
-                <PanelRightOpen size={15} />
-              )}
-            </button>
+              <button
+                type="button"
+                className={`window-titlebar-action ${preferences.previewVisible ? 'active' : ''}`}
+                aria-label="Toggle preview"
+                aria-pressed={preferences.previewVisible}
+                onClick={() => updatePreferences({ previewVisible: !preferences.previewVisible })}
+              >
+                {preferences.previewVisible ? (
+                  <PanelRightClose size={15} />
+                ) : (
+                  <PanelRightOpen size={15} />
+                )}
+              </button>
+            </AppTooltip>
           </div>
         </header>
         {error && (

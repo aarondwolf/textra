@@ -318,11 +318,11 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     );
     expect(headerHeights[0]).toBe(headerHeights[1]);
     expect(headerHeights[0]).toBe(headerHeights[2]);
-    await expect(chat.locator('.ai-chat-header button').first()).toHaveCSS('border-radius', '4px');
-    await expect(chat.locator('.ai-chat-header button').last()).toHaveCSS('border-radius', '4px');
+    await expect(chat.locator('.ai-chat-header button').first()).toHaveCSS('border-radius', '6px');
+    await expect(chat.locator('.ai-chat-header button').last()).toHaveCSS('border-radius', '6px');
     await expect(composer).toHaveAttribute('rows', '2');
     const ask = chat.getByRole('button', { name: 'Send message', exact: true });
-    await expect(ask).toHaveCSS('border-radius', '999px');
+    await expect(ask).toHaveCSS('border-radius', '6px');
     await expect(ask).toBeDisabled();
     await expect(chat.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute(
       'aria-pressed',

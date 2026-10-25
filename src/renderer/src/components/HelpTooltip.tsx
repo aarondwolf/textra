@@ -1,19 +1,16 @@
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { forwardRef, type ComponentPropsWithoutRef, type ReactElement } from 'react';
+import type { ComponentPropsWithoutRef, ReactElement } from 'react';
 
 type AppTooltipProps = {
   content: string;
   children: ReactElement;
 } & Omit<ComponentPropsWithoutRef<typeof Tooltip.Trigger>, 'asChild' | 'children'>;
 
-export const AppTooltip = forwardRef<HTMLButtonElement, AppTooltipProps>(function AppTooltip(
-  { content, children, ...triggerProps },
-  ref,
-) {
+export function AppTooltip({ content, children, ...triggerProps }: AppTooltipProps) {
   return (
     <Tooltip.Provider delayDuration={450}>
       <Tooltip.Root>
-        <Tooltip.Trigger ref={ref} asChild {...triggerProps}>
+        <Tooltip.Trigger asChild {...triggerProps}>
           {children}
         </Tooltip.Trigger>
         <Tooltip.Portal>
@@ -31,7 +28,7 @@ export const AppTooltip = forwardRef<HTMLButtonElement, AppTooltipProps>(functio
       </Tooltip.Root>
     </Tooltip.Provider>
   );
-});
+}
 
 /** Compact, keyboard-accessible help using Radix Tooltip and TeXtra's shared surface style. */
 export function HelpTooltip({ label, content }: { label: string; content: string }) {

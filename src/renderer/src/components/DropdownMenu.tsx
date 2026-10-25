@@ -160,7 +160,6 @@ export function DropdownMenu<T extends string = string>({
       type="button"
       className="dropdown-menu-trigger editor-format-heading-trigger"
       aria-label={ariaLabel}
-      title={disabled || items.length === 0 ? title : undefined}
       disabled={disabled || items.length === 0}
       onMouseDown={preventFocusSteal ? (e) => e.preventDefault() : undefined}
       style={triggerStyle}

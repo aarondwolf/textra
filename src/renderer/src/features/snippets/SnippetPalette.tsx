@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkle } from '@phosphor-icons/react';
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Lock,
-  LockOpen,
-  Pencil,
-  Plus,
-  Trash2,
-} from '../../icons';
+import { Check, Copy, Lock, LockOpen, Pencil, Plus, Trash2 } from '../../icons';
 import { insertIntoSource } from '../equations/EquationPalette';
 import { SYMBOL_GROUPS } from '../equations/symbols';
 import { DEFAULT_SNIPPETS, type Snippet } from './snippets';
 import { createSnippetPrompt } from './snippet-prompt';
 import { useUI } from '../../state/ui';
+import { CollapsibleSection } from '../../components/CollapsibleSection';
+import { AddButton } from '../../components/Button';
 import '../equations/equations.css';
 import './snippets.css';
 
@@ -210,20 +202,16 @@ export default function SnippetPalette({
 
       <div className="palette-sections">
         {/* Math Symbols Collapsible Section */}
-        <section className="palette-section">
-          <div className="palette-section-header-row">
-            <button
-              type="button"
-              className="palette-section-header"
-              aria-expanded={symbolsOpen}
-              onClick={() => setSymbolsOpen(!symbolsOpen)}
-            >
-              {symbolsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              <span>Math Symbols</span>
-              <span className="palette-count">
-                {filteredSymbolGroups.reduce((acc, g) => acc + g.symbols.length, 0)}
-              </span>
-            </button>
+        <CollapsibleSection
+          className="palette-section"
+          title="Math Symbols"
+          count={filteredSymbolGroups.reduce((acc, g) => acc + g.symbols.length, 0)}
+          open={symbolsOpen}
+          onOpenChange={setSymbolsOpen}
+          headerClassName="palette-section-header"
+          headerRowClassName="palette-section-header-row"
+          bodyClassName="palette-section-content"
+          headerActions={
             <button
               type="button"
               className={`palette-lock-btn ${preferences.snippetsSymbolsOpenDefault ? 'locked' : ''}`}
@@ -241,10 +229,10 @@ export default function SnippetPalette({
             >
               {preferences.snippetsSymbolsOpenDefault ? <Lock size={12} /> : <LockOpen size={12} />}
             </button>
-          </div>
-
+          }
+        >
           {symbolsOpen && (
-            <div className="palette-section-content">
+            <>
               {filteredSymbolGroups.map((group) => (
                 <div key={group.name} className="palette-symbol-group">
                   <h4 className="palette-group-name">{group.name}</h4>
@@ -285,23 +273,21 @@ export default function SnippetPalette({
               {!filteredSymbolGroups.length && (
                 <p className="palette-empty-note">No symbols match.</p>
               )}
-            </div>
+            </>
           )}
-        </section>
+        </CollapsibleSection>
 
         {/* Templates & Snippets Section (with Custom Snippets consolidated inside) */}
-        <section className="palette-section">
-          <div className="palette-section-header-row">
-            <button
-              type="button"
-              className="palette-section-header"
-              aria-expanded={snippetsOpen}
-              onClick={() => setSnippetsOpen(!snippetsOpen)}
-            >
-              {snippetsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              <span>Templates & Snippets</span>
-              <span className="palette-count">{totalSnippetsCount}</span>
-            </button>
+        <CollapsibleSection
+          className="palette-section"
+          title="Templates & Snippets"
+          count={totalSnippetsCount}
+          open={snippetsOpen}
+          onOpenChange={setSnippetsOpen}
+          headerClassName="palette-section-header"
+          headerRowClassName="palette-section-header-row"
+          bodyClassName="palette-section-content"
+          headerActions={
             <div className="palette-header-actions">
               <button
                 type="button"
@@ -325,10 +311,10 @@ export default function SnippetPalette({
                 )}
               </button>
             </div>
-          </div>
-
+          }
+        >
           {snippetsOpen && (
-            <div className="palette-section-content">
+            <>
               {isAdding && (
                 <form className="palette-custom-form" onSubmit={handleAddCustomSnippet}>
                   <input
@@ -628,7 +614,7 @@ export default function SnippetPalette({
                 )}
               </ul>
               {!isAdding && (
-                <button
+                <AddButton
                   type="button"
                   className="recipe-add-step-faded"
                   style={{ marginTop: '8px', width: '100%' }}
@@ -639,11 +625,11 @@ export default function SnippetPalette({
                 >
                   <Plus size={13} />
                   <span>Add snippet</span>
-                </button>
+                </AddButton>
               )}
-            </div>
+            </>
           )}
-        </section>
+        </CollapsibleSection>
       </div>
     </div>
   );

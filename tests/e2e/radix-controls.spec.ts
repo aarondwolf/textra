@@ -15,6 +15,10 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     join(projectRoot, 'main.tex'),
     '\\documentclass{article}\n\\begin{document}\nUI audit fixture.\n\\end{document}\n',
   );
+  await writeFile(
+    join(projectRoot, 'notes.md'),
+    '# Markdown audit fixture\nMarkdown preview works.\n',
+  );
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   env.TEXTRA_USER_DATA_DIR = userData;
@@ -33,8 +37,77 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selectedRoot] });
     }, projectRoot);
     await page.getByRole('button', { name: 'Open folder', exact: true }).click();
+    const editorPane = page.locator('.editor-pane');
+    const recentCard = page.locator('.welcome-recent-card');
+    await expect(recentCard).toBeVisible();
+    const savedPaneStyle = await editorPane.getAttribute('style');
+    await editorPane.evaluate((pane) => {
+      pane.style.width = '420px';
+      pane.style.flex = '0 0 420px';
+    });
+    await expect
+      .poll(async () => {
+        const [paneBounds, cardBounds] = await Promise.all([
+          editorPane.boundingBox(),
+          recentCard.boundingBox(),
+        ]);
+        return (
+          !!paneBounds &&
+          !!cardBounds &&
+          cardBounds.x + cardBounds.width <= paneBounds.x + paneBounds.width + 1
+        );
+      })
+      .toBe(true);
+    await expect(recentCard.locator('.welcome-recent-name').first()).toBeVisible();
+    await expect
+      .poll(() =>
+        recentCard
+          .locator('.welcome-recent-path')
+          .first()
+          .evaluate((path) => path.scrollWidth > path.clientWidth),
+      )
+      .toBe(true);
+    await page.screenshot({ path: test.info().outputPath('welcome-recent-narrow.png') });
+    if (savedPaneStyle === null) await editorPane.evaluate((pane) => pane.removeAttribute('style'));
+    else
+      await editorPane.evaluate((pane, style) => pane.setAttribute('style', style), savedPaneStyle);
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await expect(page.locator('.source-editor')).toBeVisible();
+    const fontSizeControl = page.locator('.editor-format-font-size');
+    const wrapControl = page.locator('.editor-format-wrap-control');
+    const [fontSizeBounds, wrapBounds] = await Promise.all([
+      fontSizeControl.boundingBox(),
+      wrapControl.boundingBox(),
+    ]);
+    expect(fontSizeBounds).not.toBeNull();
+    expect(wrapBounds).not.toBeNull();
+    expect(wrapBounds!.x - fontSizeBounds!.x - fontSizeBounds!.width).toBeGreaterThanOrEqual(5);
+    const wrapButton = page.getByRole('button', { name: 'Toggle word wrap' });
+    await expect(wrapButton).not.toHaveAttribute('title');
+    await wrapButton.hover();
+    await expect(page.getByRole('tooltip')).toContainText('Word wrap');
+
+    const previewToggle = page.getByRole('button', { name: 'Toggle preview' });
+    await expect(previewToggle).not.toHaveAttribute('title');
+    await previewToggle.hover();
+    await expect(page.getByRole('tooltip')).toContainText('preview');
+
+    await page.getByRole('button', { name: 'Writing tools' }).click();
+    const outlineSection = page.getByRole('button', { name: 'Outline', exact: true });
+    await expect(outlineSection).toHaveAttribute('aria-expanded', 'true');
+    await outlineSection.click();
+    await expect(outlineSection).toHaveAttribute('aria-expanded', 'false');
+    await outlineSection.click();
+    await page.getByRole('button', { name: 'History & Projects' }).click();
+    const historySection = page.getByRole('button', { name: 'File History', exact: true });
+    const recentProjectsSection = page.getByRole('button', {
+      name: 'Recent Projects',
+      exact: true,
+    });
+    await expect(historySection).toHaveAttribute('aria-expanded', 'true');
+    await expect(recentProjectsSection).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByText('Recover earlier history…', { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('history-project-sections.png') });
 
     const compileGroup = page.getByRole('group', { name: 'Compile controls', exact: true });
     await expect(compileGroup).toBeVisible();
@@ -45,6 +118,7 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     expect(aligned[1]).not.toBeNull();
     expect(Math.abs(aligned[0]!.y - aligned[1]!.y)).toBeLessThanOrEqual(1);
     expect(Math.abs(aligned[0]!.height - aligned[1]!.height)).toBeLessThanOrEqual(1);
+    await expect(page.locator('.preview-pane .panel-state')).toContainText('PDF preview');
     await page.screenshot({ path: test.info().outputPath('workspace-wide.png') });
 
     await recipe.click();
@@ -54,6 +128,46 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
     await expect(currentRecipe).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(recipeMenu).toBeHidden();
+
+    await page.getByRole('button', { name: 'Build', exact: true }).click();
+    const buildSidebar = page.locator('.compile-sidebar');
+    const buildRecipe = buildSidebar.getByRole('button', { name: 'Choose compile recipe' });
+    await expect(buildRecipe).toBeVisible();
+    await expect(buildSidebar.getByRole('button', { name: 'Current recipe step 1' })).toBeEnabled();
+    const buildControls = buildSidebar.getByRole('group', { name: 'Compile controls' });
+    const buildCompile = buildControls.getByRole('button', { name: 'Compile active document' });
+    const [buildBounds, compileBounds] = await Promise.all([
+      buildRecipe.boundingBox(),
+      buildCompile.boundingBox(),
+    ]);
+    expect(buildBounds).not.toBeNull();
+    expect(compileBounds).not.toBeNull();
+    expect(Math.abs(buildBounds!.y - compileBounds!.y)).toBeLessThanOrEqual(1);
+    const buildHeader = await buildSidebar.locator('.build-sidebar-title').boundingBox();
+    expect(buildHeader).not.toBeNull();
+    expect(buildBounds!.x + buildBounds!.width).toBeLessThanOrEqual(
+      buildHeader!.x + buildHeader!.width + 1,
+    );
+    await page.screenshot({ path: test.info().outputPath('build-sidebar.png') });
+    await buildRecipe.click();
+    await expect(
+      page.getByRole('menu', { name: 'Choose compile recipe', exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'File Explorer', exact: true }).click();
+    await page.getByRole('button', { name: 'Open notes.md', exact: true }).click();
+    const markdownPreviewButton = page.getByRole('button', { name: 'View Markdown preview' });
+    await expect(markdownPreviewButton).toBeEnabled();
+    await markdownPreviewButton.click();
+    await expect(page.locator('.preview-pane')).toContainText('Markdown preview');
+    await expect(page.locator('.markdown-preview')).toContainText('Markdown preview works.');
+    await page.getByRole('button', { name: 'Save file as' }).click();
+    await page.getByRole('textbox', { name: 'Path' }).fill('notes-copy.md');
+    await page.getByRole('button', { name: 'Save copy', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'Open notes-copy.md', exact: true }),
+    ).toBeVisible();
 
     await page.getByRole('button', { name: 'Settings and TeX setup', exact: true }).click();
     const theme = page.getByRole('button', { name: 'Theme', exact: true });

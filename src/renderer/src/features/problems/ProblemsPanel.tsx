@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowSquareOut, Check, Copy, Sparkle } from '@phosphor-icons/react';
+import { PanelState } from '../../components/PanelState';
+import { AppTooltip } from '../../components/HelpTooltip';
 import { commonProblemHelp } from '../../../../shared/common-problems';
 import './problems.css';
 
@@ -101,11 +103,10 @@ function ActionButton({
   onClick: () => Promise<void> | void;
   disabled?: boolean;
 }) {
-  return (
+  const button = (
     <button
       className="problem-action"
       type="button"
-      title={title}
       aria-label={title}
       disabled={disabled}
       onClick={(event) => {
@@ -116,6 +117,7 @@ function ActionButton({
       {children}
     </button>
   );
+  return disabled ? button : <AppTooltip content={title}>{button}</AppTooltip>;
 }
 
 function ProblemActions({
@@ -329,7 +331,14 @@ export function ProblemsPanel({
   };
 
   if (!diagnostics.length) {
-    return <div className="problems-empty">No problems reported yet.</div>;
+    return (
+      <PanelState
+        className="problems-empty"
+        icon={<Check size={20} />}
+        title="No problems reported yet"
+        description="Compile the document or run a checker to see diagnostics here."
+      />
+    );
   }
 
   return (
@@ -339,7 +348,6 @@ export function ProblemsPanel({
         <div className="problems-navigation" aria-label="Problem navigation">
           <button
             type="button"
-            title="Previous problem"
             aria-label="Previous problem"
             disabled={!onNavigate || visible.length < 2}
             onClick={() => selectAndNavigate((activeIndex - 1 + visible.length) % visible.length)}
@@ -351,7 +359,6 @@ export function ProblemsPanel({
           </span>
           <button
             type="button"
-            title="Next problem"
             aria-label="Next problem"
             disabled={!onNavigate || visible.length < 2}
             onClick={() => selectAndNavigate((activeIndex + 1) % visible.length)}
@@ -392,8 +399,10 @@ export function ProblemsPanel({
         <div className="problems-groups">
           {groups.map(([file, problems]) => (
             <section className="problems-group" key={file} aria-label={`${file} problems`}>
-              <h3 className="problems-file" title={file}>
-                {file}
+              <h3 className="problems-file">
+                <AppTooltip content={file}>
+                  <span className="problems-file-name">{file}</span>
+                </AppTooltip>
                 <span>{problems.length}</span>
               </h3>
               <ul className="problems-list">
@@ -419,10 +428,12 @@ export function ProblemsPanel({
                           {severityLabel[diagnostic.severity]}
                         </span>
                         <span className="problem-copy">
-                          <span className="problem-message" title={problemSearchLabel(diagnostic)}>
-                            {diagnostic.code ? `${diagnostic.code}: ` : ''}
-                            {problemSummary(diagnostic)}
-                          </span>
+                          <AppTooltip content={problemSearchLabel(diagnostic)}>
+                            <span className="problem-message">
+                              {diagnostic.code ? `${diagnostic.code}: ` : ''}
+                              {problemSummary(diagnostic)}
+                            </span>
+                          </AppTooltip>
                           {(location || diagnostic.source) && (
                             <span className="problem-meta">
                               {[location, diagnostic.source].filter(Boolean).join(' · ')}
@@ -449,7 +460,11 @@ export function ProblemsPanel({
           ))}
         </div>
       ) : (
-        <div className="problems-empty">No problems match these filters.</div>
+        <PanelState
+          className="problems-empty"
+          title="No problems match these filters"
+          description="Adjust the source or severity filters to see more diagnostics."
+        />
       )}
     </section>
   );

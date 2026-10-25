@@ -1,5 +1,34 @@
 # Current state
 
+2026-10-24 Welcome page recent-project layout:
+
+- Fixed the welcome content width to account for its horizontal inset so it cannot
+  extend past the editor pane into the preview. Recent-project cards stay within
+  narrow panes; names wrap when needed and long directory paths truncate.
+- Added a native E2E check that constrains the editor to 420px and verifies the card
+  stays within the pane, the project name remains visible, and the path is truncated.
+- Verification: typecheck, lint, format check, production build, and the focused native
+  Radix/layout test passed. Inspected the narrow welcome screenshot. Changes are
+  uncommitted; prior `sandbox/**` changes remain untouched.
+
+2026-10-24 UI polish pass:
+
+- Added a shared 6px control-radius token, consistent setting-row typography and
+  keyboard focus treatment, subtle focused-pane accents, and larger invisible hit
+  targets for workspace, document, and writing splitters. Preserved pill-shaped
+  switches, segmented controls, tags, and icon buttons.
+- Added the renderer-internal `PanelState` component for empty, loading, and error
+  messages. Adopted it in History, Problems, PDF, Assistant, Writing, project and
+  document sidebars, lazy-feature loading/errors, and workspace preview placeholders.
+  Centered the PDF empty/loading states and added a restrained rendered-page frame.
+- Standardized count and status badge geometry. Updated E2E assertions for the
+  approved 6px control shape and asserted the PDF preview empty state.
+- Verification: format check, typecheck, lint, production build, and unit/integration
+  suite passed (71 files / 728 tests). Full native E2E passed (16 passed, 2 skipped);
+  final focused native rerun passed (3/3). Dark/light settings, wide/compact workspace,
+  empty PDF preview, and rendered PDF screenshots were captured and inspected.
+- Existing `sandbox/**` changes were preserved. This UI polish pass remains uncommitted.
+
 2026-10-24 Radix UI repair and audit:
 
 - Kept Radix UI and `cmdk`; fixed portal stacking, theme/position styles, selection
@@ -1186,3 +1215,11 @@ shell, use a local copy of src with node_modules/material-icon-theme copied loca
 mount hits EMFILE on that package's SVG glob.
 
 - Collapsed preview pane now shows a quick-access rail: expand, green compile/cancel circle, severity-colored alert (opens Problems), log icon (opens Output). The "Expand editor" button is commented out in Workspace.tsx; its state, palette command and effects are kept for a later decision.
+
+2026-10-24 UI follow-up slice: added a shared Radix CollapsibleSection and migrated Writing, File History/Recent Projects, and Snippets & Symbols disclosure headers. Removed the earlier-history recovery prompt UI. Added a shared dashed AddButton and applied it to recipe, step, provider, and snippet actions. Styled Problems and custom renderer title-bar tooltips with AppTooltip. Electron's OS-owned titlebar minimize/maximize/close controls remain outside renderer styling and tooltip control.
+
+Build now uses the same CompileControl plus recipe menu pattern as Preview. The shared Build step DropdownMenu was being constrained by a broad step-button selector; styling now targets only its sibling action buttons. Markdown preview and Save As were accidentally disabled by the LaTeX-only editor toolbar gate; formatting commands remain TeX-only while preview and Save As work for Markdown text documents. Standard password inputs already mask pasted API keys.
+
+Evidence: npm run format:check, typecheck, lint, build pass. Elevated npm test passes 728/728 across 71 files. Full native E2E passes 16 tests with 2 opt-in benchmark/live tests skipped; the focused Radix/workspace test also verifies Markdown preview/Save As, Build recipe controls, section toggles, recent-project headers and responsive screenshots. Visual inspection passed for workspace, Build, History/Projects, and settings views. No commit made. Next: continue the current project phase gate; no user sandbox changes were intentionally made.
+
+2026-10-24 UI follow-up: Migrated the Problems file/message hover help and custom titlebar pane toggles to AppTooltip; standardized editor toolbar button help through TooltipButton and moved resizer hints to Radix Tooltip. Removed native title fallback on disabled shared dropdown triggers. Flattened Snippets section card backgrounds/borders to match Writing/History disclosure styling. Added 5px+ spacing between font-size and word-wrap controls with E2E assertions for spacing and custom tooltip behavior. Typecheck, lint, production build, and focused native UI E2E pass. Native OS window frame buttons cannot participate in renderer overlay dimming or tooltip styling; their appearance is owned by the OS/window frame.

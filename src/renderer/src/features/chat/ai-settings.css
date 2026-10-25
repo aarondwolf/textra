@@ -287,6 +287,16 @@
   font-size: 10px;
   white-space: nowrap;
 }
+.ai-provider-name-line {
+  justify-content: flex-start;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ai-provider-name-line > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .ai-provider-connection > .ai-error {
   flex-basis: 100%;
   margin: 2px 0 0 22px;

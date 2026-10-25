@@ -23,6 +23,7 @@ import {
 } from './useAISettings';
 import { SaveFooter } from '../save-status/SaveFooter';
 import { SettingSwitch } from '../../components/SettingsControls';
+import { AddButton } from '../../components/Button';
 import './ai-settings.css';
 import { StatusMessage } from '../../components/Layout';
 const ProviderEditor = lazy(() => import('./AIProviderEditor'));
@@ -284,10 +285,10 @@ export function AISettingsPanel({
             <section aria-label="Provider connections">
               <div className="ai-connections-heading">
                 <h3>Connections</h3>
-                <button type="button" onClick={() => setAdding(true)}>
+                <AddButton type="button" onClick={() => setAdding(true)}>
                   <Plus size={13} />
                   Add provider
-                </button>
+                </AddButton>
               </div>
               {!connections.length && <p className="ai-settings-note">No connections yet.</p>}
               <div className="ai-provider-connections">
@@ -298,8 +299,7 @@ export function AISettingsPanel({
                     aria-label={providerLabel(connection)}
                   >
                     <div className="ai-connection-main">
-                      <div className="ai-check ai-switch-row">
-                        <span>{providerLabel(connection)}</span>
+                      <div className="ai-check ai-provider-name-line">
                         <SettingSwitch
                           label={`${providerLabel(connection)} enabled`}
                           checked={connection.enabled !== false}
@@ -323,6 +323,7 @@ export function AISettingsPanel({
                             )
                           }
                         />
+                        <span>{providerLabel(connection)}</span>
                       </div>
                       <div className="ai-connection-meta">
                         <small>

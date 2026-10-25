@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronLeft, ChevronRight, Ellipsis, LocateFixed } from '../../icons';
 import { DropdownMenu } from '../../components/DropdownMenu';
+import { PanelState } from '../../components/PanelState';
 import {
   getDocument,
   GlobalWorkerOptions,
@@ -945,9 +946,7 @@ export default function PdfViewer({
         }}
       >
         {loading && !pdf ? (
-          <div className="pdf-empty" role="status">
-            Loading PDF…
-          </div>
+          <PanelState className="pdf-empty" mode="loading" title="Loading PDF…" />
         ) : pdf ? (
           <div
             className="pdf-virtual-list"
@@ -988,10 +987,11 @@ export default function PdfViewer({
             })}
           </div>
         ) : (
-          <div className="pdf-empty">
-            <h2>PDF preview</h2>
-            <p>Compile to see your document.</p>
-          </div>
+          <PanelState
+            className="pdf-empty"
+            title="PDF preview"
+            description="Compile to see your document."
+          />
         )}
       </div>
     </section>

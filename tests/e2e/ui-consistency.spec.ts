@@ -80,7 +80,7 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
       });
       expect(bounds.insetLeft).toBeGreaterThanOrEqual(2);
       expect(bounds.insetRight).toBeGreaterThanOrEqual(2);
-      expect(bounds.radius).toBe('999px');
+      expect(bounds.radius).toBe('6px');
       // Chromium snaps borders to device pixels under Windows display scaling.
       expect(parseFloat(bounds.border)).toBeGreaterThan(0);
       expect(bounds.border).toBe(bounds.rightBorder);

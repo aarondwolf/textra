@@ -1,0 +1,71 @@
+.panel-state {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 18px;
+  color: var(--muted);
+  text-align: center;
+}
+.panel-state-copy {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 320px;
+}
+.panel-state-copy strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 550;
+}
+.panel-state-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.panel-state-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+}
+.panel-state-loading .panel-state-icon {
+  animation: panel-state-spin 1.2s linear infinite;
+}
+.panel-state-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+}
+.panel-state-loading .panel-state-spinner {
+  animation: panel-state-spin 1.2s linear infinite;
+}
+.panel-state-action {
+  margin-top: 4px;
+}
+.panel-state-compact {
+  padding: 16px 12px;
+}
+.panel-state-compact .panel-state-icon svg {
+  width: 20px;
+  height: 20px;
+}
+@keyframes panel-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-state-loading .panel-state-icon,
+  .panel-state-loading .panel-state-spinner {
+    animation: none;
+  }
+}

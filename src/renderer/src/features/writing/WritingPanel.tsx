@@ -16,9 +16,10 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ResizableSeparator } from '../../components/ResizableSeparator';
+import { PanelState } from '../../components/PanelState';
+import { CollapsibleSection } from '../../components/CollapsibleSection';
 import {
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   ListChecks,
   NotePencil,
@@ -218,33 +219,27 @@ export function WritingPanel({
 
       <div className="writing-content">
         {/* Section 1: Outline */}
-        <section
-          className={`writing-section writing-outline-section ${outlineOpen ? 'expanded' : 'collapsed'}`}
-          aria-labelledby="writing-outline-heading"
+        <CollapsibleSection
+          className="writing-section writing-outline-section"
+          title="Outline"
+          id="writing-outline-heading"
+          icon={<Scroll size={13} aria-hidden="true" />}
+          count={summary.outline.length}
+          open={outlineOpen}
+          onOpenChange={setOutlineOpen}
+          headerClassName="writing-section-toggle"
+          headerRowClassName="writing-section-header-row"
+          bodyClassName="writing-section-body"
           style={{
             flex: outlineOpen ? '1 1 0' : '0 0 32px',
             height: outlineOpen ? undefined : '32px',
             minHeight: outlineOpen ? '60px' : '32px',
           }}
         >
-          <button
-            type="button"
-            className="writing-section-toggle"
-            aria-expanded={outlineOpen}
-            onClick={() => setOutlineOpen((open) => !open)}
-          >
-            {outlineOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span id="writing-outline-heading" className="writing-section-title-text">
-              <Scroll size={13} aria-hidden="true" />
-              Outline
-            </span>
-            <span className="writing-count">{summary.outline.length}</span>
-          </button>
-
           {outlineOpen && (
-            <div className="writing-section-body">
+            <>
               {summary.outline.length === 0 ? (
-                <p className="writing-empty">No section headings yet.</p>
+                <PanelState className="writing-empty" title="No section headings yet" />
               ) : (
                 <DndContext
                   sensors={sensors}
@@ -271,9 +266,9 @@ export function WritingPanel({
                   </SortableContext>
                 </DndContext>
               )}
-            </div>
+            </>
           )}
-        </section>
+        </CollapsibleSection>
 
         {/* Resizer Splitter between Outline and Notes */}
         {outlineOpen && notesOpen && (
@@ -295,33 +290,28 @@ export function WritingPanel({
         )}
 
         {/* Section 2: Notes */}
-        <section
-          className={`writing-section writing-todos-section ${notesOpen ? 'expanded' : 'collapsed'}`}
-          aria-labelledby="writing-todos-heading"
+        <CollapsibleSection
+          className="writing-section writing-todos-section"
+          title="Notes"
+          id="writing-todos-heading"
+          icon={<NotePencil size={13} aria-hidden="true" />}
+          count={summary.todos.length}
+          open={notesOpen}
+          onOpenChange={setNotesOpen}
+          headerClassName="writing-section-toggle"
+          bodyClassName="writing-section-body"
+          headerRowClassName="writing-section-header-row"
           style={{
             height: notesOpen ? (outlineOpen ? `${notesHeight}px` : undefined) : '32px',
             flex: notesOpen ? (outlineOpen ? `0 0 ${notesHeight}px` : '1 1 0') : '0 0 32px',
             minHeight: notesOpen ? '60px' : '32px',
           }}
+          bodyStyle={{ height: '100%' }}
         >
-          <button
-            type="button"
-            className="writing-section-toggle"
-            aria-expanded={notesOpen}
-            onClick={() => setNotesOpen((open) => !open)}
-          >
-            {notesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span id="writing-todos-heading" className="writing-section-title-text">
-              <NotePencil size={13} aria-hidden="true" />
-              Notes
-            </span>
-            <span className="writing-count">{summary.todos.length}</span>
-          </button>
-
           {notesOpen && (
-            <div className="writing-section-body">
+            <>
               {summary.todos.length === 0 ? (
-                <p className="writing-empty">No % TODO or % FIXME notes.</p>
+                <PanelState className="writing-empty" title="No % TODO or % FIXME notes" />
               ) : (
                 <ul className="writing-list">
                   {summary.todos.map((item) => (
@@ -350,9 +340,9 @@ export function WritingPanel({
                   ))}
                 </ul>
               )}
-            </div>
+            </>
           )}
-        </section>
+        </CollapsibleSection>
       </div>
     </div>
   );

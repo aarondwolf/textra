@@ -6,19 +6,53 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   busy?: boolean;
 }
 
+/** Native button with TeXtra's shared tooltip for compact icon and toolbar actions. */
+export function TooltipButton({
+  title,
+  disabled,
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  const button = (
+    <button {...props} disabled={disabled}>
+      {children}
+    </button>
+  );
+  if (!title) return button;
+  if (disabled) return button;
+  return <AppTooltip content={title}>{button}</AppTooltip>;
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'default', busy, className, type = 'button', disabled, ...props },
+  { variant = 'default', busy, className, type = 'button', disabled, title, ...props },
   ref,
 ) {
   const variantClass =
     variant === 'primary' ? 'primary-button' : variant === 'toolbar' ? 'toolbar-button' : '';
-  return (
+  const button = (
     <button
       ref={ref}
       type={type}
       className={[variantClass, className].filter(Boolean).join(' ') || undefined}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
+      title={undefined}
+      {...props}
+    />
+  );
+  if (!title) return button;
+  if (disabled || busy) return button;
+  return <AppTooltip content={title}>{button}</AppTooltip>;
+});
+
+export const AddButton = forwardRef<HTMLButtonElement, ButtonProps>(function AddButton(
+  { className, ...props },
+  ref,
+) {
+  return (
+    <Button
+      ref={ref}
+      className={['add-action-button', className].filter(Boolean).join(' ')}
       {...props}
     />
   );

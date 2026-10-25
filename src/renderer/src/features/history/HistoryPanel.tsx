@@ -1,14 +1,14 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import type { HistorySnapshotSummary, LegacyHistorySummary } from '../../../../shared/api';
+import type { HistorySnapshotSummary } from '../../../../shared/api';
 import { useHistorySnapshots } from './useHistorySnapshots';
 import { ResizableSeparator } from '../../components/ResizableSeparator';
 import { PaneHeader } from '../../components/Layout';
+import { PanelState } from '../../components/PanelState';
+import { CollapsibleSection } from '../../components/CollapsibleSection';
 import { IconButton } from '../../components/Button';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useOverlayZIndex } from '../../components/overlay-layers';
 import {
-  ChevronDown,
-  ChevronRight,
   History,
   FolderOpen,
   RefreshCw,
@@ -99,7 +99,6 @@ function triggerLabel(trigger: HistorySnapshotSummary['trigger']): string {
 
 export function HistoryPanel({
   projectId,
-  projectName = 'the current project',
   activePath,
   isDirty = false,
   selectedSnapshotId,
@@ -122,11 +121,6 @@ export function HistoryPanel({
     error: historyError,
     loadSnapshots,
   } = useHistorySnapshots(projectId, activePath);
-  const [legacyHistories, setLegacyHistories] = useState<LegacyHistorySummary[] | null>(null);
-  const [recoveryError, setRecoveryError] = useState('');
-  const recoveryGeneration = useRef({ value: 0 });
-  const currentProject = useRef(projectId);
-  currentProject.current = projectId;
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [pinDialogSnapshot, setPinDialogSnapshot] = useState<HistorySnapshotSummary | null>(null);
   const [pinLabelInput, setPinLabelInput] = useState('');
@@ -151,59 +145,6 @@ export function HistoryPanel({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    const owner = recoveryGeneration.current;
-    setLegacyHistories(null);
-    setRecoveryError('');
-    return () => {
-      owner.value++;
-    };
-  }, [projectId]);
-
-  async function discoverLegacyHistory() {
-    if (!projectId) return;
-    const generation = ++recoveryGeneration.current.value;
-    setRecoveryError('');
-    try {
-      const result = await window.textra.listLegacyFileHistories(projectId);
-      if (generation !== recoveryGeneration.current.value || currentProject.current !== projectId)
-        return;
-      if (!result.ok) throw new Error(result.error);
-      setLegacyHistories(result.value);
-    } catch (cause) {
-      if (generation === recoveryGeneration.current.value && currentProject.current === projectId)
-        setRecoveryError(
-          cause instanceof Error ? cause.message : 'Could not find earlier history.',
-        );
-    }
-  }
-
-  async function recoverLegacyHistory(history: LegacyHistorySummary) {
-    if (!projectId || busyAction) return;
-    const generation = recoveryGeneration.current.value;
-    setBusyAction('recover-history');
-    try {
-      const result = await window.textra.importLegacyFileHistory({
-        projectId,
-        legacyId: history.id,
-      });
-      if (generation !== recoveryGeneration.current.value || currentProject.current !== projectId)
-        return;
-      if (!result.ok) throw new Error(result.error);
-      if (result.value === 0) return;
-      setLegacyHistories((previous) => previous?.filter((item) => item.id !== history.id) ?? null);
-      await loadSnapshots();
-    } catch (cause) {
-      if (generation === recoveryGeneration.current.value && currentProject.current === projectId)
-        setRecoveryError(
-          cause instanceof Error ? cause.message : 'Could not recover earlier history.',
-        );
-    } finally {
-      if (generation === recoveryGeneration.current.value && currentProject.current === projectId)
-        setBusyAction(null);
-    }
-  }
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -344,75 +285,27 @@ export function HistoryPanel({
       />
 
       <div className="history-content">
-        {projectId && (
-          <div className="history-prompt-card">
-            <button
-              type="button"
-              disabled={Boolean(busyAction)}
-              title="Search for earlier TeXtra history stores. Nothing is imported until you choose a store and confirm the import."
-              onClick={() => void discoverLegacyHistory()}
-            >
-              Recover earlier history…
-            </button>
-            <p>
-              Find older TeXtra snapshots and merge them into this project. Existing snapshots and
-              the original history store are kept.
-            </p>
-            {legacyHistories && (
-              <div aria-label="Earlier history stores">
-                <p>
-                  Earlier history stores do not record which project they came from. Verify the
-                  sample paths belong to {projectName}, then choose a store to merge its snapshots
-                  into this project. The original store stays available.
-                </p>
-                {legacyHistories.length === 0 && <p>No earlier history stores found.</p>}
-                {legacyHistories.map((history) => (
-                  <button
-                    key={history.id}
-                    type="button"
-                    disabled={Boolean(busyAction)}
-                    onClick={() => void recoverLegacyHistory(history)}
-                  >
-                    {history.snapshotCount} snapshots · {history.samplePaths.join(', ')} (
-                    {history.id})
-                  </button>
-                ))}
-              </div>
-            )}
-            {recoveryError && <p role="alert">{recoveryError}</p>}
-          </div>
-        )}
         {/* Section 1: File History */}
-        <section
+        <CollapsibleSection
           className={`writing-section history-section ${historyOpen ? 'expanded' : 'collapsed'}`}
-          aria-labelledby="history-snapshots-heading"
-          style={{
-            flex: historyOpen ? '1 1 0' : '0 0 32px',
-            height: historyOpen ? undefined : '32px',
-            minHeight: historyOpen ? '80px' : '32px',
-            maxHeight: historyOpen ? undefined : '32px',
-          }}
-        >
-          <div className="history-section-header">
-            <button
-              type="button"
-              className="writing-section-toggle"
-              aria-expanded={historyOpen}
-              onClick={() => setHistoryOpen((open) => !open)}
-            >
-              {historyOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              <span id="history-snapshots-heading" className="writing-section-title-text">
-                <History size={13} aria-hidden="true" />
-                File History
+          title="File History"
+          id="history-snapshots-heading"
+          icon={<History size={13} aria-hidden="true" />}
+          detail={
+            fileName && (
+              <span className="history-header-filename" title={activePath ?? undefined}>
+                {fileName}
               </span>
-              {fileName && (
-                <span className="history-header-filename" title={activePath ?? undefined}>
-                  {fileName}
-                </span>
-              )}
-              <span className="writing-count">{snapshots.length}</span>
-            </button>
-            {historyOpen && activePath && (
+            )
+          }
+          count={snapshots.length}
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          headerClassName="writing-section-toggle"
+          headerRowClassName="history-section-header"
+          bodyClassName="history-section-body"
+          headerActions={
+            historyOpen && activePath ? (
               <div className="history-section-header-actions">
                 <IconButton
                   small={true}
@@ -425,11 +318,17 @@ export function HistoryPanel({
                   <Plus size={14} />
                 </IconButton>
               </div>
-            )}
-          </div>
-
+            ) : undefined
+          }
+          style={{
+            flex: historyOpen ? '1 1 0' : '0 0 32px',
+            height: historyOpen ? undefined : '32px',
+            minHeight: historyOpen ? '80px' : '32px',
+            maxHeight: historyOpen ? undefined : '32px',
+          }}
+        >
           {historyOpen && (
-            <div className="history-section-body">
+            <>
               {manualSnapshotPrompt && (
                 <div className="history-prompt-card">
                   <div style={{ display: 'flex', width: '100%', gap: 6, alignItems: 'center' }}>
@@ -523,27 +422,31 @@ export function HistoryPanel({
               <div className="history-list" role="region" aria-label="Historical snapshots">
                 {historyError && <p role="alert">{historyError}</p>}
                 {!activePath ? (
-                  <div className="history-empty">
-                    <History size={28} weight="thin" />
-                    <p>No document selected</p>
-                    <span>
-                      Open a file in your project to view its automatic historical snapshots.
-                    </span>
-                  </div>
+                  <PanelState
+                    className="history-empty"
+                    icon={<History size={26} weight="thin" />}
+                    title="No document selected"
+                    description="Open a file in your project to view its automatic historical snapshots."
+                  />
                 ) : loading && snapshots.length === 0 ? (
-                  <div className="history-empty">
-                    <RefreshCw size={24} weight="thin" className="conflict-orbit" />
-                    <p>Loading history…</p>
-                  </div>
+                  <PanelState
+                    className="history-empty"
+                    mode="loading"
+                    icon={<RefreshCw size={22} weight="thin" />}
+                    title="Loading history…"
+                  />
                 ) : snapshots.length === 0 ? (
-                  <div className="history-empty">
-                    <History size={28} weight="thin" />
-                    <p>No snapshots yet</p>
-                    <span>
-                      Snapshots are created automatically when saving, compiling, or after intervals
-                      of editing.
-                    </span>
-                  </div>
+                  <PanelState
+                    className="history-empty"
+                    icon={<History size={26} weight="thin" />}
+                    title="No snapshots yet"
+                    description={
+                      <>
+                        Snapshots are created automatically when saving, compiling, or after
+                        intervals of editing.
+                      </>
+                    }
+                  />
                 ) : (
                   groups.map((group) => (
                     <div key={group.title} className="history-group">
@@ -761,9 +664,9 @@ export function HistoryPanel({
                   </button>
                 )}
               </div>
-            </div>
+            </>
           )}
-        </section>
+        </CollapsibleSection>
 
         {/* Resizer Splitter between File History and Recent Projects */}
         {historyOpen && recentsOpen && (
@@ -785,9 +688,18 @@ export function HistoryPanel({
         )}
 
         {/* Section 2: Recent Projects */}
-        <section
+        <CollapsibleSection
           className={`writing-section history-section ${recentsOpen ? 'expanded' : 'collapsed'}`}
-          aria-labelledby="history-recents-heading"
+          title="Recent Projects"
+          id="history-recents-heading"
+          icon={<FolderOpen size={13} aria-hidden="true" />}
+          count={recents.length}
+          open={recentsOpen}
+          onOpenChange={setRecentsOpen}
+          headerClassName="writing-section-toggle"
+          headerRowClassName="history-recents-header-row"
+          bodyClassName="writing-section-body"
+          bodyStyle={{ overflowY: 'auto' }}
           style={{
             height: recentsOpen ? (historyOpen ? `${recentsHeight}px` : undefined) : '32px',
             flex: recentsOpen ? (historyOpen ? `0 0 ${recentsHeight}px` : '1 1 0') : '0 0 32px',
@@ -795,22 +707,8 @@ export function HistoryPanel({
             maxHeight: recentsOpen ? undefined : '32px',
           }}
         >
-          <button
-            type="button"
-            className="writing-section-toggle"
-            aria-expanded={recentsOpen}
-            onClick={() => setRecentsOpen((open) => !open)}
-          >
-            {recentsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span id="history-recents-heading" className="writing-section-title-text">
-              <FolderOpen size={13} aria-hidden="true" />
-              <span>Recent Projects</span>
-            </span>
-            <span className="writing-count">{recents.length}</span>
-          </button>
-
           {recentsOpen && (
-            <div className="writing-section-body" style={{ overflowY: 'auto' }}>
+            <>
               {recents.length === 0 ? (
                 <p className="writing-empty">No recent projects.</p>
               ) : (
@@ -845,9 +743,9 @@ export function HistoryPanel({
                     ))}
                 </div>
               )}
-            </div>
+            </>
           )}
-        </section>
+        </CollapsibleSection>
       </div>
     </div>
   );

@@ -94,6 +94,14 @@
   border-bottom: 1px solid var(--border);
   transition: background-color 0.15s ease;
 }
+.history-recents-header-row {
+  display: flex;
+  flex: 0 0 32px;
+  height: 32px;
+  min-width: 0;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
 
 .history-section-header .writing-section-toggle {
   flex: 1;

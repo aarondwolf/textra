@@ -28,6 +28,7 @@ const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 const MAX_COMPRESSED_BYTES = MAX_TEXT_BYTES + 64 * 1024;
 const MAX_INDEX_BYTES = 16 * 1024 * 1024;
 const MAX_SNAPSHOTS = 20000;
+const MAX_RECOVERY_RECEIPTS = 10000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const localParts = ['.textra', 'history'];
 const snapshotId = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
@@ -100,6 +101,7 @@ const snapshotSummarySchema = z
       .max(256)
       .refine((s) => s.length > 0 && s.trim() === s)
       .nullable(),
+    purpose: z.literal('recovery').optional(),
   })
   .strict();
 
@@ -220,8 +222,13 @@ export class HistoryService {
           'INVALID_ARGUMENT',
           'Request between 1 and 200 history snapshots with a valid cursor.',
         );
-      const { index } = await this.load(this.scope(request.projectId));
-      const sorted = index.snapshots
+      const scope = this.scope(request.projectId);
+      const { index } = await this.load(scope);
+      const summaries = new Map<string, HistorySnapshotSummary>();
+      for (const summary of [...index.snapshots, ...(await this.readRecoveryReceipts(scope))]) {
+        if (summary.path === path) summaries.set(summary.id, summary);
+      }
+      const sorted = [...summaries.values()]
         .filter((s) => s.path === path)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       const position =
@@ -273,7 +280,9 @@ export class HistoryService {
   private async readSnapshot(value: HistorySnapshotRef): Promise<HistorySnapshotContent> {
     const { scope, path, id } = this.ref(value);
     const { index } = await this.load(scope);
-    const summary = index.snapshots.find((s) => s.path === path && s.id === id);
+    const summary =
+      index.snapshots.find((s) => s.path === path && s.id === id) ??
+      (await this.readRecoveryReceipts(scope)).find((s) => s.path === path && s.id === id);
     if (!summary) throw new ProjectError('NOT_FOUND', 'Historical snapshot not found.');
     return this.content(scope, summary);
   }
@@ -294,6 +303,8 @@ export class HistoryService {
     const path = validateRelativePath(request.path);
     const content = text(request.content);
     const snapshotLabel = label(request.label);
+    if (request.purpose !== undefined && request.purpose !== 'recovery')
+      throw new ProjectError('INVALID_ARGUMENT', 'Unsupported snapshot purpose.');
     const scope = this.scope(request.projectId);
     const { index, bytes } = await this.load(scope);
     const revision = sha256(content);
@@ -312,6 +323,7 @@ export class HistoryService {
       trigger: request.trigger as HistorySnapshotSummary['trigger'],
       pinned: Boolean(snapshotLabel),
       label: snapshotLabel,
+      ...(request.purpose === 'recovery' ? { purpose: 'recovery' as const } : {}),
     };
     const next = { version: 1 as const, snapshots: [...index.snapshots, summary] };
     if (next.snapshots.length > MAX_SNAPSHOTS)
@@ -319,10 +331,47 @@ export class HistoryService {
     const compressed = await gzipAsync(Buffer.from(content, 'utf8'), { level: 9 });
     this.assertCurrent(scope);
     await scope.storage.write(fileParts(scope, path, id), compressed, null, MAX_COMPRESSED_BYTES);
+    if (summary.purpose === 'recovery') {
+      const receipt = Buffer.from(`${JSON.stringify({ version: 1, summary }, null, 2)}\n`);
+      await scope.storage.write(
+        [...scope.parts, 'recovery', `${id}.json`],
+        receipt,
+        null,
+        16 * 1024,
+      );
+    }
     // Publication failures leave recoverable orphan bytes rather than risk deleting
     // a snapshot after an index rename succeeded but cleanup reported an error.
     await this.save(scope, next, bytes);
     return summary;
+  }
+  private async readRecoveryReceipts(scope: Scope): Promise<HistorySnapshotSummary[]> {
+    const directory = [...scope.parts, 'recovery'];
+    const names = await scope.storage.files(directory, MAX_RECOVERY_RECEIPTS + 1);
+    if (names.length > MAX_RECOVERY_RECEIPTS)
+      throw new ProjectError('HISTORY_LIMIT', 'Recovery history has reached its receipt limit.');
+    const tombstones = new Set(names.filter((name) => name.endsWith('.deleted')));
+    const summaries: HistorySnapshotSummary[] = [];
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const id = name.slice(0, -5);
+      if (!snapshotId.test(id) || tombstones.has(`${id}.deleted`)) continue;
+      const bytes = await scope.storage.read([...directory, name], 16 * 1024);
+      if (!bytes) continue;
+      try {
+        const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) invalid();
+        const receipt = parsed as Record<string, unknown>;
+        if (receipt.version !== 1) invalid();
+        const summary = snapshotSummarySchema.parse(receipt.summary);
+        if (summary.id !== id || summary.purpose !== 'recovery') invalid();
+        validateRelativePath(summary.path);
+        summaries.push(summary);
+      } catch {
+        invalid();
+      }
+    }
+    return summaries;
   }
   create(value: CreateHistorySnapshotRequest): Promise<HistorySnapshotSummary> {
     return this.serialize(() => this.createSnapshot(value));
@@ -360,6 +409,7 @@ export class HistoryService {
         content: recoveryBuffer,
         trigger: 'manual',
         force: true,
+        purpose: 'recovery',
         label: 'Pre-restore editor backup',
       });
       if (disk.content !== recoveryBuffer)
@@ -368,6 +418,7 @@ export class HistoryService {
           content: disk.content,
           trigger: 'manual',
           force: true,
+          purpose: 'recovery',
           label: 'Pre-restore disk backup',
         });
       return this.projects.saveFile({ ...value, content: historical.content });
@@ -390,16 +441,28 @@ export class HistoryService {
     return this.serialize(async () => {
       const { scope, path, id } = this.ref(value);
       const { index, bytes } = await this.load(scope);
-      const summary = index.snapshots.find((s) => s.path === path && s.id === id);
+      const summary =
+        index.snapshots.find((s) => s.path === path && s.id === id) ??
+        (await this.readRecoveryReceipts(scope)).find((s) => s.path === path && s.id === id);
       if (!summary) throw new ProjectError('NOT_FOUND', 'Historical snapshot not found.');
       const parts = fileParts(scope, path, id);
       await scope.storage.resolve(parts, 'file');
+      if (summary.purpose === 'recovery') {
+        await scope.storage.write(
+          [...scope.parts, 'recovery', `${id}.deleted`],
+          Buffer.from(`${JSON.stringify({ version: 1, id })}\n`),
+          null,
+          1024,
+        );
+      }
       await this.save(
         scope,
         { version: 1, snapshots: index.snapshots.filter((s) => s !== summary) },
         bytes,
       );
       await scope.storage.remove(parts);
+      if (summary.purpose === 'recovery')
+        await scope.storage.remove([...scope.parts, 'recovery', `${id}.json`]);
     });
   }
   prune(projectId: string, nowMs = Date.now()): Promise<number> {
@@ -409,7 +472,8 @@ export class HistoryService {
       const byFile = new Map<string, HistorySnapshotSummary[]>();
       const keep = new Set<HistorySnapshotSummary>();
       for (const snapshot of index.snapshots) {
-        if (snapshot.pinned || snapshot.label) keep.add(snapshot);
+        if (snapshot.purpose === 'recovery' || snapshot.pinned || snapshot.label)
+          keep.add(snapshot);
         else {
           const group = byFile.get(snapshot.path) ?? [];
           group.push(snapshot);

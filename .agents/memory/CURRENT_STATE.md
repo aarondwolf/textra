@@ -14,6 +14,19 @@
 - Next: add bounded portable collaboration record storage and mandatory recovery
   receipts, then wire Yjs sessions, guarded save/merge, policy UI, and native tests.
 
+2026-10-25 Recovery history slice:
+
+- History summaries accept optional `purpose: recovery` while retaining version-1
+  index compatibility. Recovery snapshots publish immutable JSON receipts beside
+  existing gzip snapshots and are listed/read through the union of index and receipt.
+- Recovery snapshots are exempt from pruning. Explicit deletion writes a tombstone
+  first; delayed receipt arrival is ignored. History restore now backs up its live
+  buffer and differing disk text as recovery entries.
+- Evidence: typecheck passes; `npm test -- tests/unit/history.test.ts` passes 32/32
+  with desktop filesystem permissions. New coverage checks independent discovery,
+  pruning protection, and delayed-receipt deletion.
+- Next: portable Yjs record store and document session integration.
+
 2026-10-24 Welcome page recent-project layout:
 
 - Fixed the welcome content width to account for its horizontal inset so it cannot

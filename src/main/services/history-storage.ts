@@ -204,4 +204,21 @@ export class HistoryStorage {
     }
     return names;
   }
+
+  async files(parts: string[], maximum: number): Promise<string[]> {
+    const target = await this.resolve(parts, 'directory');
+    if (!target) return [];
+    const names: string[] = [];
+    const directory = await opendir(target);
+    for await (const entry of directory) {
+      if (entry.isFile()) {
+        if (names.length >= maximum)
+          throw new ProjectError('HISTORY_LIMIT', 'Too many recovery receipts to inspect safely.');
+        const child = [...parts, entry.name];
+        await this.resolve(child, 'file');
+        names.push(entry.name);
+      } else if (entry.isSymbolicLink()) unsafe();
+    }
+    return names;
+  }
 }

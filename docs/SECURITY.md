@@ -6,6 +6,9 @@ canonical root before reading or writing policy. Collaboration storage uses
 validated relative project references and bounded immutable records under
 `.textra/crdt`; decoded Yjs state is checked away from the Electron main event
 loop. No network provider or automatic AI/source sharing is introduced.
+Recovery entries reuse the History storage containment checks, compression, hashing
+and create-only publication. Deletion markers are written before snapshot bytes are
+removed; malformed receipts are preserved and surfaced as invalid History.
 
 Renderer uses context isolation, sandbox, disabled Node integration and a CSP.
 Navigation and new windows are denied. Main validates IPC sender and arguments.

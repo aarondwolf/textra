@@ -85,6 +85,52 @@ describe('flat-file compressed automatic file history', () => {
     expect(readBack.revision).toBe(snapshot!.revision);
   });
 
+  it('keeps mandatory recovery receipts discoverable outside the shared index', async () => {
+    const snapshot = await history.create({
+      projectId: project.id,
+      path: 'main.tex',
+      content: 'exact pre-merge buffer\n',
+      trigger: 'manual',
+      force: true,
+      purpose: 'recovery',
+      label: 'Pre-merge editor backup',
+    });
+    const recoveryDir = join(root, '.textra', 'history', 'recovery');
+    const receiptPath = join(recoveryDir, `${snapshot.id}.json`);
+    const receipt = await readFile(receiptPath);
+
+    // An index update from another device can omit this entry; the receipt remains authoritative.
+    const indexPath = join(root, '.textra', 'history', 'index.json');
+    const originalIndex = await readFile(indexPath);
+    const index = JSON.parse(originalIndex.toString('utf8')) as {
+      version: 1;
+      snapshots: Array<{ id: string }>;
+    };
+    index.snapshots = index.snapshots.filter((item) => item.id !== snapshot.id);
+    await writeFile(indexPath, JSON.stringify(index));
+
+    expect(await history.list({ projectId: project.id, path: 'main.tex' })).toMatchObject({
+      snapshots: [expect.objectContaining({ id: snapshot.id, purpose: 'recovery' })],
+    });
+    expect(
+      await history.read({ projectId: project.id, path: 'main.tex', snapshotId: snapshot.id }),
+    ).toMatchObject({ content: 'exact pre-merge buffer\n' });
+    expect(await history.prune(project.id, Date.now() + 10 * 365 * 24 * 60 * 60 * 1000)).toBe(0);
+
+    await history.deleteSnapshot({
+      projectId: project.id,
+      path: 'main.tex',
+      snapshotId: snapshot.id,
+    });
+    expect(await history.list({ projectId: project.id, path: 'main.tex' })).toMatchObject({
+      snapshots: [],
+    });
+    await writeFile(receiptPath, receipt); // Simulate an old synced receipt arriving after deletion.
+    expect(await history.list({ projectId: project.id, path: 'main.tex' })).toMatchObject({
+      snapshots: [],
+    });
+  });
+
   it('skips redundant snapshots with identical content unless forced', async () => {
     const content = 'Identical document content.\n';
 

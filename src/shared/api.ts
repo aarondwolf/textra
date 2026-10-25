@@ -264,6 +264,7 @@ export interface HistorySnapshotSummary {
   trigger: HistorySnapshotTrigger;
   pinned: boolean;
   label: string | null;
+  purpose?: 'recovery';
 }
 export interface HistorySnapshotContent extends HistorySnapshotSummary {
   content: string;
@@ -287,6 +288,7 @@ export interface CreateHistorySnapshotRequest extends FileRef {
   trigger: HistorySnapshotTrigger;
   force?: boolean;
   label?: string;
+  purpose?: 'recovery';
 }
 export interface HistorySnapshotRef extends FileRef {
   snapshotId: string;
@@ -519,7 +521,10 @@ export interface TextraAPI {
   getPreferences(): Promise<Result<Preferences>>;
   setPreferences(value: Preferences): Promise<Result<Preferences>>;
   getProjectConflictPolicy(projectId: string): Promise<Result<ConflictPolicy>>;
-  setProjectConflictPolicy(request: { projectId: string; policy: ConflictPolicy }): Promise<Result<ConflictPolicy>>;
+  setProjectConflictPolicy(request: {
+    projectId: string;
+    policy: ConflictPolicy;
+  }): Promise<Result<ConflictPolicy>>;
   getWindowState(): Promise<Result<WindowState>>;
   controlWindow(action: WindowAction): Promise<Result<void>>;
   onWindowState(listener: (state: WindowState) => void): () => void;

@@ -33,6 +33,11 @@ Project history has one canonical storage resolver, bounded validated version-1
 indexes and paginated listings. Portable history lives in `.textra/history`; opaque
 legacy app-data store IDs are recoverable only through explicit reviewed import.
 EOF-bounded reads use current data rather than treating a stale stat size as EOF.
+Mandatory recovery snapshots reuse History gzip blobs and add immutable receipts in
+`.textra/history/recovery`, so a concurrent shared-index update cannot make them
+undiscoverable. Listings union indexed snapshots and validated receipts by snapshot
+ID. Recovery entries are excluded from pruning; explicit deletion publishes a
+tombstone before removing bytes.
 Language tools use an owned process helper; one lint and format slot per workspace
 provide cancellation, output bounds, deadlines and awaited teardown. TexLab uses an
 incremental frame parser and an outbound queue that honors stream backpressure.

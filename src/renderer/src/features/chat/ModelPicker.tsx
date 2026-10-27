@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Command } from 'cmdk';
 import * as Popover from '@radix-ui/react-popover';
@@ -115,37 +116,42 @@ export function ModelPicker({
   return (
     <div className={`model-picker model-picker-${variant}`}>
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
-          <button
-            ref={button}
-            type="button"
-            className="model-picker-button"
-            disabled={disabled || !groups.length}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            aria-label={`${label}: ${display}`}
-            title={
-              current && value
-                ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label})`
-                : (modelUnavailableReason(settings, value, role) ?? placeholder)
-            }
-          >
-            <span className="model-picker-value">
-              <span className="model-picker-name">{display}</span>
-              {variant === 'field' && value && current && !only && (
-                <small className="model-picker-provider">
-                  {settings?.providers.find((provider) => provider.id === value.provider)
-                    ?.displayName || AI_PROVIDERS[value.provider].label}
-                </small>
-              )}
-            </span>
-            {placement === 'up' ? (
-              <ChevronUp size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
-            ) : (
-              <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
-            )}
-          </button>
-        </Popover.Trigger>
+        <AppTooltip
+          content={
+            current && value
+              ? `${current.label} (${settings?.providers.find((provider) => provider.id === value.provider)?.displayName || AI_PROVIDERS[value.provider].label})`
+              : (modelUnavailableReason(settings, value, role) ?? placeholder)
+          }
+        >
+          <span className="tooltip-disabled-trigger">
+            <Popover.Trigger asChild>
+              <button
+                ref={button}
+                type="button"
+                className="model-picker-button"
+                disabled={disabled || !groups.length}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-label={`${label}: ${display}`}
+              >
+                <span className="model-picker-value">
+                  <span className="model-picker-name">{display}</span>
+                  {variant === 'field' && value && current && !only && (
+                    <small className="model-picker-provider">
+                      {settings?.providers.find((provider) => provider.id === value.provider)
+                        ?.displayName || AI_PROVIDERS[value.provider].label}
+                    </small>
+                  )}
+                </span>
+                {placement === 'up' ? (
+                  <ChevronUp size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+                ) : (
+                  <ChevronDown size={variant === 'compact' ? 10 : 12} aria-hidden="true" />
+                )}
+              </button>
+            </Popover.Trigger>
+          </span>
+        </AppTooltip>
         <Popover.Portal>
           <Popover.Content
             side={placement === 'up' ? 'top' : 'bottom'}
@@ -199,27 +205,27 @@ export function ModelPicker({
                       const ref = { provider: group.provider, model: model.id };
                       const selected = sameModel(ref, value);
                       return (
-                        <Command.Item
-                          key={modelValue(ref)}
-                          value={modelValue(ref)}
-                          keywords={[model.label, model.id, group.label, group.provider]}
-                          data-current-model={selected ? 'true' : undefined}
-                          className="model-picker-option"
-                          title={model.id}
-                          onSelect={() => choose(ref)}
-                        >
-                          <span className="model-picker-option-text">
-                            <span>{model.label}</span>
-                            {model.label !== model.id && <small>{model.id}</small>}
-                          </span>
-                          {role && sameModel(settings?.roleDefaults[role], ref) && (
-                            <Star size={11} weight="fill" aria-label="Role default" />
-                          )}
-                          {(!role || !sameModel(settings?.roleDefaults[role], ref)) &&
-                            group.defaultModel === model.id &&
-                            !only && <small className="model-picker-tag">default</small>}
-                          {selected && <Check size={11} aria-hidden="true" />}
-                        </Command.Item>
+                        <AppTooltip key={modelValue(ref)} content={model.id}>
+                          <Command.Item
+                            value={modelValue(ref)}
+                            keywords={[model.label, model.id, group.label, group.provider]}
+                            data-current-model={selected ? 'true' : undefined}
+                            className="model-picker-option"
+                            onSelect={() => choose(ref)}
+                          >
+                            <span className="model-picker-option-text">
+                              <span>{model.label}</span>
+                              {model.label !== model.id && <small>{model.id}</small>}
+                            </span>
+                            {role && sameModel(settings?.roleDefaults[role], ref) && (
+                              <Star size={11} weight="fill" aria-label="Role default" />
+                            )}
+                            {(!role || !sameModel(settings?.roleDefaults[role], ref)) &&
+                              group.defaultModel === model.id &&
+                              !only && <small className="model-picker-tag">default</small>}
+                            {selected && <Check size={11} aria-hidden="true" />}
+                          </Command.Item>
+                        </AppTooltip>
                       );
                     })}
                   </Command.Group>

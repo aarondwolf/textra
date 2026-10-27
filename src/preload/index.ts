@@ -118,6 +118,8 @@ const api: TextraAPI = {
   listProjectDirectory: (request) => ipcRenderer.invoke('textra:project:directory', request),
   prepareProject: (projectId) => ipcRenderer.invoke('textra:project:prepare', projectId),
   readFile: (request) => ipcRenderer.invoke('textra:file:read', request),
+  readReferenceCandidate: (request) =>
+    ipcRenderer.invoke('textra:file:read-reference-candidate', request),
   saveFile: (request) => ipcRenderer.invoke('textra:file:save', request),
   createEntry: (request) => ipcRenderer.invoke('textra:file:create', request),
   renameEntry: (request) => ipcRenderer.invoke('textra:file:rename', request),

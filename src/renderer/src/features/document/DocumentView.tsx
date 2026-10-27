@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import {
@@ -199,21 +200,20 @@ function FileNodes({
                 <span className="doc-twisty-spacer" aria-hidden="true" />
               )}
               {openable ? (
-                <button
-                  className="doc-entry"
-                  title={nodeHint(node)}
-                  aria-current={node.path === activeRoot && depth === 0 ? 'true' : undefined}
-                  onClick={() => void openDocument(node.path!)}
-                >
-                  {label}
-                </button>
+                <AppTooltip content={nodeHint(node)}>
+                  <button
+                    className="doc-entry"
+
+                    aria-current={node.path === activeRoot && depth === 0 ? 'true' : undefined}
+                    onClick={() => void openDocument(node.path!)}
+                  >
+                    {label}
+                  </button>
+                </AppTooltip>
               ) : (
-                <span
-                  className={'doc-entry static' + (dimmed ? ' dimmed' : '')}
-                  title={nodeHint(node)}
-                >
-                  {label}
-                </span>
+                <AppTooltip content={nodeHint(node)}>
+                  <span className={'doc-entry static' + (dimmed ? ' dimmed' : '')}>{label}</span>
+                </AppTooltip>
               )}
             </div>
             {expandable && open && (
@@ -270,25 +270,29 @@ function Breadcrumbs({
   const crumbs = breadcrumbItems(items, activeIndex);
   return (
     <nav className="doc-breadcrumbs" aria-label="Document location">
-      <button
-        type="button"
-        title={`Go to the beginning of ${activePath}`}
-        onClick={() => void openDocument(activePath, { path: activePath, line: 1, column: 1 })}
-      >
-        {basenameOf(activePath)}
-      </button>
+      <AppTooltip content={`Go to the beginning of ${activePath}`}>
+        <button
+          type="button"
+
+          onClick={() => void openDocument(activePath, { path: activePath, line: 1, column: 1 })}
+        >
+          {basenameOf(activePath)}
+        </button>
+      </AppTooltip>
       {crumbs.map((item, index) => (
         <span className="doc-breadcrumb" key={`${item.path}:${item.line}:${index}`}>
           <ChevronRight size={11} aria-hidden="true" />
-          <button
-            type="button"
-            title={`Go to ${item.path}, line ${item.line}`}
-            onClick={() =>
-              void openDocument(item.path, { path: item.path, line: item.line, column: 1 })
-            }
-          >
-            {item.title}
-          </button>
+          <AppTooltip content={`Go to ${item.path}, line ${item.line}`}>
+            <button
+              type="button"
+
+              onClick={() =>
+                void openDocument(item.path, { path: item.path, line: item.line, column: 1 })
+              }
+            >
+              {item.title}
+            </button>
+          </AppTooltip>
         </span>
       ))}
     </nav>
@@ -311,20 +315,22 @@ function Outline({
         const depth = Math.min(item.level - base, 4);
         return (
           <li key={`${item.path}:${item.line}:${position}`}>
-            <button
-              className="doc-entry doc-heading-entry"
-              aria-current={position === activeIndex ? 'location' : undefined}
-              style={{ paddingLeft: 10 + depth * 12 }}
-              title={`${item.path}, line ${item.line}`}
-              onClick={() =>
-                void openDocument(item.path, { path: item.path, line: item.line, column: 1 })
-              }
-            >
-              <span className={'doc-title level-' + Math.min(depth, 2)}>{item.title}</span>
-              {item.path !== activePath && items[position - 1]?.path !== item.path && (
-                <span className="doc-from">{basenameOf(item.path)}</span>
-              )}
-            </button>
+            <AppTooltip content={`${item.path}, line ${item.line}`}>
+              <button
+                className="doc-entry doc-heading-entry"
+                aria-current={position === activeIndex ? 'location' : undefined}
+                style={{ paddingLeft: 10 + depth * 12 }}
+
+                onClick={() =>
+                  void openDocument(item.path, { path: item.path, line: item.line, column: 1 })
+                }
+              >
+                <span className={'doc-title level-' + Math.min(depth, 2)}>{item.title}</span>
+                {item.path !== activePath && items[position - 1]?.path !== item.path && (
+                  <span className="doc-from">{basenameOf(item.path)}</span>
+                )}
+              </button>
+            </AppTooltip>
           </li>
         );
       })}
@@ -341,7 +347,6 @@ function CitationList({
   entries: readonly BibliographyEntry[];
   activePath: string;
 }) {
-  const [hovered, setHovered] = useState<string | null>(null);
   const entryByKey = useMemo(() => new Map(entries.map((entry) => [entry.key, entry])), [entries]);
 
   return (
@@ -354,32 +359,23 @@ function CitationList({
           : `${citation.value} · No matching bibliography entry is currently available.`;
         return (
           <li className="doc-citation" key={id}>
-            <button
-              type="button"
-              className="doc-entry doc-citation-entry"
-              aria-describedby={hovered === id ? `${id}-detail` : undefined}
-              title={detail}
-              onBlur={() => setHovered((current) => (current === id ? null : current))}
-              onFocus={() => setHovered(id)}
-              onMouseEnter={() => setHovered(id)}
-              onMouseLeave={() => setHovered((current) => (current === id ? null : current))}
-              onClick={() =>
-                void openDocument(activePath, {
-                  path: activePath,
-                  line: citation.line,
-                  column: citation.column,
-                })
-              }
-            >
-              <BookBookmark size={13} aria-hidden="true" />
-              <span className="doc-label">{citation.value}</span>
-              <span className="doc-from">Ln {citation.line}</span>
-            </button>
-            {hovered === id && (
-              <span className="doc-citation-tooltip" id={`${id}-detail`} role="tooltip">
-                {detail}
-              </span>
-            )}
+            <AppTooltip content={detail}>
+              <button
+                type="button"
+                className="doc-entry doc-citation-entry"
+                onClick={() =>
+                  void openDocument(activePath, {
+                    path: activePath,
+                    line: citation.line,
+                    column: citation.column,
+                  })
+                }
+              >
+                <BookBookmark size={13} aria-hidden="true" />
+                <span className="doc-label">{citation.value}</span>
+                <span className="doc-from">Ln {citation.line}</span>
+              </button>
+            </AppTooltip>
           </li>
         );
       })}
@@ -451,13 +447,15 @@ export function DocumentView({
       const index = buildFileIndex(
         projectFiles.filter((file) => file.kind === 'file').map((file) => file.path),
       );
-      const readSource = async (path: string): Promise<string | null> => {
+      const readSource = async (path: string, candidate = false): Promise<string | null> => {
         const open = useWorkspace.getState().documents.find((document) => document.path === path);
         if (open) return open.content;
         if (diskCache.current.has(path)) return diskCache.current.get(path) ?? null;
         let text: string | null;
         try {
-          const result = await window.textra.readFile({ projectId, path });
+          const result = await (
+            candidate ? window.textra.readReferenceCandidate : window.textra.readFile
+          )({ projectId, path });
           text = result.ok ? result.value.content : null;
         } catch {
           text = null;
@@ -465,7 +463,12 @@ export function DocumentView({
         diskCache.current.set(path, text);
         return text;
       };
-      void buildDocumentModel(active, { readSource, index, listingComplete }).then((next) => {
+      void buildDocumentModel(active, {
+        readSource,
+        readCandidate: (path) => readSource(path, true),
+        index,
+        listingComplete,
+      }).then((next) => {
         if (request.current === id) setModel(next);
       });
     }, REBUILD_DELAY_MS);
@@ -486,15 +489,19 @@ export function DocumentView({
     <>
       <div className="sidebar-title">
         <span className="sidebar-heading">Document</span>
-        <button
-          className="icon-button small"
-          aria-label="Refresh document structure"
-          title="Refresh document structure"
-          disabled={!active}
-          onClick={() => setRefreshTick((tick) => tick + 1)}
-        >
-          <RefreshCw size={14} />
-        </button>
+        <AppTooltip content={'Refresh document structure'}>
+          <span className="tooltip-disabled-trigger">
+            <button
+              className="icon-button small"
+              aria-label="Refresh document structure"
+
+              disabled={!active}
+              onClick={() => setRefreshTick((tick) => tick + 1)}
+            >
+              <RefreshCw size={14} />
+            </button>
+          </span>
+        </AppTooltip>
       </div>
       {!project ? (
         <PanelState
@@ -510,9 +517,11 @@ export function DocumentView({
         />
       ) : (
         <>
-          <div className="project-heading" title={active}>
-            <span>{active}</span>
-          </div>
+          <AppTooltip content={active}>
+            <div className="project-heading">
+              <span>{active}</span>
+            </div>
+          </AppTooltip>
           {!current ? (
             <div className="doc-note" role="status">
               Reading structure

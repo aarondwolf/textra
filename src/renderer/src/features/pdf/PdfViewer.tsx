@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -236,18 +237,20 @@ function PdfPageItem({
         margin: '0 auto',
       }}
     >
-      <canvas
-        ref={canvasRef}
-        tabIndex={0}
-        aria-label={`PDF page ${pageNumber}`}
-        onDoubleClick={(event) => {
-          if (pageProxy) onInverse(event, pageNumber, pageProxy, scale);
-        }}
-        title="Double-click to find this position in the source"
-        style={{
-          display: rendered ? 'block' : 'none',
-        }}
-      />
+      <AppTooltip content={'Double-click to find this position in the source'}>
+        <canvas
+          ref={canvasRef}
+          tabIndex={0}
+          aria-label={`PDF page ${pageNumber}`}
+          onDoubleClick={(event) => {
+            if (pageProxy) onInverse(event, pageNumber, pageProxy, scale);
+          }}
+
+          style={{
+            display: rendered ? 'block' : 'none',
+          }}
+        />
+      </AppTooltip>
       {highlights.length > 0 && (
         <div className="pdf-highlights" aria-hidden="true">
           {highlights.map((box, index) => (
@@ -771,33 +774,40 @@ export default function PdfViewer({
           })),
         ]}
       />
-      <button
-        className="pdf-source-sync"
-        aria-label="Go to source line"
-        onClick={() => void forward()}
-        disabled={!source || restored}
-        title={
+      <AppTooltip
+        content={
           restored
             ? 'Compile to enable source navigation for this restored PDF'
             : 'Find editor cursor in the PDF'
         }
       >
-        <LocateFixed size={15} aria-hidden="true" />
-      </button>
+        <span className="tooltip-disabled-trigger">
+          <button
+            className="pdf-source-sync"
+            aria-label="Go to source line"
+            onClick={() => void forward()}
+            disabled={!source || restored}
+          >
+            <LocateFixed size={15} aria-hidden="true" />
+          </button>
+        </span>
+      </AppTooltip>
     </>
   ) : null;
 
   const controls = pdf ? (
     compact ? (
       <div className="pdf-controls pdf-controls-compact">
-        <button
-          aria-label="PDF controls"
-          aria-expanded={overflowOpen}
-          title="PDF controls"
-          onClick={() => setOverflowOpen((open) => !open)}
-        >
-          <Ellipsis size={15} aria-hidden="true" />
-        </button>
+        <AppTooltip content={'PDF controls'}>
+          <button
+            aria-label="PDF controls"
+            aria-expanded={overflowOpen}
+
+            onClick={() => setOverflowOpen((open) => !open)}
+          >
+            <Ellipsis size={15} aria-hidden="true" />
+          </button>
+        </AppTooltip>
         {overflowOpen && (
           <div
             className="pdf-controls-menu"

@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronDown, Play, Square, Warning } from '../icons';
-import { Button, IconButton } from './Button';
+import { Button, IconButton, TooltipButton } from './Button';
 
 export interface CompileControlProps {
   variant?: 'toolbar' | 'collapsed';
@@ -55,7 +55,7 @@ export function CompileControl({
 
   if (variant === 'collapsed') {
     return (
-      <button
+      <TooltipButton
         type="button"
         className={`collapsed-compile collapsed-feedback-${feedback}`}
         data-feedback={feedback}
@@ -74,7 +74,7 @@ export function CompileControl({
         ) : (
           <Play size={11} weight="fill" />
         )}
-      </button>
+      </TooltipButton>
     );
   }
 

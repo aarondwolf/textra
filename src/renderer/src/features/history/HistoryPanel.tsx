@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useEffect, useState, useMemo, useRef } from 'react';
 import type { HistorySnapshotSummary } from '../../../../shared/api';
 import { useHistorySnapshots } from './useHistorySnapshots';
@@ -288,9 +289,9 @@ export function HistoryPanel({
           icon={<History size={13} aria-hidden="true" />}
           detail={
             fileName && (
-              <span className="history-header-filename" title={activePath ?? undefined}>
-                {fileName}
-              </span>
+              <AppTooltip content={activePath ?? ''}>
+                <span className="history-header-filename">{fileName}</span>
+              </AppTooltip>
             )
           }
           count={snapshots.length}
@@ -468,13 +469,15 @@ export function HistoryPanel({
                           >
                             <div className="history-item-top">
                               <div className="history-item-info">
-                                <span className="history-item-time" title={snap.createdAt}>
-                                  {formatTime(snap.createdAt)}
-                                </span>
-                                {snap.label && (
-                                  <span className="history-item-label" title={snap.label}>
-                                    {snap.label}
+                                <AppTooltip content={snap.createdAt}>
+                                  <span className="history-item-time">
+                                    {formatTime(snap.createdAt)}
                                   </span>
+                                </AppTooltip>
+                                {snap.label && (
+                                  <AppTooltip content={snap.label}>
+                                    <span className="history-item-label">{snap.label}</span>
+                                  </AppTooltip>
                                 )}
                                 <div className="history-item-meta">
                                   <span>{formatDate(snap.createdAt)}</span>
@@ -542,19 +545,23 @@ export function HistoryPanel({
                                           <span>Edit version label</span>
                                         </DropdownMenu.Item>
                                         <DropdownMenu.Separator className="history-menu-divider" />
-                                        <DropdownMenu.Item
-                                          className="history-menu-item history-menu-delete"
-                                          disabled={!canDelete || Boolean(busyAction)}
-                                          title={
+                                        <AppTooltip
+                                          content={
                                             canDelete
                                               ? 'Delete snapshot'
                                               : 'Delete (save current file first)'
                                           }
-                                          onSelect={() => void handleDelete(snap)}
                                         >
-                                          <Trash2 size={13} />
-                                          <span>Delete snapshot</span>
-                                        </DropdownMenu.Item>
+                                          <DropdownMenu.Item
+                                            className="history-menu-item history-menu-delete"
+                                            disabled={!canDelete || Boolean(busyAction)}
+
+                                            onSelect={() => void handleDelete(snap)}
+                                          >
+                                            <Trash2 size={13} />
+                                            <span>Delete snapshot</span>
+                                          </DropdownMenu.Item>
+                                        </AppTooltip>
                                       </DropdownMenu.Content>
                                     </DropdownMenu.Portal>
                                   </DropdownMenu.Root>
@@ -615,19 +622,15 @@ export function HistoryPanel({
                                   </div>
                                 )}
                                 <div className="history-item-pill-row">
-                                  <span
-                                    className={`history-pill trigger-${snap.trigger}`}
-                                    title={`Created via ${snap.trigger}`}
-                                  >
-                                    {triggerLabel(snap.trigger)}
-                                  </span>
-                                  {snap.pinned && (
-                                    <span
-                                      className="history-pill pinned"
-                                      title="Pinned — protected from pruning"
-                                    >
-                                      Pinned
+                                  <AppTooltip content={`Created via ${snap.trigger}`}>
+                                    <span className={`history-pill trigger-${snap.trigger}`}>
+                                      {triggerLabel(snap.trigger)}
                                     </span>
+                                  </AppTooltip>
+                                  {snap.pinned && (
+                                    <AppTooltip content={'Pinned — protected from pruning'}>
+                                      <span className="history-pill pinned">Pinned</span>
+                                    </AppTooltip>
                                   )}
                                 </div>
                               </div>
@@ -701,16 +704,20 @@ export function HistoryPanel({
                     .sort((a, b) => Number(b.pinned) - Number(a.pinned))
                     .map((recent) => (
                       <div className="recent-row" key={recent.id}>
-                        <button
-                          className="recent-open"
-                          title={recent.rootPath}
-                          aria-label={`Open recent ${recent.name}`}
-                          disabled={projectBusy}
-                          onClick={() => onOpenFolder?.(recent.id)}
-                        >
-                          <FolderOpen size={13} />
-                          <span>{recent.name}</span>
-                        </button>
+                        <AppTooltip content={recent.rootPath}>
+                          <span className="tooltip-disabled-trigger">
+                            <button
+                              className="recent-open"
+
+                              aria-label={`Open recent ${recent.name}`}
+                              disabled={projectBusy}
+                              onClick={() => onOpenFolder?.(recent.id)}
+                            >
+                              <FolderOpen size={13} />
+                              <span>{recent.name}</span>
+                            </button>
+                          </span>
+                        </AppTooltip>
                         {onPinProject && (
                           <IconButton
                             small={true}

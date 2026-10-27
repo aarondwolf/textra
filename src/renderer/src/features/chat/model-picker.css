@@ -206,3 +206,8 @@
 .model-picker-compact .model-picker-option-text small {
   display: none;
 }
+
+.model-picker-field > .tooltip-disabled-trigger {
+  width: 100%;
+  min-width: 0;
+}

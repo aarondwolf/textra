@@ -1,3 +1,4 @@
+import { AppTooltip } from './components/HelpTooltip';
 import { emitTextraEvent } from './services/events';
 import {
   Fragment,
@@ -502,21 +503,22 @@ function SortableTab({
             }
           }}
         >
-          <button
-            role="tab"
-            aria-label={`Edit ${document.path}`}
-            aria-selected={document.path === activePath}
-            title={document.path}
-            onClick={onSelect}
-          >
-            <FileText size={13} />
-            <span>{document.path.split('/').at(-1)}</span>
-            <span
-              className={`dirty-dot ${isDirty ? 'is-dirty' : ''}`}
-              aria-label={isDirty ? 'Unsaved changes' : undefined}
-            />
-            {document.conflict && <Warning size={12} aria-label="External change conflict" />}
-          </button>
+          <AppTooltip content={document.path}>
+            <button
+              role="tab"
+              aria-label={`Edit ${document.path}`}
+              aria-selected={document.path === activePath}
+              onClick={onSelect}
+            >
+              <FileText size={13} />
+              <span>{document.path.split('/').at(-1)}</span>
+              <span
+                className={`dirty-dot ${isDirty ? 'is-dirty' : ''}`}
+                aria-label={isDirty ? 'Unsaved changes' : undefined}
+              />
+              {document.conflict && <Warning size={12} aria-label="External change conflict" />}
+            </button>
+          </AppTooltip>
           <button
             className="tab-close"
             aria-label={`Close ${document.path}`}
@@ -3030,17 +3032,28 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 {project && (
                   <label className="file-filter">
                     <span className="sr-only">Filter project files</span>
-                    <input
-                      aria-label="Filter project files"
-                      placeholder="Filter loaded files"
-                      title="Searches files loaded two levels deep. Expand deeper folders to load their contents."
-                      value={fileFilter}
-                      onChange={(event) => setFileFilter(event.target.value)}
-                    />
+                    <AppTooltip
+                      content={
+                        'Searches files loaded two levels deep. Expand deeper folders to load their contents.'
+                      }
+                    >
+                      <input
+                        aria-label="Filter project files"
+                        placeholder="Filter loaded files"
+                        value={fileFilter}
+                        onChange={(event) => setFileFilter(event.target.value)}
+                      />
+                    </AppTooltip>
                   </label>
                 )}
-                <div className="project-heading" title={project?.rootPath}>
-                  <span>{project?.name ?? 'No project open'}</span>
+                <div className="project-heading">
+                  {project ? (
+                    <AppTooltip content={project.rootPath}>
+                      <span>{project.name}</span>
+                    </AppTooltip>
+                  ) : (
+                    <span>No project open</span>
+                  )}
                   {project && (
                     <div className="inline-actions">
                       <IconButton
@@ -3160,20 +3173,21 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                 </button>
                                 {selected === file.path && (
                                   <DropdownMenuPrimitive.Root>
-                                    <DropdownMenuPrimitive.Trigger asChild>
-                                      <button
-                                        className="file-more"
-                                        aria-label={`More actions for ${file.path}`}
-                                        title="More actions"
-                                        disabled={busy}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setSelected(file.path);
-                                        }}
-                                      >
-                                        <Ellipsis size={14} />
-                                      </button>
-                                    </DropdownMenuPrimitive.Trigger>
+                                    <AppTooltip content="More actions">
+                                      <DropdownMenuPrimitive.Trigger asChild>
+                                        <button
+                                          className="file-more"
+                                          aria-label={`More actions for ${file.path}`}
+                                          disabled={busy}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            setSelected(file.path);
+                                          }}
+                                        >
+                                          <Ellipsis size={14} />
+                                        </button>
+                                      </DropdownMenuPrimitive.Trigger>
+                                    </AppTooltip>
                                     <DropdownMenuPrimitive.Portal>
                                       <DropdownMenuPrimitive.Content
                                         className="file-menu"
@@ -3240,11 +3254,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                         <DropdownMenuPrimitive.Item
                                           role="menuitem"
                                           disabled={busy || !vscodeAvailable}
-                                          title={
-                                            vscodeAvailable
-                                              ? undefined
-                                              : 'Visual Studio Code is not installed'
-                                          }
                                           onSelect={() => {
                                             if (!project) return;
                                             void run(async () => {
@@ -3257,7 +3266,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                             });
                                           }}
                                         >
-                                          Open in VS Code
+                                          {vscodeAvailable
+                                            ? 'Open in VS Code'
+                                            : 'Visual Studio Code is not installed'}
                                         </DropdownMenuPrimitive.Item>
                                         {file.kind === 'file' && (
                                           <DropdownMenuPrimitive.Item
@@ -3374,11 +3385,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                 <ContextMenu.Item
                                   role="menuitem"
                                   disabled={busy || !vscodeAvailable}
-                                  title={
-                                    vscodeAvailable
-                                      ? undefined
-                                      : 'Visual Studio Code is not installed'
-                                  }
                                   onSelect={() => {
                                     if (!project) return;
                                     void run(async () => {
@@ -3391,7 +3397,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                     });
                                   }}
                                 >
-                                  Open in VS Code
+                                  {vscodeAvailable
+                                    ? 'Open in VS Code'
+                                    : 'Visual Studio Code is not installed'}
                                 </ContextMenu.Item>
                                 {file.kind === 'file' && (
                                   <ContextMenu.Item
@@ -3871,16 +3879,17 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       <ul className="welcome-recent-list">
                         {recents.slice(0, 5).map((recent) => (
                           <li key={recent.id} className="welcome-recent-row">
-                            <button
-                              type="button"
-                              className="welcome-recent-link"
-                              title={recent.rootPath}
-                              disabled={busy || build.running}
-                              onClick={() => openFolder(recent.id)}
-                            >
-                              <span className="welcome-recent-name">{recent.name}</span>
-                              <span className="welcome-recent-path">{recent.rootPath}</span>
-                            </button>
+                            <AppTooltip content={recent.rootPath}>
+                              <button
+                                type="button"
+                                className="welcome-recent-link"
+                                disabled={busy || build.running}
+                                onClick={() => openFolder(recent.id)}
+                              >
+                                <span className="welcome-recent-name">{recent.name}</span>
+                                <span className="welcome-recent-path">{recent.rootPath}</span>
+                              </button>
+                            </AppTooltip>
                           </li>
                         ))}
                       </ul>
@@ -4099,15 +4108,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           ...(hasMarkdown ? (['markdown'] as const) : []),
                         ] as const
                       ).map((name, index, names) => (
-                        <button
+                        <AppTooltip
                           key={name}
-                          role="tab"
-                          id={name + '-tab'}
-                          aria-selected={panel === name}
-                          aria-controls={name + '-panel'}
-                          tabIndex={panel === name ? 0 : -1}
-                          onClick={() => setPanel(name)}
-                          title={
+                          content={
                             name === 'preview'
                               ? 'Preview'
                               : name === 'problems'
@@ -4116,55 +4119,64 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                   ? 'Output'
                                   : 'Markdown'
                           }
-                          aria-label={
-                            name === 'preview'
-                              ? 'Preview'
-                              : name === 'problems'
-                                ? 'Problems'
-                                : name === 'output'
-                                  ? 'Output'
-                                  : 'Markdown Preview'
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                              event.preventDefault();
-                              const next =
-                                names[
-                                  (index + (event.key === 'ArrowRight' ? 1 : names.length - 1)) %
-                                    names.length
-                                ];
-                              setPanel(next);
-                              document.getElementById(next + '-tab')?.focus();
-                            }
-                          }}
                         >
-                          {tabMode === 'icons' &&
-                            (name === 'preview' ? (
-                              <FilePdf size={16} />
-                            ) : name === 'problems' ? (
-                              <Warning size={16} />
-                            ) : name === 'output' ? (
-                              <Scroll size={16} />
-                            ) : (
-                              <MarkdownLogo size={16} />
-                            ))}
-                          {tabMode === 'full' &&
-                            (name === 'preview' ? (
-                              'Preview'
-                            ) : name === 'problems' ? (
-                              'Problems'
-                            ) : name === 'output' ? (
-                              'Output'
-                            ) : (
-                              <>
-                                <MarkdownLogo size={14} />
-                                <span>Markdown</span>
-                              </>
-                            ))}
-                          {name === 'problems' && !!problemDiagnostics.length && (
-                            <span className="count">{problemDiagnostics.length}</span>
-                          )}
-                        </button>
+                          <button
+                            role="tab"
+                            id={name + '-tab'}
+                            aria-selected={panel === name}
+                            aria-controls={name + '-panel'}
+                            tabIndex={panel === name ? 0 : -1}
+                            onClick={() => setPanel(name)}
+                            aria-label={
+                              name === 'preview'
+                                ? 'Preview'
+                                : name === 'problems'
+                                  ? 'Problems'
+                                  : name === 'output'
+                                    ? 'Output'
+                                    : 'Markdown Preview'
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                                event.preventDefault();
+                                const next =
+                                  names[
+                                    (index + (event.key === 'ArrowRight' ? 1 : names.length - 1)) %
+                                      names.length
+                                  ];
+                                setPanel(next);
+                                document.getElementById(next + '-tab')?.focus();
+                              }
+                            }}
+                          >
+                            {tabMode === 'icons' &&
+                              (name === 'preview' ? (
+                                <FilePdf size={16} />
+                              ) : name === 'problems' ? (
+                                <Warning size={16} />
+                              ) : name === 'output' ? (
+                                <Scroll size={16} />
+                              ) : (
+                                <MarkdownLogo size={16} />
+                              ))}
+                            {tabMode === 'full' &&
+                              (name === 'preview' ? (
+                                'Preview'
+                              ) : name === 'problems' ? (
+                                'Problems'
+                              ) : name === 'output' ? (
+                                'Output'
+                              ) : (
+                                <>
+                                  <MarkdownLogo size={14} />
+                                  <span>Markdown</span>
+                                </>
+                              ))}
+                            {name === 'problems' && !!problemDiagnostics.length && (
+                              <span className="count">{problemDiagnostics.length}</span>
+                            )}
+                          </button>
+                        </AppTooltip>
                       ))}
                     </div>
                   )}

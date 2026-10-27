@@ -149,6 +149,10 @@ test('Radix menus remain visible, keyboard accessible, and aligned across worksp
       await expect(page.locator('.source-editor')).toContainText('Unsaved caption-close fixture.');
       await save.click();
       await expect(save).toBeDisabled();
+      await expect(save).not.toHaveAttribute('title');
+      await page.locator('.source-editor').hover();
+      await save.locator('..').hover();
+      await expect(page.getByRole('tooltip')).toContainText('Save');
       await application.evaluate(({ BrowserWindow }) => {
         const restore: unknown = Reflect.get(
           BrowserWindow.getAllWindows()[0],

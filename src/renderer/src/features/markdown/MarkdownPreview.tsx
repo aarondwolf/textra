@@ -2,6 +2,7 @@ import { isValidElement, useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Copy } from '../../icons';
+import { TooltipButton } from '../../components/Button';
 import './markdown.css';
 
 export interface MarkdownPreviewProps {
@@ -195,7 +196,7 @@ function CodePreBlock({ children, copyCode }: { children?: ReactNode; copyCode: 
       </pre>
       {copyCode && (
         <>
-          <button
+          <TooltipButton
             className="markdown-preview-code-copy"
             type="button"
             aria-label={copied ? 'Copied code' : 'Copy code'}
@@ -216,7 +217,7 @@ function CodePreBlock({ children, copyCode }: { children?: ReactNode; copyCode: 
             ) : (
               <Copy size={14} aria-hidden="true" />
             )}
-          </button>
+          </TooltipButton>
           {copyError && (
             <span role="alert" className="markdown-preview-copy-error">
               {copyError}

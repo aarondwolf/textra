@@ -115,7 +115,7 @@ interface IndexOptions {
   activePath: string | null;
   index: FileIndex;
   initialSources: Readonly<Record<string, string>>;
-  read: (path: string) => Promise<string | null>;
+  read: (path: string, candidate: boolean) => Promise<string | null>;
   cancelled: () => boolean;
   onBatch: (sources: Record<string, string>) => void;
   yieldBatch: () => Promise<void>;
@@ -126,6 +126,7 @@ interface IndexOptions {
 /** Four reads per yielded batch, with active-document dependencies ahead of unrelated files. */
 export async function indexProjectSources(options: IndexOptions): Promise<{ complete: boolean }> {
   const remaining = new Set(options.paths);
+  const listed = new Set(options.paths);
   const visited = new Set<string>();
   const priority: string[] = [];
   const prioritize = (path: string) => {
@@ -166,7 +167,7 @@ export async function indexProjectSources(options: IndexOptions): Promise<{ comp
     const values = await Promise.all(
       batch.map(async (path) => {
         try {
-          return [path, await options.read(path)] as const;
+          return [path, await options.read(path, !listed.has(path))] as const;
         } catch {
           return [path, null] as const;
         }

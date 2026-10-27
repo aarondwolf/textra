@@ -19,8 +19,11 @@ export function TooltipButton({
     </button>
   );
   if (!title) return button;
-  if (disabled) return button;
-  return <AppTooltip content={title}>{button}</AppTooltip>;
+  return (
+    <AppTooltip content={title}>
+      {disabled ? <span className="tooltip-disabled-trigger">{button}</span> : button}
+    </AppTooltip>
+  );
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -36,13 +39,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={[variantClass, className].filter(Boolean).join(' ') || undefined}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
-      title={disabled || busy ? title : undefined}
       {...props}
     />
   );
   if (!title) return button;
-  if (disabled || busy) return button;
-  return <AppTooltip content={title}>{button}</AppTooltip>;
+  return (
+    <AppTooltip content={title}>
+      {disabled || busy ? <span className="tooltip-disabled-trigger">{button}</span> : button}
+    </AppTooltip>
+  );
 });
 
 export const AddButton = forwardRef<HTMLButtonElement, ButtonProps>(function AddButton(
@@ -68,12 +73,12 @@ export const IconButton = forwardRef<
     <Button
       ref={ref}
       aria-label={label}
-      title={disabled || busy ? visibleTitle : undefined}
+      title={visibleTitle}
       className={['icon-button', small && 'small', className].filter(Boolean).join(' ')}
       disabled={disabled}
       busy={busy}
       {...buttonProps}
     />
   );
-  return disabled || busy ? button : <AppTooltip content={visibleTitle}>{button}</AppTooltip>;
+  return button;
 });

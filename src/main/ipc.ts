@@ -31,6 +31,7 @@ import {
 import { isTrustedRendererUrl } from './security';
 import { readWindowState } from './window';
 import { log } from './services/logger';
+import { shouldLogIpcFailure } from './services/ipc-logging';
 import { PreferencesStore } from './services/preferences';
 import { ProjectError, ProjectService, validateRelativePath } from './services/projects';
 import {
@@ -225,17 +226,7 @@ export function registerApplicationIpc(services: IpcServices): void {
       } catch (error) {
         // Raw errors can contain local paths or private preference data.
         const result = errorResult(error);
-        const expectedCompletionStop =
-          (channel === 'textra:ai:completion:request' ||
-            channel === 'textra:ai:inline-edit:request') &&
-          (result.code === 'AI_CANCELLED' || result.code === 'AI_BUSY');
-        const expectedWorkspaceStop = [
-          'LANGUAGE_CANCELLED',
-          'WATCH_CANCELLED',
-          'WORKSPACE_BUSY',
-          'APP_CLOSING',
-        ].includes(result.code);
-        if (!expectedCompletionStop && !expectedWorkspaceStop)
+        if (shouldLogIpcFailure(channel, result.code))
           log('warn', 'ipc-request-failed', { channel, code: result.code });
         return result;
       }
@@ -442,6 +433,9 @@ export function registerApplicationIpc(services: IpcServices): void {
     await collaboration.recoverOutbox(id);
   });
   handleRequest<'readFile'>('textra:file:read', (request) => projects.readFile(request));
+  handleRequest<'readReferenceCandidate'>('textra:file:read-reference-candidate', (request) =>
+    projects.readFile(request),
+  );
   handleRequest<'saveFile'>('textra:file:save', async (request) => {
     const outbox = request.collaboration
       ? await collaboration.prepareOutbox(request, request.collaboration, request.content)

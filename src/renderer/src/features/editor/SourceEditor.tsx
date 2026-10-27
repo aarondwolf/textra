@@ -2,6 +2,7 @@ import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode 
 import { latexFoldingRanges } from './folding';
 import { minimalEditorScrollbars } from './scrollbars';
 import FormattingToolbar from './FormattingToolbar';
+import { TooltipButton } from '../../components/Button';
 import type { VisualEditorHandle, VisualViewState } from '../visual-editor/VisualEditor';
 import {
   positionAtLfOffset,
@@ -2386,14 +2387,14 @@ export function SourceEditor({
       )}
       <div className="editor-status-bar" role="status" aria-label="Editor status">
         <div className="editor-status-left">
-          <button
+          <TooltipButton
             type="button"
             className="editor-status-action"
             title="Go to Line (Ctrl+G)"
             onClick={handleGotoLine}
           >
             Ln {cursorPos.line}, Col {cursorPos.column}
-          </button>
+          </TooltipButton>
           <span className="editor-status-sep" aria-hidden="true">
             •
           </span>

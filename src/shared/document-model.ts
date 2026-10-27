@@ -42,6 +42,8 @@ export interface DocumentModel {
 export interface DocumentModelOptions {
   /** Current text of a project file (unsaved edits included), or null if unreadable. */
   readSource: (path: string) => Promise<string | null>;
+  /** Try a reference candidate that may legitimately not exist. */
+  readCandidate?: (path: string) => Promise<string | null>;
   index: FileIndex;
   /** False when folders or directory pages are still unlisted. */
   listingComplete?: boolean;
@@ -94,7 +96,8 @@ export async function buildDocumentModel(
         (reference.kind === 'tex' || reference.kind === 'bib')
       ) {
         for (const candidate of referenceCandidates(reference, path, structure.graphicsPaths)) {
-          if (!sources.has(candidate)) sources.set(candidate, await options.readSource(candidate));
+          if (!sources.has(candidate))
+            sources.set(candidate, await (options.readCandidate ?? options.readSource)(candidate));
           if (sources.get(candidate) !== null) {
             resolved = candidate;
             break;

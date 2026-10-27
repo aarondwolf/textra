@@ -266,20 +266,3 @@ button.doc-entry:focus-visible,
 .doc-citation-entry {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
-.doc-citation-tooltip {
-  position: absolute;
-  z-index: 4;
-  right: 8px;
-  bottom: calc(100% + 2px);
-  max-width: min(290px, calc(100vw - 36px));
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-surface);
-  background: var(--surface-raised, var(--surface));
-  box-shadow: 0 5px 18px rgb(0 0 0 / 18%);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 11px;
-  line-height: 1.35;
-  pointer-events: none;
-}

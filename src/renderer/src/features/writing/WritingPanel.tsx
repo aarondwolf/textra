@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useState } from 'react';
 import {
   DndContext,
@@ -117,45 +118,57 @@ function SortableOutlineItem({
       {...attributes}
       {...listeners}
     >
-      <button
-        type="button"
-        className="writing-outline-item"
-        aria-current={item.id === activeId ? 'location' : undefined}
-        style={{ paddingLeft: 10 + depth * 12 }}
-        title={`Go to line ${item.line}${onMoveSection ? ' (drag or use arrow keys to reorder)' : ''}`}
-        onClick={() => onJumpToLine(item.line)}
+      <AppTooltip
+        content={`Go to line ${item.line}${onMoveSection ? ' (drag or use arrow keys to reorder)' : ''}`}
       >
-        <span>{item.title}</span>
-        <small className="writing-outline-line">Ln {item.line}</small>
-      </button>
+        <button
+          type="button"
+          className="writing-outline-item"
+          aria-current={item.id === activeId ? 'location' : undefined}
+          style={{ paddingLeft: 10 + depth * 12 }}
+
+          onClick={() => onJumpToLine(item.line)}
+        >
+          <span>{item.title}</span>
+          <small className="writing-outline-line">Ln {item.line}</small>
+        </button>
+      </AppTooltip>
       {onMoveSection && (
         <div className="writing-outline-actions" role="group" aria-label="Reorder section">
-          <button
-            type="button"
-            className="writing-outline-action-button"
-            title="Move section up"
-            aria-label="Move section up"
-            disabled={index === 0}
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveSection(index, index - 1, 'before');
-            }}
-          >
-            <ChevronUp size={11} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="writing-outline-action-button"
-            title="Move section down"
-            aria-label="Move section down"
-            disabled={index === total - 1}
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveSection(index, index + 1, 'after');
-            }}
-          >
-            <ChevronDown size={11} aria-hidden="true" />
-          </button>
+          <AppTooltip content={'Move section up'}>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+                className="writing-outline-action-button"
+
+                aria-label="Move section up"
+                disabled={index === 0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveSection(index, index - 1, 'before');
+                }}
+              >
+                <ChevronUp size={11} aria-hidden="true" />
+              </button>
+            </span>
+          </AppTooltip>
+          <AppTooltip content={'Move section down'}>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+                className="writing-outline-action-button"
+
+                aria-label="Move section down"
+                disabled={index === total - 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveSection(index, index + 1, 'after');
+                }}
+              >
+                <ChevronDown size={11} aria-hidden="true" />
+              </button>
+            </span>
+          </AppTooltip>
         </div>
       )}
     </li>
@@ -200,20 +213,26 @@ export function WritingPanel({
       <div className="sidebar-title writing-title">
         <span className="sidebar-heading">Writing</span>
         <div className="writing-header-actions">
-          <button
-            type="button"
-            className="icon-button small writing-header-button"
-            aria-label="Format document with latexindent"
-            title={
+          <AppTooltip
+            content={
               formatAvailable
                 ? 'Format document with latexindent'
                 : 'latexindent is not available. Install it to format LaTeX.'
             }
-            disabled={!onFormatDocument || !formatAvailable}
-            onClick={onFormatDocument}
           >
-            <TextIndent size={14} aria-hidden="true" />
-          </button>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+                className="icon-button small writing-header-button"
+                aria-label="Format document with latexindent"
+
+                disabled={!onFormatDocument || !formatAvailable}
+                onClick={onFormatDocument}
+              >
+                <TextIndent size={14} aria-hidden="true" />
+              </button>
+            </span>
+          </AppTooltip>
         </div>
       </div>
 
@@ -316,26 +335,28 @@ export function WritingPanel({
                 <ul className="writing-list">
                   {summary.todos.map((item) => (
                     <li key={item.id}>
-                      <button
-                        type="button"
-                        className={`writing-todo-item is-${item.kind.toLowerCase()}`}
-                        title={`Go to ${item.kind} on line ${item.line}`}
-                        onClick={() => onJumpToLine(item.line)}
-                      >
-                        {item.kind === 'TODO' && (
-                          <ListChecks className="todo-icon" size={13} aria-hidden="true" />
-                        )}
-                        {item.kind === 'FIXME' && (
-                          <WarningCircle className="fixme-icon" size={13} aria-hidden="true" />
-                        )}
-                        <span className={'writing-tag ' + item.kind.toLowerCase()}>
-                          {item.kind}
-                        </span>
-                        <span className="writing-todo-text">
-                          {item.text || `${item.kind} on line ${item.line}`}
-                        </span>
-                        <small>Ln {item.line}</small>
-                      </button>
+                      <AppTooltip content={`Go to ${item.kind} on line ${item.line}`}>
+                        <button
+                          type="button"
+                          className={`writing-todo-item is-${item.kind.toLowerCase()}`}
+
+                          onClick={() => onJumpToLine(item.line)}
+                        >
+                          {item.kind === 'TODO' && (
+                            <ListChecks className="todo-icon" size={13} aria-hidden="true" />
+                          )}
+                          {item.kind === 'FIXME' && (
+                            <WarningCircle className="fixme-icon" size={13} aria-hidden="true" />
+                          )}
+                          <span className={'writing-tag ' + item.kind.toLowerCase()}>
+                            {item.kind}
+                          </span>
+                          <span className="writing-todo-text">
+                            {item.text || `${item.kind} on line ${item.line}`}
+                          </span>
+                          <small>Ln {item.line}</small>
+                        </button>
+                      </AppTooltip>
                     </li>
                   ))}
                 </ul>

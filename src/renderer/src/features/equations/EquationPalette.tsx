@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useMemo, useRef, useState } from 'react';
 import { insertion, SYMBOL_GROUPS, type MathSymbol } from './symbols';
 import './equations.css';
@@ -65,32 +66,35 @@ export default function EquationPalette({ canInsert }: { canInsert: boolean }) {
             <h3>{group.name}</h3>
             <div className={group.wide ? 'symbol-grid wide' : 'symbol-grid'}>
               {group.symbols.map((symbol) => (
-                <button
+                <AppTooltip
                   key={symbol.tex}
-                  type="button"
-                  className="symbol"
-                  title={
+                  content={
                     symbol.tex.replace(/\n/g, ' ') + (symbol.package ? ` (${symbol.package})` : '')
                   }
-                  aria-label={`Insert ${symbol.tex.replace(/\n/g, ' ')}`}
-                  // Keep focus (and the visible caret) in the editor so the insertion point is clear.
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setHint(symbol)}
-                  onFocus={() => setHint(symbol)}
-                  onMouseLeave={() => setHint(null)}
-                  onBlur={() => setHint(null)}
-                  onClick={(event) => {
-                    if (event.detail === 2) insert(symbol.tex);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      insert(symbol.tex);
-                    }
-                  }}
                 >
-                  {symbol.glyph ?? symbol.tex}
-                </button>
+                  <button
+                    type="button"
+                    className="symbol"
+                    aria-label={`Insert ${symbol.tex.replace(/\n/g, ' ')}`}
+                    // Keep focus (and the visible caret) in the editor so the insertion point is clear.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setHint(symbol)}
+                    onFocus={() => setHint(symbol)}
+                    onMouseLeave={() => setHint(null)}
+                    onBlur={() => setHint(null)}
+                    onClick={(event) => {
+                      if (event.detail === 2) insert(symbol.tex);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        insert(symbol.tex);
+                      }
+                    }}
+                  >
+                    {symbol.glyph ?? symbol.tex}
+                  </button>
+                </AppTooltip>
               ))}
             </div>
           </section>

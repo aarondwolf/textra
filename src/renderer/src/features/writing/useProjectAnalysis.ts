@@ -79,8 +79,10 @@ export function useProjectAnalysis(
       activePath,
       index,
       initialSources,
-      read: async (path) => {
-        const result = await window.textra.readFile({ projectId, path });
+      read: async (path, candidate) => {
+        const result = await (
+          candidate ? window.textra.readReferenceCandidate : window.textra.readFile
+        )({ projectId, path });
         return result.ok ? result.value.content : null;
       },
       cancelled: () => cancelled,

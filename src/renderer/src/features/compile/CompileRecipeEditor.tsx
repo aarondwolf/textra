@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useEffect, useMemo, useState } from 'react';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { ArrowDown, ArrowUp, Pencil, Plus, Save, Trash2, X } from '../../icons';
@@ -284,47 +285,57 @@ export function CompileRecipeEditor({
                   label: tool.name,
                 }))}
               />
-              <button
-                type="button"
-                className="icon-button small"
-                aria-label={`Edit ${step} settings`}
-                title={`Edit ${step} settings`}
-                onClick={() => {
-                  if (stepTool) setEditingTool(stepTool);
-                }}
-              >
-                <Pencil size={13} />
-              </button>
-              <button
-                type="button"
-                className="icon-button small"
-                aria-label={`Move step ${index + 1} up`}
-                title="Move up"
-                onClick={() => moveStep(index, -1)}
-                disabled={index === 0}
-              >
-                <ArrowUp size={13} />
-              </button>
-              <button
-                type="button"
-                className="icon-button small"
-                aria-label={`Move step ${index + 1} down`}
-                title="Move down"
-                onClick={() => moveStep(index, 1)}
-                disabled={index === recipe.tools.length - 1}
-              >
-                <ArrowDown size={13} />
-              </button>
-              <button
-                type="button"
-                className="icon-button small"
-                aria-label={`Remove step ${index + 1}`}
-                title="Remove step"
-                onClick={() => removeStep(index)}
-                disabled={recipe.tools.length === 1}
-              >
-                <Trash2 size={13} />
-              </button>
+              <AppTooltip content={`Edit ${step} settings`}>
+                <button
+                  type="button"
+                  className="icon-button small"
+                  aria-label={`Edit ${step} settings`}
+                  onClick={() => {
+                    if (stepTool) setEditingTool(stepTool);
+                  }}
+                >
+                  <Pencil size={13} />
+                </button>
+              </AppTooltip>
+              <AppTooltip content={'Move up'}>
+                <span className="tooltip-disabled-trigger">
+                  <button
+                    type="button"
+                    className="icon-button small"
+                    aria-label={`Move step ${index + 1} up`}
+                    onClick={() => moveStep(index, -1)}
+                    disabled={index === 0}
+                  >
+                    <ArrowUp size={13} />
+                  </button>
+                </span>
+              </AppTooltip>
+              <AppTooltip content={'Move down'}>
+                <span className="tooltip-disabled-trigger">
+                  <button
+                    type="button"
+                    className="icon-button small"
+                    aria-label={`Move step ${index + 1} down`}
+                    onClick={() => moveStep(index, 1)}
+                    disabled={index === recipe.tools.length - 1}
+                  >
+                    <ArrowDown size={13} />
+                  </button>
+                </span>
+              </AppTooltip>
+              <AppTooltip content={'Remove step'}>
+                <span className="tooltip-disabled-trigger">
+                  <button
+                    type="button"
+                    className="icon-button small"
+                    aria-label={`Remove step ${index + 1}`}
+                    onClick={() => removeStep(index)}
+                    disabled={recipe.tools.length === 1}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </span>
+              </AppTooltip>
             </div>
           );
         })}
@@ -378,49 +389,58 @@ export function CompileRecipeEditor({
       </fieldset>
 
       <div className="compile-recipe-actions">
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => void save(false)}
-          disabled={disabled || locked}
-          title="Save and overwrite the current recipe"
-        >
-          <Save size={13} /> Save
-        </button>
+        <AppTooltip content={'Save and overwrite the current recipe'}>
+          <span className="tooltip-disabled-trigger">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void save(false)}
+              disabled={disabled || locked}
+            >
+              <Save size={13} /> Save
+            </button>
+          </span>
+        </AppTooltip>
         {onSaveGlobal && (
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => {
-              const names = new Set(recipe.tools);
-              const globalTools = tools.filter((tool) => names.has(tool.name));
-              const existing = globalBuildRecipes ?? { recipes: [], tools: [] };
-              const nextRecipes = existing.recipes.filter((item) => item.name !== recipe.name);
-              const nextTools = existing.tools.filter((tool) => !names.has(tool.name));
-              onSaveGlobal({
-                recipes: [...nextRecipes, { ...recipe, tools: [...recipe.tools] }],
-                tools: [...nextTools, ...globalTools],
-              });
-              setError(null);
-            }}
-            disabled={disabled || locked}
-            title="Save this recipe to your TeXtra user profile for other projects"
-          >
-            <Save size={13} /> Save to user recipes
-          </button>
+          <AppTooltip content={'Save this recipe to your TeXtra user profile for other projects'}>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  const names = new Set(recipe.tools);
+                  const globalTools = tools.filter((tool) => names.has(tool.name));
+                  const existing = globalBuildRecipes ?? { recipes: [], tools: [] };
+                  const nextRecipes = existing.recipes.filter((item) => item.name !== recipe.name);
+                  const nextTools = existing.tools.filter((tool) => !names.has(tool.name));
+                  onSaveGlobal({
+                    recipes: [...nextRecipes, { ...recipe, tools: [...recipe.tools] }],
+                    tools: [...nextTools, ...globalTools],
+                  });
+                  setError(null);
+                }}
+                disabled={disabled || locked}
+              >
+                <Save size={13} /> Save to user recipes
+              </button>
+            </span>
+          </AppTooltip>
         )}
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => {
-            setSaveAsName(`${recipe.name} (copy)`);
-            setSaveAsOpen(true);
-          }}
-          disabled={disabled || locked}
-          title="Save as a new recipe"
-        >
-          <Plus size={13} /> Save As…
-        </button>
+        <AppTooltip content={'Save as a new recipe'}>
+          <span className="tooltip-disabled-trigger">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setSaveAsName(`${recipe.name} (copy)`);
+                setSaveAsOpen(true);
+              }}
+              disabled={disabled || locked}
+            >
+              <Plus size={13} /> Save As…
+            </button>
+          </span>
+        </AppTooltip>
       </div>
 
       {editingTool && (

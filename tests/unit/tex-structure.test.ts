@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildDocumentModel } from '../../src/shared/document-model';
 import {
   buildFileIndex,
@@ -238,12 +238,18 @@ describe('buildDocumentModel', () => {
   });
 
   it('reads referenced chapters directly when their folders have not been expanded', async () => {
+    const readSource = vi.fn(options.readSource);
+    const readCandidate = vi.fn(options.readSource);
     const model = await buildDocumentModel('main.tex', {
       ...options,
+      readSource,
+      readCandidate,
       index: buildFileIndex(['main.tex']),
       listingComplete: false,
     });
     expect(model.outline.map((item) => item.title)).toEqual(['One', 'A1', 'B1', 'A2', 'Two']);
+    expect(readSource).toHaveBeenCalledWith('main.tex');
+    expect(readCandidate).toHaveBeenCalledWith('chapters/a.tex');
     expect(model.root.children[0]).toMatchObject({ path: 'chapters/a.tex', status: 'ok' });
     expect(model.root.children.find((entry) => entry.target === 'chapters/missing')?.status).toBe(
       'unchecked',

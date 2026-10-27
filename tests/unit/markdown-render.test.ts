@@ -24,7 +24,7 @@ describe('MarkdownPreview', () => {
       }),
     );
     expect(html).toContain('aria-label="Copy code"');
-    expect(html).toContain('title="Copy code"');
+    expect(html).not.toContain('title="Copy code"');
     expect(html).toContain('<code>\\usepackage{lipsum}</code>');
   });
 });

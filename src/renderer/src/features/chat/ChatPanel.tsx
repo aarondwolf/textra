@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useChat } from '@ai-sdk/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -54,24 +55,25 @@ function ResponseContent({ text, incomplete = false }: { text: string; incomplet
     <>
       {incomplete && <small className="ai-partial-label">Incomplete response</small>}
       {text.trim() && <MarkdownPreview source={text} className="ai-message-markdown" copyCode />}
-      <button
-        className="ai-copy-response"
-        type="button"
-        aria-label={copied ? 'Copied response' : 'Copy response'}
-        title={copied ? 'Copied' : 'Copy response'}
-        onClick={() => {
-          setCopyError('');
-          void window.textra
-            .copyText(text)
-            .then((result) => {
-              if (result.ok) setCopied(true);
-              else setCopyError(result.error);
-            })
-            .catch(() => setCopyError('Could not copy this response. Try again.'));
-        }}
-      >
-        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-      </button>
+      <AppTooltip content={copied ? 'Copied' : 'Copy response'}>
+        <button
+          className="ai-copy-response"
+          type="button"
+          aria-label={copied ? 'Copied response' : 'Copy response'}
+          onClick={() => {
+            setCopyError('');
+            void window.textra
+              .copyText(text)
+              .then((result) => {
+                if (result.ok) setCopied(true);
+                else setCopyError(result.error);
+              })
+              .catch(() => setCopyError('Could not copy this response. Try again.'));
+          }}
+        >
+          {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+        </button>
+      </AppTooltip>
       {copyError && (
         <p role="alert" className="ai-copy-error">
           {copyError}
@@ -870,29 +872,35 @@ export function ChatPanel({
         <div>
           <strong>Assistant</strong>
         </div>
-        <button
-          type="button"
-          className="ai-header-icon-button"
-          disabled={loading || reviewActive || historyBusy || messages.length === 0}
-          onClick={() => void chooseChat()}
-          aria-label="New chat"
-          title="New chat"
-        >
-          <Plus size={14} aria-hidden="true" />
-        </button>
+        <AppTooltip content={'New chat'}>
+          <span className="tooltip-disabled-trigger">
+            <button
+              type="button"
+              className="ai-header-icon-button"
+              disabled={loading || reviewActive || historyBusy || messages.length === 0}
+              onClick={() => void chooseChat()}
+              aria-label="New chat"
+            >
+              <Plus size={14} aria-hidden="true" />
+            </button>
+          </span>
+        </AppTooltip>
         <div className="ai-history-control">
           <DropdownMenu.Root open={historyOpen} onOpenChange={setHistoryOpen}>
-            <DropdownMenu.Trigger asChild>
-              <button
-                type="button"
-                className="ai-header-icon-button ai-history-trigger"
-                aria-label="Chat history"
-                title="Latest 100 workspace chats"
-                disabled={!sessionProject || loading || reviewActive || historyBusy}
-              >
-                <History size={14} aria-hidden="true" />
-              </button>
-            </DropdownMenu.Trigger>
+            <AppTooltip content={'Latest 100 workspace chats'}>
+              <span className="tooltip-disabled-trigger">
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    type="button"
+                    className="ai-header-icon-button ai-history-trigger"
+                    aria-label="Chat history"
+                    disabled={!sessionProject || loading || reviewActive || historyBusy}
+                  >
+                    <History size={14} aria-hidden="true" />
+                  </button>
+                </DropdownMenu.Trigger>
+              </span>
+            </AppTooltip>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
                 className="ai-history-menu"
@@ -906,63 +914,67 @@ export function ChatPanel({
                 {!historyLoading && savedChats.length === 0 && <p>No saved chats yet.</p>}
                 {savedChats.map((chat) => (
                   <div key={chat.id} className="ai-history-row" role="none">
-                    <DropdownMenu.Item
-                      className="ai-history-item"
-                      disabled={historyBusy}
-                      title={chat.title}
-                      aria-current={chat.id === chatId ? 'page' : undefined}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        void chooseChat(chat);
-                      }}
-                    >
-                      <span className="ai-history-title">{chat.title}</span>
-                      <small className="ai-history-date">
-                        {new Date(chat.updatedAt).toLocaleDateString()}
-                        {chat.id === chatId ? ' · Current' : ''}
-                      </small>
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item
-                      className="ai-history-edit"
-                      disabled={historyBusy}
-                      aria-label={`Rename chat ${chat.title}`}
-                      title="Rename chat"
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        setEditingChat(chat);
-                        setEditedChatTitle(chat.title);
-                      }}
-                    >
-                      <Pencil size={13} aria-hidden="true" />
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item
-                      className="ai-history-delete"
-                      disabled={historyBusy}
-                      aria-label={`Delete chat ${chat.title}`}
-                      title="Delete saved chat"
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        void deleteSavedChat(chat);
-                      }}
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </DropdownMenu.Item>
+                    <AppTooltip content={chat.title}>
+                      <DropdownMenu.Item
+                        className="ai-history-item"
+                        disabled={historyBusy}
+                        aria-current={chat.id === chatId ? 'page' : undefined}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          void chooseChat(chat);
+                        }}
+                      >
+                        <span className="ai-history-title">{chat.title}</span>
+                        <small className="ai-history-date">
+                          {new Date(chat.updatedAt).toLocaleDateString()}
+                          {chat.id === chatId ? ' · Current' : ''}
+                        </small>
+                      </DropdownMenu.Item>
+                    </AppTooltip>
+                    <AppTooltip content={'Rename chat'}>
+                      <DropdownMenu.Item
+                        className="ai-history-edit"
+                        disabled={historyBusy}
+                        aria-label={`Rename chat ${chat.title}`}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          setEditingChat(chat);
+                          setEditedChatTitle(chat.title);
+                        }}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                      </DropdownMenu.Item>
+                    </AppTooltip>
+                    <AppTooltip content={'Delete saved chat'}>
+                      <DropdownMenu.Item
+                        className="ai-history-delete"
+                        disabled={historyBusy}
+                        aria-label={`Delete chat ${chat.title}`}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          void deleteSavedChat(chat);
+                        }}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </DropdownMenu.Item>
+                    </AppTooltip>
                   </div>
                 ))}
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         </div>
-        <button
-          type="button"
-          className="ai-header-icon-button"
-          onClick={openAISettings}
-          aria-haspopup="dialog"
-          aria-label="Settings"
-          title="AI providers and models"
-        >
-          <Settings size={14} aria-hidden="true" />
-        </button>
+        <AppTooltip content={'AI providers and models'}>
+          <button
+            type="button"
+            className="ai-header-icon-button"
+            onClick={openAISettings}
+            aria-haspopup="dialog"
+            aria-label="Settings"
+          >
+            <Settings size={14} aria-hidden="true" />
+          </button>
+        </AppTooltip>
       </header>
       <Dialog.Root
         open={Boolean(editingChat)}
@@ -1056,15 +1068,16 @@ export function ChatPanel({
                 active .tex file when you press Send, and proposed edits always wait for your
                 review.
               </p>
-              <button
-                type="button"
-                className="ai-chat-privacy-dismiss"
-                aria-label="Dismiss notice"
-                title="Dismiss notice"
-                onClick={() => setPrivacyDismissed(true)}
-              >
-                <X size={12} />
-              </button>
+              <AppTooltip content={'Dismiss notice'}>
+                <button
+                  type="button"
+                  className="ai-chat-privacy-dismiss"
+                  aria-label="Dismiss notice"
+                  onClick={() => setPrivacyDismissed(true)}
+                >
+                  <X size={12} />
+                </button>
+              </AppTooltip>
             </div>
           )}
           <div
@@ -1192,11 +1205,8 @@ export function ChatPanel({
           )}
           {mode === 'agent' && (
             <div className="ai-chat-active-file-corner">
-              <span
-                id="ai-chat-context"
-                className="ai-context-chip"
-                data-state={!documentName ? 'none' : toolsSupported ? 'available' : 'unsupported'}
-                title={
+              <AppTooltip
+                content={
                   !documentName
                     ? 'Open a .tex file to let Agent read it and propose edits.'
                     : toolsSupported
@@ -1204,15 +1214,21 @@ export function ChatPanel({
                       : 'This connection has tool calls turned off, so it answers in text only.'
                 }
               >
-                <FileText size={12} aria-hidden="true" />
-                <span>
-                  {!documentName
-                    ? 'No document'
-                    : toolsSupported
-                      ? documentName
-                      : `${documentName} · text only`}
+                <span
+                  id="ai-chat-context"
+                  className="ai-context-chip"
+                  data-state={!documentName ? 'none' : toolsSupported ? 'available' : 'unsupported'}
+                >
+                  <FileText size={12} aria-hidden="true" />
+                  <span>
+                    {!documentName
+                      ? 'No document'
+                      : toolsSupported
+                        ? documentName
+                        : `${documentName} · text only`}
+                  </span>
                 </span>
-              </span>
+              </AppTooltip>
             </div>
           )}
           <form
@@ -1257,28 +1273,36 @@ export function ChatPanel({
             <div className="ai-chat-actions">
               <div className="ai-chat-controls">
                 <div className="ai-mode-switch" role="group" aria-label="Assistant mode">
-                  <button
-                    type="button"
-                    aria-pressed={mode === 'chat'}
-                    disabled={loading || reviewActive || historyBusy}
-                    onClick={() => setMode('chat')}
-                    title="Chat answers without reading the active document."
-                  >
-                    Chat
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={mode === 'agent'}
-                    disabled={loading || reviewActive || historyBusy || !documentAvailable}
-                    onClick={() => setMode('agent')}
-                    title={
+                  <AppTooltip content={'Chat answers without reading the active document.'}>
+                    <span className="tooltip-disabled-trigger">
+                      <button
+                        type="button"
+                        aria-pressed={mode === 'chat'}
+                        disabled={loading || reviewActive || historyBusy}
+                        onClick={() => setMode('chat')}
+                      >
+                        Chat
+                      </button>
+                    </span>
+                  </AppTooltip>
+                  <AppTooltip
+                    content={
                       documentAvailable
                         ? 'Agent can read the active document and stage edits for review.'
                         : 'Open an eligible .tex document to use Agent mode.'
                     }
                   >
-                    Agent
-                  </button>
+                    <span className="tooltip-disabled-trigger">
+                      <button
+                        type="button"
+                        aria-pressed={mode === 'agent'}
+                        disabled={loading || reviewActive || historyBusy || !documentAvailable}
+                        onClick={() => setMode('agent')}
+                      >
+                        Agent
+                      </button>
+                    </span>
+                  </AppTooltip>
                 </div>
                 <ModelPicker
                   settings={settings}
@@ -1292,34 +1316,40 @@ export function ChatPanel({
                 />
               </div>
               {loading ? (
-                <button
-                  type="button"
-                  className="ai-chat-send"
-                  data-active="true"
-                  disabled={cancelling}
-                  onClick={() => void cancel()}
-                  aria-label={cancelling ? 'Cancelling response' : 'Cancel response'}
-                  title="Stop response"
-                >
-                  <Square size={13} weight="fill" aria-hidden="true" />
-                </button>
+                <AppTooltip content={'Stop response'}>
+                  <span className="tooltip-disabled-trigger">
+                    <button
+                      type="button"
+                      className="ai-chat-send"
+                      data-active="true"
+                      disabled={cancelling}
+                      onClick={() => void cancel()}
+                      aria-label={cancelling ? 'Cancelling response' : 'Cancel response'}
+                    >
+                      <Square size={13} weight="fill" aria-hidden="true" />
+                    </button>
+                  </span>
+                </AppTooltip>
               ) : (
-                <button
-                  type="submit"
-                  className="ai-chat-send"
-                  data-active={Boolean(input.trim())}
-                  disabled={
-                    !input.trim() ||
-                    !modelAvailable ||
-                    reviewActive ||
-                    historyBusy ||
-                    (mode === 'agent' && !agentContext)
-                  }
-                  aria-label="Send message"
-                  title="Send message"
-                >
-                  <ArrowUp size={12} weight="bold" aria-hidden="true" />
-                </button>
+                <AppTooltip content={'Send message'}>
+                  <span className="tooltip-disabled-trigger">
+                    <button
+                      type="submit"
+                      className="ai-chat-send"
+                      data-active={Boolean(input.trim())}
+                      disabled={
+                        !input.trim() ||
+                        !modelAvailable ||
+                        reviewActive ||
+                        historyBusy ||
+                        (mode === 'agent' && !agentContext)
+                      }
+                      aria-label="Send message"
+                    >
+                      <ArrowUp size={12} weight="bold" aria-hidden="true" />
+                    </button>
+                  </span>
+                </AppTooltip>
               )}
             </div>
             {lastAccess === 'unsupported' && (

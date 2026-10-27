@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useEffect, useRef, useState } from 'react';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
@@ -123,7 +124,7 @@ export function HistoryDiffView({
   const handlePin = async () => {
     setBusy(true);
     try {
-      await onPin(!historicalSnapshot.pinned, historicalSnapshot.label);
+      await onPin(!historicalSnapshot.pinned, historicalSnapshot.label ?? '');
     } finally {
       setBusy(false);
     }
@@ -202,47 +203,63 @@ export function HistoryDiffView({
               {historicalSnapshot.label ? 'Edit label' : 'Add label'}
             </Button>
           )}
-          <button
-            type="button"
-            className={historicalSnapshot.pinned ? 'is-pinned' : ''}
-            title={historicalSnapshot.pinned ? 'Unpin this snapshot' : 'Pin this snapshot'}
-            aria-label={historicalSnapshot.pinned ? 'Unpin this snapshot' : 'Pin this snapshot'}
-            onClick={() => void handlePin()}
-            disabled={busy}
+          <AppTooltip
+            content={historicalSnapshot.pinned ? 'Unpin this snapshot' : 'Pin this snapshot'}
           >
-            <Pin size={13} weight={historicalSnapshot.pinned ? 'fill' : 'regular'} />
-            {historicalSnapshot.pinned ? 'Pinned' : 'Pin'}
-          </button>
-          <button
-            type="button"
-            title="Export snapshot to an external file"
-            aria-label="Export snapshot to an external file"
-            onClick={() => void handleExport()}
-            disabled={busy}
-          >
-            <ArrowSquareOut size={13} />
-            Export
-          </button>
-          <button
-            type="button"
-            className="restore-btn"
-            title="Restore this version (replaces current file on disk)"
-            aria-label="Restore this version (replaces current file on disk)"
-            onClick={() => void handleRestore()}
-            disabled={busy}
-          >
-            <Undo2 size={13} />
-            Restore version
-          </button>
-          <button
-            type="button"
-            className="exit-diff-btn icon-button small"
-            aria-label="Exit history comparison"
-            title="Exit history comparison"
-            onClick={onClose}
-          >
-            <X size={15} />
-          </button>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+                className={historicalSnapshot.pinned ? 'is-pinned' : ''}
+
+                aria-label={historicalSnapshot.pinned ? 'Unpin this snapshot' : 'Pin this snapshot'}
+                onClick={() => void handlePin()}
+                disabled={busy}
+              >
+                <Pin size={13} weight={historicalSnapshot.pinned ? 'fill' : 'regular'} />
+                {historicalSnapshot.pinned ? 'Pinned' : 'Pin'}
+              </button>
+            </span>
+          </AppTooltip>
+          <AppTooltip content={'Export snapshot to an external file'}>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+
+                aria-label="Export snapshot to an external file"
+                onClick={() => void handleExport()}
+                disabled={busy}
+              >
+                <ArrowSquareOut size={13} />
+                Export
+              </button>
+            </span>
+          </AppTooltip>
+          <AppTooltip content={'Restore this version (replaces current file on disk)'}>
+            <span className="tooltip-disabled-trigger">
+              <button
+                type="button"
+                className="restore-btn"
+
+                aria-label="Restore this version (replaces current file on disk)"
+                onClick={() => void handleRestore()}
+                disabled={busy}
+              >
+                <Undo2 size={13} />
+                Restore version
+              </button>
+            </span>
+          </AppTooltip>
+          <AppTooltip content={'Exit history comparison'}>
+            <button
+              type="button"
+              className="exit-diff-btn icon-button small"
+              aria-label="Exit history comparison"
+
+              onClick={onClose}
+            >
+              <X size={15} />
+            </button>
+          </AppTooltip>
         </div>
       </header>
 

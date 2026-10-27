@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { Check, Package, Play, RefreshCw, Wrench } from '../../icons';
 import { SettingSwitch } from '../../components/SettingsControls';
 
@@ -71,7 +72,11 @@ export function TexLabSettings({
         <div>
           <strong>{state.label}</strong>
           {version && <span className="texlab-version">TexLab {version}</span>}
-          {path && <code title={path}>{path}</code>}
+          {path && (
+            <AppTooltip content={path}>
+              <code>{path}</code>
+            </AppTooltip>
+          )}
           {detail && <p>{detail}</p>}
         </div>
       </div>

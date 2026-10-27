@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import type { AIProviderSettings, AISettings, Result } from '../../../../shared/api';
@@ -331,9 +332,13 @@ export function AISettingsPanel({
                             ? 'Disabled'
                             : `${modelGroups(settings, connection.id, 'assistant')[0]?.models.length ?? 0} assistant · ${modelGroups(settings, connection.id, 'completion')[0]?.models.length ?? 0} automatic`}
                         </small>
-                        <small title={connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id]}>
-                          {connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id]}
-                        </small>
+                        <AppTooltip
+                          content={connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id] ?? ''}
+                        >
+                          <small>
+                            {connection.endpoint ?? AI_DEFAULT_ENDPOINTS[connection.id]}
+                          </small>
+                        </AppTooltip>
                       </div>
                     </div>
                     <button

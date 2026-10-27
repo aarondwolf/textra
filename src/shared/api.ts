@@ -577,6 +577,8 @@ export interface TextraAPI {
   listProjectDirectory(request: ProjectDirectoryRequest): Promise<Result<ProjectDirectoryPage>>;
   prepareProject(projectId: string): Promise<Result<void>>;
   readFile(request: FileRef): Promise<Result<FileSnapshot>>;
+  /** Probe a possible TeX reference; a missing candidate is an expected result. */
+  readReferenceCandidate(request: FileRef): Promise<Result<FileSnapshot>>;
   saveFile(request: SaveRequest): Promise<Result<FileSnapshot>>;
   createEntry(request: CreateRequest): Promise<Result<ProjectInfo>>;
   renameEntry(request: RenameRequest): Promise<Result<ProjectInfo | null>>;

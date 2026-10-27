@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { parse, type ParseError } from 'jsonc-parser';
@@ -108,32 +109,32 @@ function ToolCard({
       </label>
       <div className="chip-row" role="group" aria-label={`Options for ${name}`}>
         {catalog.map((entry) => (
-          <button
-            type="button"
-            key={entry.arg}
-            className="chip"
-            aria-pressed={isArgOn(tool.args, entry)}
-            title={entry.description}
-            onMouseEnter={() => setHelp(`${entry.arg}: ${entry.description}`)}
-            onFocus={() => setHelp(`${entry.arg}: ${entry.description}`)}
-            onClick={() => onChange({ args: toggleArg(tool.args, kind, entry) })}
-          >
-            {entry.label}
-            <code>{entry.arg}</code>
-          </button>
+          <AppTooltip key={entry.arg} content={entry.description}>
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={isArgOn(tool.args, entry)}
+              onMouseEnter={() => setHelp(`${entry.arg}: ${entry.description}`)}
+              onFocus={() => setHelp(`${entry.arg}: ${entry.description}`)}
+              onClick={() => onChange({ args: toggleArg(tool.args, kind, entry) })}
+            >
+              {entry.label}
+              <code>{entry.arg}</code>
+            </button>
+          </AppTooltip>
         ))}
         {extras.map((arg) => (
-          <button
-            type="button"
-            key={arg}
-            className="chip"
-            aria-pressed="true"
-            title="Custom argument. Click to remove it."
-            onClick={() => onChange({ args: tool.args.filter((entry) => entry !== arg) })}
-          >
-            <code>{arg}</code>
-            <X size={11} aria-hidden="true" />
-          </button>
+          <AppTooltip key={arg} content={'Custom argument. Click to remove it.'}>
+            <button
+              type="button"
+              className="chip"
+              aria-pressed="true"
+              onClick={() => onChange({ args: tool.args.filter((entry) => entry !== arg) })}
+            >
+              <code>{arg}</code>
+              <X size={11} aria-hidden="true" />
+            </button>
+          </AppTooltip>
         ))}
         {locked.map((arg) => {
           const managed = classifyArg(arg, kind) === 'managed';
@@ -141,17 +142,17 @@ function ToolCard({
             ? 'Managed for you. Tells the program to write into the Output location chosen on the first screen.'
             : 'The document being compiled. It is always required.';
           return (
-            <span
-              key={arg}
-              className="chip locked"
-              tabIndex={0}
-              title={text}
-              onMouseEnter={() => setHelp(`${arg}: ${text}`)}
-              onFocus={() => setHelp(`${arg}: ${text}`)}
-            >
-              {managed ? 'Output folder' : 'Document'}
-              <code>{arg}</code>
-            </span>
+            <AppTooltip key={arg} content={text}>
+              <span
+                className="chip locked"
+                tabIndex={0}
+                onMouseEnter={() => setHelp(`${arg}: ${text}`)}
+                onFocus={() => setHelp(`${arg}: ${text}`)}
+              >
+                {managed ? 'Output folder' : 'Document'}
+                <code>{arg}</code>
+              </span>
+            </AppTooltip>
           );
         })}
       </div>
@@ -474,18 +475,19 @@ export default function RecipeDialog({
                         {defaultRecipe === entry.name && <span className="badge">Default</span>}
                         <span className="recipe-hint">{entry.tools.join(' → ')}</span>
                       </div>
-                      <button
-                        type="button"
-                        className="icon-button small"
-                        aria-label={`Edit recipe ${entry.name}`}
-                        title={`Edit ${entry.name}`}
-                        onClick={() => {
-                          setRecipeIndex(index);
-                          setView('edit');
-                        }}
-                      >
-                        <Pencil size={14} />
-                      </button>
+                      <AppTooltip content={`Edit ${entry.name}`}>
+                        <button
+                          type="button"
+                          className="icon-button small"
+                          aria-label={`Edit recipe ${entry.name}`}
+                          onClick={() => {
+                            setRecipeIndex(index);
+                            setView('edit');
+                          }}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </AppTooltip>
                     </li>
                   ))}
                 </ul>
@@ -508,18 +510,19 @@ export default function RecipeDialog({
                           {entry.args.includes('-draftmode') ? ' (draft mode)' : ''}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className="icon-button small"
-                        aria-label={`Edit tool ${entry.name}`}
-                        title={`Edit ${entry.name}`}
-                        onClick={() => {
-                          setToolName(entry.name);
-                          setView('tool');
-                        }}
-                      >
-                        <Pencil size={14} />
-                      </button>
+                      <AppTooltip content={`Edit ${entry.name}`}>
+                        <button
+                          type="button"
+                          className="icon-button small"
+                          aria-label={`Edit tool ${entry.name}`}
+                          onClick={() => {
+                            setToolName(entry.name);
+                            setView('tool');
+                          }}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </AppTooltip>
                     </li>
                   ))}
                 </ul>
@@ -698,23 +701,23 @@ export default function RecipeDialog({
                           entry.tag,
                         ),
                       ).map((entry) => (
-                        <button
-                          type="button"
-                          key={entry.tag}
-                          className="chip"
-                          title={entry.description}
-                          onMouseEnter={() => setHelp(`${entry.tag}: ${entry.description}`)}
-                          onFocus={() => setHelp(`${entry.tag}: ${entry.description}`)}
-                          onClick={() => {
-                            const key =
-                              customTarget.current === 'outDir'
-                                ? 'latex-workshop.latex.outDir'
-                                : 'latex-workshop.latex.auxDir';
-                            update({ [key]: settings[key] + entry.tag });
-                          }}
-                        >
-                          <code>{entry.tag}</code>
-                        </button>
+                        <AppTooltip key={entry.tag} content={entry.description}>
+                          <button
+                            type="button"
+                            className="chip"
+                            onMouseEnter={() => setHelp(`${entry.tag}: ${entry.description}`)}
+                            onFocus={() => setHelp(`${entry.tag}: ${entry.description}`)}
+                            onClick={() => {
+                              const key =
+                                customTarget.current === 'outDir'
+                                  ? 'latex-workshop.latex.outDir'
+                                  : 'latex-workshop.latex.auxDir';
+                              update({ [key]: settings[key] + entry.tag });
+                            }}
+                          >
+                            <code>{entry.tag}</code>
+                          </button>
+                        </AppTooltip>
                       ))}
                     </div>
                     <p className="recipe-hint" role="status">
@@ -764,21 +767,27 @@ export default function RecipeDialog({
                   <button type="button" onClick={duplicateTool}>
                     Duplicate tool
                   </button>
-                  <button
-                    type="button"
-                    disabled={
-                      tools.length <= 1 || recipes.some((entry) => entry.tools.includes(tool.name))
-                    }
-                    title={
-                      recipes.some((entry) => entry.tools.includes(tool.name))
+                  <AppTooltip
+                    content={
+                      (recipes.some((entry) => entry.tools.includes(tool.name))
                         ? 'Remove it from every recipe first.'
-                        : undefined
+                        : undefined) ?? ''
                     }
-                    onClick={deleteTool}
                   >
-                    <Trash2 size={13} />
-                    Delete tool
-                  </button>
+                    <span className="tooltip-disabled-trigger">
+                      <button
+                        type="button"
+                        disabled={
+                          tools.length <= 1 ||
+                          recipes.some((entry) => entry.tools.includes(tool.name))
+                        }
+                        onClick={deleteTool}
+                      >
+                        <Trash2 size={13} />
+                        Delete tool
+                      </button>
+                    </span>
+                  </AppTooltip>
                 </div>
               </>
             )}
@@ -814,17 +823,18 @@ export default function RecipeDialog({
                         })
                       }
                     />
-                    <button
-                      type="button"
-                      aria-label={`Edit tool ${step}`}
-                      title={`Edit tool ${step}`}
-                      onClick={() => {
-                        setToolName(step);
-                        setView('tool');
-                      }}
-                    >
-                      <Pencil size={14} />
-                    </button>
+                    <AppTooltip content={`Edit tool ${step}`}>
+                      <button
+                        type="button"
+                        aria-label={`Edit tool ${step}`}
+                        onClick={() => {
+                          setToolName(step);
+                          setView('tool');
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </AppTooltip>
                     {([-1, 1] as const).map((direction) => (
                       <button
                         type="button"

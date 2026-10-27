@@ -100,7 +100,10 @@ describe('incremental project analysis', () => {
       'chapters/one.tex': '\\section{One}\\input{main}',
       'data/refs.bib': '@book{example,title={Example}}',
     };
-    const read = vi.fn(async (path: string) => sources[path] ?? null);
+    const read = vi.fn(async (path: string, candidate: boolean) => {
+      expect(typeof candidate).toBe('boolean');
+      return sources[path] ?? null;
+    });
     const batches: Record<string, string> = {};
     await indexProjectSources({
       paths: ['main.tex'],
@@ -114,6 +117,9 @@ describe('incremental project analysis', () => {
       yieldBatch: async () => undefined,
     });
     expect(batches).toEqual(sources);
+    expect(read).toHaveBeenCalledWith('main.tex', false);
+    expect(read).toHaveBeenCalledWith('chapters/one.tex', true);
+    expect(read).toHaveBeenCalledWith('data/refs.bib', true);
     expect(
       read.mock.calls.map(([path]) => path).filter((path) => path === 'main.tex'),
     ).toHaveLength(1);

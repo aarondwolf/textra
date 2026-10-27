@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { lazyFeature } from '../startup/LazyFeature';
 import { scheduleBackgroundTasks } from '../startup/scheduling';
@@ -1162,18 +1163,19 @@ export default function SetupDialog({
                     }}
                   >
                     <h3>Shortcuts</h3>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRecordingShortcutId(null);
-                        updatePreferences({
-                          keyboardShortcuts: {},
-                        });
-                      }}
-                      title="Reset all keyboard shortcuts to their default values"
-                    >
-                      <Undo2 size={13} /> Reset to defaults
-                    </button>
+                    <AppTooltip content={'Reset all keyboard shortcuts to their default values'}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRecordingShortcutId(null);
+                          updatePreferences({
+                            keyboardShortcuts: {},
+                          });
+                        }}
+                      >
+                        <Undo2 size={13} /> Reset to defaults
+                      </button>
+                    </AppTooltip>
                   </div>
                   <p className="setup-hint">
                     These shortcuts use Ctrl on Windows and Linux, and Command on macOS. Click the
@@ -1212,32 +1214,34 @@ export default function SetupDialog({
                             }}
                           />
                           <span className="tool-actions">
-                            <button
-                              type="button"
-                              className="icon-button small"
-                              aria-label={`Edit shortcut for ${shortcut.label}`}
-                              title="Edit shortcut"
-                              onClick={() => setRecordingShortcutId(shortcut.id)}
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            {isOverridden && (
+                            <AppTooltip content={'Edit shortcut'}>
                               <button
                                 type="button"
                                 className="icon-button small"
-                                aria-label={`Reset ${shortcut.label} to default`}
-                                title="Reset to default"
-                                onClick={() => {
-                                  const next = { ...preferences.keyboardShortcuts };
-                                  delete next[shortcut.id];
-                                  updatePreferences({ keyboardShortcuts: next });
-                                  if (recordingShortcutId === shortcut.id) {
-                                    setRecordingShortcutId(null);
-                                  }
-                                }}
+                                aria-label={`Edit shortcut for ${shortcut.label}`}
+                                onClick={() => setRecordingShortcutId(shortcut.id)}
                               >
-                                <Undo2 size={13} />
+                                <Pencil size={13} />
                               </button>
+                            </AppTooltip>
+                            {isOverridden && (
+                              <AppTooltip content={'Reset to default'}>
+                                <button
+                                  type="button"
+                                  className="icon-button small"
+                                  aria-label={`Reset ${shortcut.label} to default`}
+                                  onClick={() => {
+                                    const next = { ...preferences.keyboardShortcuts };
+                                    delete next[shortcut.id];
+                                    updatePreferences({ keyboardShortcuts: next });
+                                    if (recordingShortcutId === shortcut.id) {
+                                      setRecordingShortcutId(null);
+                                    }
+                                  }}
+                                >
+                                  <Undo2 size={13} />
+                                </button>
+                              </AppTooltip>
                             )}
                           </span>
                         </div>
@@ -1273,31 +1277,33 @@ export default function SetupDialog({
                               }}
                             />
                             <span className="tool-actions">
-                              <button
-                                type="button"
-                                className="icon-button small"
-                                aria-label={`Edit shortcut for ${label}`}
-                                title="Edit shortcut"
-                                onClick={() => setRecordingShortcutId(customId)}
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-button small"
-                                aria-label={`Remove shortcut ${label}`}
-                                title="Remove shortcut"
-                                onClick={() => {
-                                  const next = { ...preferences.keyboardShortcuts };
-                                  delete next[customId];
-                                  updatePreferences({ keyboardShortcuts: next });
-                                  if (recordingShortcutId === customId) {
-                                    setRecordingShortcutId(null);
-                                  }
-                                }}
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              <AppTooltip content={'Edit shortcut'}>
+                                <button
+                                  type="button"
+                                  className="icon-button small"
+                                  aria-label={`Edit shortcut for ${label}`}
+                                  onClick={() => setRecordingShortcutId(customId)}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                              </AppTooltip>
+                              <AppTooltip content={'Remove shortcut'}>
+                                <button
+                                  type="button"
+                                  className="icon-button small"
+                                  aria-label={`Remove shortcut ${label}`}
+                                  onClick={() => {
+                                    const next = { ...preferences.keyboardShortcuts };
+                                    delete next[customId];
+                                    updatePreferences({ keyboardShortcuts: next });
+                                    if (recordingShortcutId === customId) {
+                                      setRecordingShortcutId(null);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </AppTooltip>
                             </span>
                           </div>
                         );
@@ -1366,37 +1372,48 @@ export default function SetupDialog({
                       return (
                         <div className="tool-row" key={tool.name}>
                           <strong>{tool.name}</strong>
-                          <code
-                            title={tool.path ?? undefined}
-                            className={tool.path ? '' : 'missing'}
-                          >
-                            {tool.path ?? 'Not found'}
-                          </code>
+                          <AppTooltip content={tool.path ?? ''}>
+                            <code className={tool.path ? '' : 'missing'}>
+                              {tool.path ?? 'Not found'}
+                            </code>
+                          </AppTooltip>
                           {configurable && (
                             <span className="tool-actions">
-                              <button
-                                className="icon-button small"
-                                disabled={busy}
-                                aria-label={`Choose ${tool.name} executable`}
-                                title={tool.custom ? 'Change executable' : 'Set executable path'}
-                                onClick={() =>
-                                  void perform(() => chooseToolPath(tool.name as ConfigurableTool))
-                                }
+                              <AppTooltip
+                                content={tool.custom ? 'Change executable' : 'Set executable path'}
                               >
-                                <Pencil size={13} />
-                              </button>
+                                <span className="tooltip-disabled-trigger">
+                                  <button
+                                    className="icon-button small"
+                                    disabled={busy}
+                                    aria-label={`Choose ${tool.name} executable`}
+                                    onClick={() =>
+                                      void perform(() =>
+                                        chooseToolPath(tool.name as ConfigurableTool),
+                                      )
+                                    }
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                </span>
+                              </AppTooltip>
                               {tool.custom && (
-                                <button
-                                  className="icon-button small"
-                                  disabled={busy}
-                                  aria-label={`Use PATH for ${tool.name}`}
-                                  title="Go back to finding it on PATH"
-                                  onClick={() =>
-                                    void perform(() => resetToolPath(tool.name as ConfigurableTool))
-                                  }
-                                >
-                                  <Undo2 size={13} />
-                                </button>
+                                <AppTooltip content={'Go back to finding it on PATH'}>
+                                  <span className="tooltip-disabled-trigger">
+                                    <button
+                                      className="icon-button small"
+                                      disabled={busy}
+                                      aria-label={`Use PATH for ${tool.name}`}
+                                      onClick={() =>
+                                        void perform(() =>
+                                          resetToolPath(tool.name as ConfigurableTool),
+                                        )
+                                      }
+                                    >
+                                      <Undo2 size={13} />
+                                    </button>
+                                  </span>
+                                </AppTooltip>
                               )}
                             </span>
                           )}

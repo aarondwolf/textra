@@ -1,3 +1,4 @@
+import { AppTooltip } from '../../components/HelpTooltip';
 import { useState } from 'react';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import { DropdownMenu } from '../../components/DropdownMenu';
@@ -109,10 +110,12 @@ function VisibilityEditor({
                     onChange({ ...value, models: next });
                   }}
                 />
-                <span title={model.id}>
-                  {model.label}
-                  <small>{model.id}</small>
-                </span>
+                <AppTooltip content={model.id}>
+                  <span>
+                    {model.label}
+                    <small>{model.id}</small>
+                  </span>
+                </AppTooltip>
               </label>
             ))}
             {!visible.length && <p>No matching models. Enter exact IDs below.</p>}

@@ -117,7 +117,11 @@ function ActionButton({
       {children}
     </button>
   );
-  return disabled ? button : <AppTooltip content={title}>{button}</AppTooltip>;
+  return (
+    <AppTooltip content={title}>
+      {disabled ? <span className="tooltip-disabled-trigger">{button}</span> : button}
+    </AppTooltip>
+  );
 }
 
 function ProblemActions({

@@ -796,6 +796,23 @@
   background: transparent;
   cursor: help;
 }
+
+.tooltip-disabled-trigger {
+  display: inline-flex;
+}
+
+.tooltip-disabled-trigger > button:disabled {
+  pointer-events: none;
+}
+
+.recent-row > .tooltip-disabled-trigger {
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-row > .tooltip-disabled-trigger > .recent-open {
+  width: 100%;
+}
 .help-tooltip-trigger:hover,
 .help-tooltip-trigger:focus-visible {
   color: var(--accent);

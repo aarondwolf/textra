@@ -89,7 +89,9 @@ Startup separates shell, editor, tree, recipe configuration, tool discovery and
 optional-feature readiness. Project opening returns a canonical root token and an
 initial root directory page. The typed `listProjectDirectory` capability enumerates
 one validated folder with `opendir` and returns at most 500 entries and a next offset.
-Expansion caches and merges pages. Refresh prepares the previously loaded page
+After the editor is ready, idle-time prefetch caches every page through two folder
+levels without expanding folders. The explorer filter and command palette search
+loaded paths; expansion loads deeper folders. Refresh prepares the previously loaded page
 budgets before publishing one replacement, and confirmed deletion prunes only the
 deleted subtree while adjusting its parent's cursor. The explorer restores its
 scroll offset before paint. Listing IDs reject obsolete in-flight pages. There is

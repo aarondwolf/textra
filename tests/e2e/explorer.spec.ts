@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
-test('explorer expands folders on demand and pages through a large folder', async () => {
+test('explorer preloads searchable files and preserves folder and scroll state', async () => {
   test.setTimeout(90000);
   const parent = join(process.cwd(), 'test-results', 'incremental-explorer');
   await mkdir(parent, { recursive: true });
@@ -16,6 +16,8 @@ test('explorer expands folders on demand and pages through a large folder', asyn
     '\\documentclass{article}\n\\begin{document}Root content.\\end{document}',
   );
   await writeFile(join(root, 'chapters', 'deep', 'one.tex'), 'Deep chapter content.');
+  await mkdir(join(root, 'chapters', 'deep', 'third'));
+  await writeFile(join(root, 'chapters', 'deep', 'third', 'beyond.tex'), 'Beyond content.');
   for (let start = 0; start < 502; start += 100)
     await Promise.all(
       Array.from({ length: Math.min(100, 502 - start) }, (_, index) =>
@@ -53,12 +55,23 @@ test('explorer expands folders on demand and pages through a large folder', asyn
     const folder = page.getByRole('button', { name: 'Select folder chapters', exact: true });
     await expect(folder).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('.file-entry[data-path^="chapters/"]')).toHaveCount(0);
+    const filter = page.getByRole('textbox', { name: 'Filter project files' });
+    await filter.fill('chapters/deep/one.tex');
+    await expect(
+      page.getByRole('button', { name: 'Open chapters/deep/one.tex', exact: true }),
+    ).toBeVisible({ timeout: 30000 });
+    await expect(folder).toHaveAttribute('aria-expanded', 'false');
+    await filter.fill('chapters/entry-0501.txt');
+    await expect(
+      page.getByRole('button', { name: 'Open chapters/entry-0501.txt', exact: true }),
+    ).toBeVisible({ timeout: 30000 });
+    await filter.clear();
+    await expect(folder).toHaveAttribute('aria-expanded', 'false');
     await folder.click();
     const more = page.getByRole('button', { name: 'Load more in chapters', exact: true });
-    await expect(more).toBeVisible();
-    await expect(page.locator('.file-entry[data-path^="chapters/"]')).toHaveCount(500);
-    await more.click();
-    await expect(page.locator('.file-entry[data-path^="chapters/"]')).toHaveCount(503);
+    await expect(page.locator('.file-entry[data-path^="chapters/"]')).toHaveCount(503, {
+      timeout: 30000,
+    });
     await expect(more).toHaveCount(0);
     const tree = page.locator('.file-tree');
     for (const number of [400, 401]) {
@@ -95,6 +108,19 @@ test('explorer expands folders on demand and pages through a large folder', asyn
     await expect(
       page.getByRole('button', { name: 'Open chapters/deep/one.tex', exact: true }),
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
+    await expect(page.getByTestId('source-editor')).toContainText('Root content.');
+    await page
+      .getByRole('button', { name: 'Search commands and files (Ctrl+K)', exact: true })
+      .click();
+    await page
+      .getByRole('combobox', { name: 'Search commands and files', exact: true })
+      .fill('chapters/deep/one.tex');
+    await expect(
+      page.getByRole('option', { name: 'Open file chapters/deep/one.tex', exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('source-editor')).toContainText('Deep chapter content.');
     await expect(page.getByText('The file list reached its limit.', { exact: false })).toHaveCount(
       0,
     );

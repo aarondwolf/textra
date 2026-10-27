@@ -61,6 +61,7 @@ const SHORTCUT_REFERENCE = [
 ] as const;
 
 function CommandPalette() {
+  const project = useWorkspace((state) => state.project);
   const {
     preferences,
     updatePreferences,
@@ -258,6 +259,14 @@ function CommandPalette() {
     })),
   ];
   const search = query.toLowerCase().trim();
+  // Search only the tree already loaded by the workspace; opening the palette must
+  // not initiate a potentially expensive project-wide scan.
+  const allMatchingFiles = search
+    ? (project?.files ?? []).filter(
+        (entry) => entry.kind === 'file' && entry.path.toLowerCase().includes(search),
+      )
+    : [];
+  const matchingFiles = allMatchingFiles.slice(0, 100);
   const commands = [...allCommands]
     .filter(
       (command) =>
@@ -310,14 +319,15 @@ function CommandPalette() {
         >
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <Dialog.Description className="sr-only">
-            Search workspace commands. Use arrow keys to choose a command, then Enter to run it.
+            Search workspace commands and loaded project files. Use arrow keys to choose a result,
+            then Enter to open or run it.
           </Dialog.Description>
           <Command className="command-palette" shouldFilter={false} loop>
             <div className="command-search">
               <Search size={19} aria-hidden="true" />
               <Command.Input
                 ref={input}
-                aria-label="Search commands"
+                aria-label="Search commands and files"
                 placeholder="What would you like to do?"
                 value={query}
                 onValueChange={setQuery}
@@ -326,7 +336,38 @@ function CommandPalette() {
                 Esc
               </Dialog.Close>
             </div>
-            <Command.List className="command-list" aria-label="Workspace commands">
+            <Command.List className="command-list" aria-label="Workspace commands and files">
+              {project && matchingFiles.length > 0 && (
+                <Command.Group heading="FILES">
+                  <div className="eyebrow command-group">FILES</div>
+                  {matchingFiles.map((file) => (
+                    <Command.Item
+                      key={file.path}
+                      value={`file:${file.path}`}
+                      className="command-item"
+                      aria-label={`Open file ${file.path}`}
+                      onSelect={() => {
+                        window.dispatchEvent(
+                          new CustomEvent('textra:open-project-file', {
+                            cancelable: true,
+                            detail: { projectId: project.id, path: file.path },
+                          }),
+                        );
+                        setPaletteOpen(false);
+                      }}
+                    >
+                      <Article size={17} aria-hidden="true" />
+                      <span>{file.path}</span>
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </Command.Item>
+                  ))}
+                  {allMatchingFiles.length > matchingFiles.length && (
+                    <div className="no-commands" role="status">
+                      Showing the first 100 files. Refine your search to see more.
+                    </div>
+                  )}
+                </Command.Group>
+              )}
               {recentCommands.length > 0 && (
                 <Command.Group heading="RECENT">
                   <div className="eyebrow command-group">RECENT</div>
@@ -365,8 +406,10 @@ function CommandPalette() {
                   ))}
                 </Command.Group>
               )}
-              {commands.length === 0 && (
-                <Command.Empty className="no-commands">No commands match “{query}”.</Command.Empty>
+              {commands.length === 0 && matchingFiles.length === 0 && (
+                <Command.Empty className="no-commands">
+                  No commands or loaded files match “{query}”.
+                </Command.Empty>
               )}
               <details
                 className="command-shortcuts"

@@ -2,11 +2,32 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProjectInfo } from '../../../../shared/api';
 import { includeProjectFile, mergeProjectDirectory } from '../../../../shared/project-tree';
 import { useWorkspace } from '../../state/workspace';
+import { scheduleBackground } from '../startup/scheduling';
 
-export function useDirectoryListing(project: ProjectInfo | null, expanded: Set<string>) {
+/** Include the root and two directory levels, including every continuation page. */
+export function prefetchCandidates(project: ProjectInfo): { path: string; more: boolean }[] {
+  if (!project.directoryPages) return [];
+  const paths = [
+    '',
+    ...project.files
+      .filter((entry) => entry.kind === 'directory' && entry.path.split('/').length <= 2)
+      .map((entry) => entry.path),
+  ];
+  return paths.flatMap<{ path: string; more: boolean }>((path) => {
+    if (!Object.hasOwn(project.directoryPages!, path)) return [{ path, more: false }];
+    return typeof project.directoryPages![path] === 'number' ? [{ path, more: true }] : [];
+  });
+}
+
+export function useDirectoryListing(
+  project: ProjectInfo | null,
+  expanded: Set<string>,
+  coreReady: boolean,
+) {
   const projectId = project?.id;
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [prefetchProject, setPrefetchProject] = useState<string | null>(null);
   const pending = useRef(new Set<string>());
   useEffect(() => {
     pending.current = new Set();
@@ -59,6 +80,23 @@ export function useDirectoryListing(project: ProjectInfo | null, expanded: Set<s
         void load(path);
     }
   }, [project, expanded, loading, errors, load]);
+
+  // Wait for the editor/home frame, then use the same checked paged listing API.
+  // Four reads at a time keeps large projects responsive and never expands folders.
+  useEffect(() => {
+    if (!projectId || !coreReady) return;
+    return scheduleBackground(() => setPrefetchProject(projectId));
+  }, [projectId, coreReady]);
+
+  useEffect(() => {
+    if (!project || !coreReady || prefetchProject !== project.id) return;
+    for (const candidate of prefetchCandidates(project)) {
+      if (pending.current.size >= 4) break;
+      const key = `${project.id}:${candidate.path}`;
+      if (!pending.current.has(key) && !loading[key] && !errors[key])
+        void load(candidate.path, candidate.more);
+    }
+  }, [project, coreReady, prefetchProject, loading, errors, load]);
 
   // Restored tabs and direct source navigation may refer to folders beyond the first page.
   useEffect(() => {

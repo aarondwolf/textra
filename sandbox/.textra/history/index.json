@@ -2,16 +2,6 @@
   "version": 1,
   "snapshots": [
     {
-      "id": "2026-10-23T15-20-26.664Z",
-      "path": "demo.tex",
-      "createdAt": "2026-10-23T15:20:26.664Z",
-      "sizeBytes": 2587,
-      "revision": "0c060d8b66ace1bbb3439087e44a846653766d0d12b9fe5f236ce900d39890c1",
-      "trigger": "compile",
-      "pinned": false,
-      "label": null
-    },
-    {
       "id": "2026-10-23T15-56-59.362Z",
       "path": "todo.md",
       "createdAt": "2026-10-23T15:56:59.362Z",
@@ -42,16 +32,6 @@
       "label": null
     },
     {
-      "id": "2026-10-23T16-56-56.523Z",
-      "path": "demo.tex",
-      "createdAt": "2026-10-23T16:56:56.523Z",
-      "sizeBytes": 1895,
-      "revision": "9dc50b0562fd280e1fb39d2d86fdfddb7ceac13be9d20518eb3a3a2b2bbbadd7",
-      "trigger": "save",
-      "pinned": false,
-      "label": null
-    },
-    {
       "id": "2026-10-23T18-24-28.938Z",
       "path": "todo.md",
       "createdAt": "2026-10-23T18:24:28.938Z",
@@ -67,16 +47,6 @@
       "createdAt": "2026-10-23T18:39:02.808Z",
       "sizeBytes": 610,
       "revision": "cbf381c7d9156de5c0f0d94e2db678a8ef693e729be75af5506c2193630ec081",
-      "trigger": "save",
-      "pinned": false,
-      "label": null
-    },
-    {
-      "id": "2026-10-23T20-06-40.393Z",
-      "path": "demo.tex",
-      "createdAt": "2026-10-23T20:06:40.393Z",
-      "sizeBytes": 1895,
-      "revision": "9dc50b0562fd280e1fb39d2d86fdfddb7ceac13be9d20518eb3a3a2b2bbbadd7",
       "trigger": "save",
       "pinned": false,
       "label": null
@@ -130,16 +100,6 @@
       "trigger": "save",
       "pinned": false,
       "label": null
-    },
-    {
-      "id": "2026-10-24T20-27-50.451Z-17c3fddf-dbe1-4cb1-9736-3ee272caadcf",
-      "path": "demo.tex",
-      "createdAt": "2026-10-24T20:27:50.451Z",
-      "sizeBytes": 1895,
-      "revision": "9dc50b0562fd280e1fb39d2d86fdfddb7ceac13be9d20518eb3a3a2b2bbbadd7",
-      "trigger": "ai",
-      "pinned": true,
-      "label": "Pre-AI review changes"
     },
     {
       "id": "2026-10-24T20-28-02.774Z-1b4437d8-9758-4d47-9e3b-959f7d88a832",
@@ -247,6 +207,66 @@
       "createdAt": "2026-10-25T03:25:01.352Z",
       "sizeBytes": 769,
       "revision": "b98589e579399037666a27a72893d6e982fb2d0812b47ae1d4b315d58787a29f",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-26T00-12-59.712Z-07955fcb-5388-46a8-9967-bc0e061043e5",
+      "path": "demo.tex",
+      "createdAt": "2026-10-26T00:12:59.712Z",
+      "sizeBytes": 1925,
+      "revision": "83308974c0b5adbfa073990a01c3c239cd70a64c5c5051ad288db42f221996b1",
+      "trigger": "manual",
+      "pinned": true,
+      "label": "Test"
+    },
+    {
+      "id": "2026-10-26T00-37-55.742Z-fd0302d9-5b78-4fb0-9561-1c191eaef17f",
+      "path": "todo.md",
+      "createdAt": "2026-10-26T00:37:55.742Z",
+      "sizeBytes": 2890,
+      "revision": "aa4fbc9e86c146349b0cc571efbcdf7b73622d50c59503c96c1a008ce033b21f",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-26T00-41-43.927Z-7f78e109-25c2-4a87-ae4e-83c92d066587",
+      "path": "todo.md",
+      "createdAt": "2026-10-26T00:41:43.927Z",
+      "sizeBytes": 1338,
+      "revision": "6ef2226018a0915e101faddc1c0ba545af75cffc38787ee4e2724a4bf1eacd27",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-26T15-03-54.972Z-e18ac505-039b-4ec3-ba46-3f1406cbb1e7",
+      "path": "todo.md",
+      "createdAt": "2026-10-26T15:03:54.972Z",
+      "sizeBytes": 1053,
+      "revision": "f4c0358d62020b57eb36009a1d64f5d89c8847a18bc80a01fabbd80531e4d378",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-26T15-36-16.289Z-a0d6bde4-8ac3-4169-beaa-67a178a7bd18",
+      "path": "todo.md",
+      "createdAt": "2026-10-26T15:36:16.289Z",
+      "sizeBytes": 682,
+      "revision": "d862b04da7a2f38e8d9e85c5e711ac00527be32d01bc90c15ad4cc6e68f9be2e",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-26T15-36-18.504Z-7e8088c6-7fe2-471f-afd3-a79df5155bd6",
+      "path": "todo.md",
+      "createdAt": "2026-10-26T15:36:18.504Z",
+      "sizeBytes": 591,
+      "revision": "8dd62e152104900f657d066ae8d93a78319242fca5b473514f6c833e4179bb3f",
       "trigger": "save",
       "pinned": false,
       "label": null

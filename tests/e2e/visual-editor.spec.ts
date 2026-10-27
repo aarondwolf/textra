@@ -116,7 +116,7 @@ test('visual editing preserves LaTeX and shares save and undo with code mode', a
     for (const theme of ['Light', 'Dark']) {
       await page.keyboard.press('Control+k');
       await page
-        .getByRole('combobox', { name: 'Search commands', exact: true })
+        .getByRole('combobox', { name: 'Search commands and files', exact: true })
         .fill(`Switch theme: ${theme}`);
       await page.getByRole('option', { name: `Switch theme: ${theme}`, exact: true }).click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
@@ -146,7 +146,7 @@ test('visual editing preserves LaTeX and shares save and undo with code mode', a
     await page.screenshot({ path: test.info().outputPath('visual-custom.png') });
     await page.keyboard.press('Control+k');
     await page
-      .getByRole('combobox', { name: 'Search commands', exact: true })
+      .getByRole('combobox', { name: 'Search commands and files', exact: true })
       .fill('Switch theme: Dark');
     await page.getByRole('option', { name: 'Switch theme: Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

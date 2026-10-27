@@ -101,6 +101,17 @@
   padding: 9px 0;
   min-height: 80px;
 }
+.file-tree .tree-note,
+.history-list > p[role='alert'],
+.ai-chat > p[role='status'],
+.ai-chat > p.ai-history-error {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .file-entry {
   width: calc(100% - 12px);
   margin: 2px 6px;

@@ -44,13 +44,15 @@ reject traversal and symlink escapes. Confirm destructive actions.
 
 Complete phase gates in order. Use real fixtures and integration tests; label
 mocks and skipped external integrations honestly. Validate before milestone
-commits; do not commit artifacts/secrets or push without authorization.
+commits; commit only when the user explicitly requests it. Do not commit
+artifacts/secrets or push without authorization.
 
 ## Agent coordination
 
 Parallel work is authorized by the build specification. Delegate bounded modules
 with explicit contracts and exclusive file ownership. Coordinator reviews,
-integrates, runs full checks, updates memory, and commits. Never overlap edits.
+integrates, runs full checks, updates memory, and commits only when requested.
+Never overlap edits.
 
 ## Memory protocol
 
@@ -63,3 +65,7 @@ after a slice. See .agents/memory/README.md. Never store secrets or private cont
 Functionality tested, documentation current, no known critical failures, Git clean
 or exceptions explained, exact launch command and next steps recorded. Partial
 phases must remain explicitly incomplete.
+
+At the bottom of the final response for a completed feature or fix, provide a
+suggested commit message so the user can review and commit the changes. Providing
+a message does not authorize creating a commit.

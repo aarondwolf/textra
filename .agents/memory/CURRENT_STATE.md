@@ -1,5 +1,7 @@
 # Current state
 
+2026-10-27 project file search: after core startup the explorer preloads all pages through two folder levels without expanding folders. The sidebar filter searches loaded paths through collapsed folders, and the command palette opens loaded project files through the explorer workflow. Focused Windows native explorer coverage passes with a 502-file folder. Deeper files load when their folders are expanded.
+
 2026-10-27 editor scrollbar follow-up: the editor/preview splitter reserves its own width and expands its pointer target only into the preview, keeping both Monaco and Visual scrollbars draggable. The production build and native scrollbar/splitter drag test pass.
 
 2026-10-27 Visual LaTeX editing (working tree): Code/Visual uses Tiptap over the authoritative Monaco model. The source adapter keeps opaque constructs and original slices, with guarded localized edits, shared undo, conflict handling, and Yjs integration. Source-dialog and rejected-edit drafts block save/close until handled. Full unit/integration suite passed 769/769; Windows native visual, collaboration, document-session, project workflow and shell checks passed. The prepared small-fixture toggle measured 44 ms to the next animation frame. Synthetic adapter timings and limits are in docs/PERFORMANCE.md. macOS/Linux, the broader IME and scaling matrix, and packaged cold startup remain unverified. Launch with npm run dev. Phase 1 cross-platform verification remains the next open gate.

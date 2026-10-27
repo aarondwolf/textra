@@ -1,5 +1,7 @@
 # Known issues
 
+- 2026-10-27 Visual editor verification: Windows functional, shared-Yjs and document-session cases pass. macOS/Linux, broader IME composition and 125%/150% scaling have not been verified. A synthetic 500,000-character adapter fixture took 3,770 ms to import and 103.1 ms median per cloned localized edit; parsing is off the UI thread, but large documents may still show editing delay. Packaged cold launch remains unmeasured.
+
 - 2026-10-25 collaboration milestone remains incomplete: plain-file auto-merge is
   intentionally deferred and uses manual review; watcher/outbox failure injection,
   delayed-sidecar/copy-folder cases, concurrent history-index mutation, and
@@ -71,12 +73,12 @@
   contracts and native editor behavior pass separately.
   Automatic remains disabled unless explicitly enabled with native model consent.
 
-- 2026-10-20 native project-workflow test still expects the previous inline external-change
-  banner (line108), while the existing working tree shows the new External change detected
-  dialog. Reconcile that test with the owner's in-progress conflict workflow; Gemini work
-  preserves it. Native shell and recipes pass serially with desktop permissions. Do not run
-  Playwright invocations concurrently: they clean shared test-results, corrupting profiles
-  and traces. Stop native app/test runs before rebuilding generated output.
+- 2026-10-25 conflict workflow now uses the inline banner for both manual review and
+  background-merge fallback; the stale test expectation for a modal was updated and
+  native project/collaboration/history/Agent flows pass serially. Keep Playwright runs
+  serial because they clean shared test-results. Dropbox may lock generated renderer
+  output during a build; `TEXTRA_PRESERVE_RENDERER_OUTPUT=true` remains the verified
+  build workaround.
 
 - Environment: managed sandbox blocks npm DNS and atomic rename in sandbox temp.
   Approved npm install works; tests now use workspace test-results and pass inside

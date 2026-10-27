@@ -35,9 +35,10 @@ Validation: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm te
 `npm run build`, `npm run test:e2e`. Installer packaging is not configured yet.
 The primary iteration loop is a native Electron window with React HMR.
 Startup restores the active saved document first, then the remaining tabs. The
-explorer initially lists the top-level folder; expanding a folder loads its contents.
-Large folders offer **Load more** in pages of 500 entries, with no project-wide
-file-count or scan-depth cutoff. The filter searches the files already listed.
+explorer initially lists the top-level folder, then loads two folder levels in the
+background without expanding them. The file filter and command palette search loaded
+files; expanding deeper folders loads their contents. Large folders load in pages
+of 500 entries, with no project-wide file-count or scan-depth cutoff.
 The editor, PDF preview and optional panels load separately. After the first
 editor frame, optional panels prepare their code sequentially during idle time;
 opening them reuses the prepared components. Comparisons keep the source editor

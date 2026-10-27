@@ -110,7 +110,7 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
       .toBe(false);
     for (const name of ['Dark', 'Light']) {
       await page.keyboard.press('Control+k');
-      const search = page.getByRole('combobox', { name: 'Search commands', exact: true });
+      const search = page.getByRole('combobox', { name: 'Search commands and files', exact: true });
       await search.fill(`Switch theme: ${name}`);
       await page.getByRole('option', { name: `Switch theme: ${name}`, exact: true }).click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', name.toLowerCase());

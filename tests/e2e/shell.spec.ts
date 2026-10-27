@@ -174,7 +174,7 @@ test('native shell keeps security boundaries and persists representative UI acti
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
     const palette = page.getByRole('dialog', { name: 'Command palette' });
     await expect(palette).toBeVisible();
-    await palette.getByRole('combobox', { name: 'Search commands' }).fill('preview');
+    await palette.getByRole('combobox', { name: 'Search commands and files' }).fill('preview');
     await palette.getByRole('option', { name: 'Toggle preview pane', exact: true }).click();
     await expect(palette).toBeHidden();
     await expect(page.getByRole('button', { name: 'Show PDF preview', exact: true })).toBeVisible();

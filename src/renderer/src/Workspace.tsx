@@ -896,7 +896,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     if (position && position.projectId === project?.id && fileTree.current)
       fileTree.current.scrollTop = position.top;
   }, [project?.id, project?.files]);
-  const directories = useDirectoryListing(project, expandedFolders);
+  const directories = useDirectoryListing(project, expandedFolders, coreReady);
   function directoryStatus(path: string) {
     const name = path || 'project root';
     const error = directories.error(path);
@@ -973,18 +973,48 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     });
   }
   useEffect(() => {
+    const openProjectFile = (event: Event) => {
+      if (!(event instanceof CustomEvent) || event.defaultPrevented) return;
+      const detail: unknown = event.detail;
+      if (!detail || typeof detail !== 'object' || !('projectId' in detail) || !('path' in detail))
+        return;
+      if (
+        !project ||
+        detail.projectId !== project.id ||
+        typeof detail.path !== 'string' ||
+        !project.files.some((file) => file.kind === 'file' && file.path === detail.path)
+      )
+        return;
+      event.preventDefault();
+      setSelected(detail.path);
+      openExplorerFile(detail.path);
+    };
+    window.addEventListener('textra:open-project-file', openProjectFile);
+    return () => window.removeEventListener('textra:open-project-file', openProjectFile);
+  });
+  useEffect(() => {
     if (!previewPath) return;
     const preview = documents.find((document) => document.path === previewPath);
     if (!preview || dirty(preview)) setPreviewPath(null);
   }, [documents, previewPath]);
+  const normalizedFileFilter = fileFilter.trim().toLowerCase();
+  const matchingFiles = normalizedFileFilter
+    ? (project?.files.filter((file) => file.path.toLowerCase().includes(normalizedFileFilter)) ??
+      [])
+    : [];
+  const matchingPaths = new Set<string>();
+  for (const match of matchingFiles) {
+    const parts = match.path.split('/');
+    parts.forEach((_, index) => matchingPaths.add(parts.slice(0, index + 1).join('/')));
+  }
   const visibleFiles =
-    project?.files.filter(
-      (file) =>
-        (!fileFilter || file.path.toLowerCase().includes(fileFilter.trim().toLowerCase())) &&
-        !file.path
-          .split('/')
-          .slice(0, -1)
-          .some((_, index, parts) => !expandedFolders.has(parts.slice(0, index + 1).join('/'))),
+    project?.files.filter((file) =>
+      normalizedFileFilter
+        ? matchingPaths.has(file.path)
+        : !file.path
+            .split('/')
+            .slice(0, -1)
+            .some((_, index, parts) => !expandedFolders.has(parts.slice(0, index + 1).join('/'))),
     ) ?? [];
   const { fontSize, wrap, formatToolbarVisible } = preferences;
   const setFontSize = (size: number) => updatePreferences({ fontSize: size });
@@ -3003,7 +3033,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     <input
                       aria-label="Filter project files"
                       placeholder="Filter loaded files"
-                      title="Filters listed files. Expand folders to load more files."
+                      title="Searches files loaded two levels deep. Expand deeper folders to load their contents."
                       value={fileFilter}
                       onChange={(event) => setFileFilter(event.target.value)}
                     />
@@ -3444,9 +3474,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                       {directoryStatus('')}
                       {!project.files.length && !creating && (
                         <p className="tree-note">This folder is empty. Create a file to begin.</p>
-                      )}
-                      {project.treeState === 'partial' && (
-                        <p className="tree-note">Expand folders to load their contents.</p>
                       )}
                     </div>
                   </>

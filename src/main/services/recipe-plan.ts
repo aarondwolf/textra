@@ -170,7 +170,22 @@ export async function planRecipe(
 }
 
 /** Accept ordinary compiler options; executable commands and format/code injection are never options. */
-export function recipeArguments(step: RecipeStep, plan: RecipePlan, miktex: boolean): string[] {
+export function texSafetyFlags(miktex: boolean, autoInstall = false): string[] {
+  return miktex
+    ? [
+        autoInstall ? '-enable-installer' : '-disable-installer',
+        '-disable-write18',
+        '-dont-parse-first-line',
+      ]
+    : ['-no-shell-escape', '-no-parse-first-line'];
+}
+
+export function recipeArguments(
+  step: RecipeStep,
+  plan: RecipePlan,
+  miktex: boolean,
+  autoInstall = false,
+): string[] {
   const args: string[] = [];
   const bibliography = ['bibtex', 'biber'].includes(step.command);
   const latexmk = step.command === 'latexmk';
@@ -223,6 +238,7 @@ export function recipeArguments(step: RecipeStep, plan: RecipePlan, miktex: bool
         'dont-parse-first-line',
         'no-parse-first-line',
         'disable-installer',
+        'enable-installer',
         'norc',
       ].includes(key) &&
       value === undefined
@@ -251,7 +267,7 @@ export function recipeArguments(step: RecipeStep, plan: RecipePlan, miktex: bool
   if (bibliography) {
     if (step.cwd !== plan.auxiliary)
       throw new Error('Bibliography tools must run in the configured auxiliary directory.');
-    return [...(miktex ? ['-disable-installer'] : []), ...args];
+    return [...(miktex ? [autoInstall ? '-enable-installer' : '-disable-installer'] : []), ...args];
   }
   if (plan.auxiliary !== plan.output && (latexmk || !miktex))
     throw new Error(
@@ -261,9 +277,7 @@ export function recipeArguments(step: RecipeStep, plan: RecipePlan, miktex: bool
   if (plan.auxiliary !== plan.output && !auxFlag) args.unshift(`-aux-directory=${plan.auxiliary}`);
   if (auxFlag && !miktex)
     throw new Error('This engine does not support an auxiliary-directory option.');
-  const safeFlags = miktex
-    ? ['-disable-installer', '-disable-write18', '-dont-parse-first-line']
-    : ['-no-shell-escape', '-no-parse-first-line'];
+  const safeFlags = texSafetyFlags(miktex, autoInstall);
   if (latexmk) {
     if (/["'`$&|<>^%!()\r\n]/.test([plan.root, ...args].join('')))
       throw new Error(

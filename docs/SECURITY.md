@@ -26,7 +26,10 @@ collision-safe siblings; no version is deleted or silently overwritten.
 
 TeX is executable input. Compilers run only after user action, with shell escape
 disabled, a timeout and cancellation. This is not an OS-level TeX sandbox: open
-and compile trusted projects only. External installation is not automatic.
+and compile trusted projects only. The device-wide miktexAutoInstall preference
+allows MiKTeX to download required packages during an explicit compile and defaults
+to enabled. It uses MiKTeX's configured repository; project recipes cannot override
+this setting. Startup and installation health checks do not install packages.
 
 The optional AI assistant transmits only user-submitted conversations and Problems snippets to
 the saved endpoint of the selected model's provider from the main process. All generation uses
@@ -165,9 +168,10 @@ Review focus: IPC, symlinks, traversal, concurrent edits, process lifecycle, PDF
 input bounds, safe URLs, and restore paths. Report vulnerabilities privately to
 the owner; a public security contact remains an owner decision.
 
-Implemented limits: 5MiB UTF8 text, 10,000 tree entries, 50 tabs, 2MB build log,
+Implemented limits: 5MiB UTF8 text, 500 directory entries per page, 50 tabs, 2MB build log,
 64MiB PDF, 16M-pixel render backing/image bounds, 120s compile, 5s SyncTeX.
-MiKTeX auto-install/first-line format parsing and shell escape are disabled;
+First-line format parsing and shell escape are disabled. MiKTeX package installation
+follows the application preference during explicit builds;
 latexmk uses -norc. PDF XFA is disabled and its worker is bundled locally.
 Portable Node cannot atomically bind every path check to subsequent OS operations;
 revalidation narrows but does not eliminate hostile concurrent TOCTOU mutation.

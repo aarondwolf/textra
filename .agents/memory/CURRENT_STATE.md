@@ -1,5 +1,78 @@
 # Current state
 
+2026-10-26 Explorer scroll and MiKTeX package policy (working tree):
+
+- Confirmed deletions now prune cached rows and subtree metadata, retain loaded
+  folder pages, adjust continuation offsets and restore explorer scroll before
+  paint. Focus refresh prepares the old loaded-page budgets before one atomic
+  listing replacement; stale refreshes cannot overwrite newer tree changes.
+- Added miktexAutoInstall, default true, with a Compilation switch. Main applies
+  policy to normal builds through direct engines, latexmk and bibliography steps.
+  Recipes cannot override it; shell execution and first-line parsing remain off.
+  Direct BuildService calls default false for offline health checks/tests.
+- Evidence: 60 focused tests and all four targeted native cases pass; final tree
+  helper rerun 4/4. Native checks cover repeated scrolled deletion, focus refresh,
+  persistent package setting, existing recipe compilation and PDF workflow.
+  Typecheck/lint/format/build pass. Live package downloading was not exercised:
+  real compiler fixtures explicitly disable it, while unit tests check enabled flags.
+- Launch with npm run dev and restart the app for main-process changes. Existing
+  sandbox edits remain preserved. Phase 1 cross-platform verification stays open.
+
+2026-10-26 Incremental project explorer (working tree):
+
+- Removed the 10,000-entry/20-level recursive scan cutoff. Project opening and
+  refresh return the root directory page; a typed listProjectDirectory capability
+  uses opendir for at most 500 entries per response. Expanded folders cache pages,
+  show loading/retry status, and offer Load more. Four automatic directory loads
+  can run concurrently. Refresh listing IDs reject obsolete in-flight pages.
+- Partial listings do not establish file absence. Configured roots and restored
+  documents remain usable before their folders load; known documents add their
+  ancestor rows. Document outlines and bounded writing analysis follow explicit
+  chapter/bibliography references directly. The filter explicitly covers loaded files.
+- Evidence: typecheck/lint/format/build pass. Focused tests passed 54/54; full suite
+  744/746 with two recipe timeouts, isolated recipe rerun 5/5. Fixtures cover 10,005
+  files, 24-level paths and unsafe/stale directory requests. Native explorer,
+  project/session and startup cases pass 6/6, with the opt-in benchmark skipped.
+- Launch with npm run dev (restart the app for main/preload changes). The formal
+  Phase 1 cross-platform gate remains open. Existing sandbox edits are preserved.
+
+2026-10-26 Theme, snapshot and loading follow-up (working tree):
+
+- Palette and Appearance share themeSelection and its built-in/custom color defaults;
+  palette commands include Dark and saved custom themes. Conflict actions override
+  the primary button's full-width default and remain adjacent at content width.
+- Every snapshot card offers label editing, including unpinned cards; the diff
+  editor retains its label action. Labels use existing pin metadata and retention.
+- Feature factories cache their imports and resolved components across mounts and
+  expose preload. Optional panels and Settings sections prepare sequentially at
+  idle after core content is visible, without mounting panels or contacting providers.
+  Source editor instances stay mounted and inactive behind comparisons.
+- Evidence: typecheck/lint/build pass; focused tests 19/19; six relevant native
+  scenarios pass, startup benchmark opt-in. Three existing-tab switches measured
+  66.8/54.0/54.1 ms (final rerun 55.5/50.6/49.1 ms) in the small native fixture, not a large-project or cold-start
+  guarantee. Startup fixture teardown captures the child before closing to avoid
+  a delayed Playwright channel race. See docs/TESTING.md and docs/PERFORMANCE.md.
+- Next formal gate remains Phase 1 cross-platform verification. Launch with
+  npm run dev. Existing sandbox documents/history changes remain user-owned.
+
+2026-10-25 Conflict/history UI follow-up (working tree):
+
+- External changes now resolve from the inline banner, with no decision modal.
+  Both manual review and background merge lock writes as soon as the watcher
+  reports a change; unmatched background Yjs changes retain the same banner.
+  Saving a conflicted copy opens the safe sibling and closes the stale protected
+  buffer; discard closes it without changing external disk content. Comparison
+  stays available through the shared setting switch.
+- History cards compare on click/keyboard, show pin/unpin and label editing, and
+  leave restore/export in the comparison view. Collaboration settings use a
+  dedicated group icon. Search palette shortcuts have added bottom spacing.
+- Verified: typecheck/lint/format pass; production build passes with
+  `TEXTRA_PRESERVE_RENDERER_OUTPUT=true`. Full npm test completed 734/736; two
+  MiKTeX timing failures passed on serial rerun (12/12). Native project,
+  collaboration fallback, history restore, and Agent conflict workflows pass,
+  including explicit Ctrl+S disk-preservation coverage. Details are in
+  `docs/TESTING.md`. The existing sandbox project edits remain user-owned.
+
 2026-10-25 Yjs collaboration implementation (`feature/crdt`):
 
 - Commits `eddee9a` (local conflict policy), `0994f35` (recoverable History
@@ -1286,3 +1359,4 @@ Evidence: npm run format:check, typecheck, lint, build pass. Elevated npm test p
 - Centralized disclosure header geometry/style in collapsible-section.css. Snippets uses the identical full-width header styling as Writing/History, with its lock immediately before the count, section icons and shared tooltip buttons.
 - Evidence: typecheck/lint/format and production build pass. Native Radix/layout and shell tests pass 2/2, covering minimize/maximize/restore, styled tooltips while Settings is open, real dirty-editor close cancellation, reload, dark/light themes, header style equality and lock position/behavior. Inspected dark Snippets/workspace and light Settings screenshots. Full unit/integration run passed 726/728; the two failures were EBUSY fixture-directory cleanup locks. Both affected files passed the isolated rerun (38/38).
 - Launch: restart npm run dev to recreate the changed window frame. Existing sandbox changes remain user-owned and excluded. Next gate remains Phase 1 cross-platform verification.
+- 2026-10-26: Restyled the external-change banner with shared Button and SettingSwitch controls, theme-derived subtle accent surfaces, stacked actions, and corrected checked-thumb travel. Added add/edit snapshot-label controls to the history diff header using the existing pin metadata API. Evidence: typecheck, lint, format check, production build, and full Vitest pass (736/736); native Playwright passes 17 tests with 2 opt-in skips. Sandbox-only Vitest failures on loopback and Windows filesystem operations passed on the approved local rerun. `git diff --check` still reports pre-existing trailing whitespace in user-edited `sandbox/todo.md`.

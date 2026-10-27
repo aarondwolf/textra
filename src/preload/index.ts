@@ -115,6 +115,7 @@ const api: TextraAPI = {
   getCollaborationRecords: (request) => ipcRenderer.invoke('textra:collaboration:records', request),
   chooseProject: () => ipcRenderer.invoke('textra:project:choose'),
   refreshProject: (projectId) => ipcRenderer.invoke('textra:project:refresh', projectId),
+  listProjectDirectory: (request) => ipcRenderer.invoke('textra:project:directory', request),
   prepareProject: (projectId) => ipcRenderer.invoke('textra:project:prepare', projectId),
   readFile: (request) => ipcRenderer.invoke('textra:file:read', request),
   saveFile: (request) => ipcRenderer.invoke('textra:file:save', request),

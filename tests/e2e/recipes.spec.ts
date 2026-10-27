@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
-import type { ProjectConfig } from '../../src/shared/api';
+import { DEFAULT_PREFERENCES, type ProjectConfig } from '../../src/shared/api';
 
 test('project recipes round-trip through builder, JSON and external settings edits', async () => {
   test.setTimeout(150000);
@@ -12,6 +12,10 @@ test('project recipes round-trip through builder, JSON and external settings edi
   const userData = join(directory, 'user-data');
   await mkdir(projectRoot);
   await mkdir(userData);
+  await writeFile(
+    join(userData, 'preferences.json'),
+    JSON.stringify({ ...DEFAULT_PREFERENCES, miktexAutoInstall: false }),
+  );
   await writeFile(
     join(projectRoot, 'test.tex'),
     '\\documentclass{article}\n\\begin{document}\nRecipe test.\n\\end{document}\n',

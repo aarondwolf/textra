@@ -7,11 +7,20 @@ describe('preference boundary validation', () => {
     const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
     delete legacy.defaultRecipe;
     delete legacy.previewVisible;
+    delete legacy.miktexAutoInstall;
     expect(validatePreferences(legacy)).toEqual(DEFAULT_PREFERENCES);
     expect(validatePreferences({ ...legacy, defaultRecipe: 'xelatex' }).defaultRecipe).toBe(
       'xelatex',
     );
     expect(() => validatePreferences({ ...legacy, defaultRecipe: 'shell' })).toThrow();
+  });
+  it('allows automatic MiKTeX packages to be disabled and rejects non-boolean values', () => {
+    expect(
+      validatePreferences({ ...DEFAULT_PREFERENCES, miktexAutoInstall: false }).miktexAutoInstall,
+    ).toBe(false);
+    expect(() =>
+      validatePreferences({ ...DEFAULT_PREFERENCES, miktexAutoInstall: 'yes' }),
+    ).toThrow();
   });
   it('accepts both supported themes and boundary split widths', () => {
     for (const theme of ['light', 'dark']) {

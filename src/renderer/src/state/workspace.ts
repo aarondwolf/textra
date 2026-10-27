@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { includeProjectFile } from '../../../shared/project-tree';
 import { useStartup } from './startup';
 import { documentSessions, type DocumentCapture } from './document-sessions';
 import type {
@@ -164,6 +165,7 @@ export async function setProject(
   else {
     const rootExists =
       project.treeState === 'loading' ||
+      project.treeState === 'partial' ||
       !config.value.rootFile ||
       project.files.some((file) => file.path === config.value.rootFile);
     useWorkspace.setState({
@@ -238,6 +240,7 @@ export async function openDocument(
       }
       return {
         documents: nextDocs,
+        ...(state.project ? { project: includeProjectFile(state.project, path) } : {}),
         ...(!options.background &&
         (selection === selectionGeneration ||
           !state.documents.some((document) => document.path === state.activePath))

@@ -512,14 +512,12 @@ test('native assistant answers, stages active-file edits for review, applies und
     await send.click();
     await expect(review).toBeVisible();
     await writeFile(mainFile, `${original}% External edit during review.\n`);
-    // The existing external-change modal hides the rest of the app from the
-    // accessibility tree. Inspect the underlying disabled control, then resolve
-    // that modal without writing over the external file before rejecting.
+    // The inline conflict banner keeps the editor visible and protected during review.
     await expect(page.locator('.agent-chat-review button').first()).toBeDisabled({
       timeout: 15000,
     });
     await page
-      .getByRole('dialog', { name: 'External change detected', exact: true })
+      .locator('.conflict-banner')
       .getByRole('button', { name: 'Discard and close tab', exact: true })
       .click();
     await reject.click();

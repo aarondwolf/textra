@@ -120,7 +120,12 @@ All directories stay inside the selected project, without links or protected
 metadata paths. Search-path environment overrides support `TEXINPUTS`, `BIBINPUTS`,
 `BSTINPUTS` and `TEXMFHOME` with project-contained directories; PATH overrides and
 other environment keys are rejected. Processes use no shell, keep existing timeout
-and cancellation limits, and disable shell escape and automatic package installation.
+and cancellation limits, and disable shell escape. The application-wide
+**Install missing MiKTeX packages** preference controls the automatic installer
+for direct engines, latexmk and bibliography steps. Recipe arguments cannot
+override it. Normal builds enable it by default; isolated installation checks and
+build-service tests keep it disabled. MiKTeX uses its own configured package repository.
+See the [MiKTeX installer options](https://docs.miktex.org/manual/miktex-pdftex.html).
 
 Configured output folders are never pruned automatically. Failed builds keep the
 last successful PDF in memory; SyncTeX is unavailable for a cached PDF if a failed

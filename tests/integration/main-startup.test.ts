@@ -25,17 +25,22 @@ describe('document-first project activation and restored previews', () => {
   it('reads a known nested document before completing the tree and flushes recents', async () => {
     const service = new ProjectService(userData);
     const project = await service.openRoot(root, { initialTree: true });
-    expect(project.treeState).toBe('loading');
+    expect(project.treeState).toBe('partial');
     expect(project.files.map((entry) => entry.path)).not.toContain('chapters/one.tex');
     expect(
       (await service.readFile({ projectId: project.id, path: 'chapters/one.tex' })).content,
     ).toBe('Chapter');
     const complete = await service.refreshProject(project.id);
-    expect(complete.treeState).toBe('complete');
-    expect(complete.files.map((entry) => entry.path)).toContain('chapters/one.tex');
+    expect(complete.treeState).toBe('partial');
+    expect(complete.files.map((entry) => entry.path)).not.toContain('chapters/one.tex');
+    expect(
+      (await service.listDirectory({ projectId: project.id, path: 'chapters' })).entries.map(
+        (entry) => entry.path,
+      ),
+    ).toContain('chapters/one.tex');
     await service.flush();
     expect(await service.getRecentProjects()).toHaveLength(1);
-    expect((await service.openRoot(root)).treeState).toBe('complete');
+    expect((await service.openRoot(root)).treeState).toBe('partial');
   });
 
   async function cachedPdf() {

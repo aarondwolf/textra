@@ -3,6 +3,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,7 +33,12 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import type { ReviewOutcomeEvent } from './features/chat/ChatPanel';
 import { lazyFeature } from './features/startup/LazyFeature';
-import { afterPaint, markStartup, scheduleBackground } from './features/startup/scheduling';
+import {
+  afterPaint,
+  markStartup,
+  scheduleBackground,
+  scheduleBackgroundTasks,
+} from './features/startup/scheduling';
 import { persistWorkspaceSession, restoreWorkspaceSession } from './features/startup/session';
 import { useStartup } from './state/startup';
 import { loadAISettings } from './features/chat/useAISettings';
@@ -124,7 +130,10 @@ import { notify } from './features/notifications/ToastViewport';
 import type { ProblemDiagnostic } from './features/problems/ProblemsPanel';
 import type { SectionId } from './features/onboarding/SetupDialog';
 import { useProjectAnalysis } from './features/writing/useProjectAnalysis';
-import { IconButton } from './components/Button';
+import { Button, IconButton } from './components/Button';
+import { SettingSwitch } from './components/SettingsControls';
+import { useDirectoryListing } from './features/explorer/useDirectoryListing';
+import { refreshLoadedProjectTree, removeProjectEntry } from '../../shared/project-tree';
 import { PaneHeader } from './components/Layout';
 import { extractPromptContext, moveSectionInLatex } from '../../shared/writing-analysis';
 
@@ -153,15 +162,6 @@ const AgentReviewControls = lazyFeature<
       default: module.AgentReviewControls,
     })),
   'Review controls',
-);
-const ConflictDialog = lazyFeature<
-  ComponentProps<typeof import('./features/conflicts/ConflictDialog').ConflictDialog>
->(
-  () =>
-    import('./features/conflicts/ConflictDialog').then((module) => ({
-      default: module.ConflictDialog,
-    })),
-  'Conflict decision',
 );
 const ConflictDiffView = lazyFeature<
   ComponentProps<typeof import('./features/conflicts/ConflictDiffView').ConflictDiffView>
@@ -628,8 +628,25 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     persistWorkspaceSession(preferences.restoreSession);
   }, [sessionTabs, activePath, project?.id, recents, preferences.restoreSession, restoration]);
   useEffect(() => {
-    if (projectId) void loadSourceEditor().catch(() => undefined);
+    if (projectId) void SourceEditor.preload().catch(() => undefined);
   }, [projectId]);
+  useEffect(() => {
+    if (!coreReady) return;
+    return scheduleBackgroundTasks([
+      HistoryPanel.preload,
+      WritingPanel.preload,
+      SnippetPalette.preload,
+      ProblemsPanel.preload,
+      CompileRecipeEditor.preload,
+      ChatPanel.preload,
+      AgentInlineReview.preload,
+      AgentReviewControls.preload,
+      ConflictDiffView.preload,
+      HistoryDiffView.preload,
+      MarkdownPreview.preload,
+      PdfViewer.preload,
+    ]);
+  }, [coreReady]);
   useEffect(() => {
     if (!coreReady) return;
     return scheduleBackground(() => {
@@ -870,6 +887,42 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }
   // Folders start collapsed; only the ones listed here are open.
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const fileTree = useRef<HTMLDivElement>(null);
+  const pendingTreeScroll = useRef<{ projectId: string; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const position = pendingTreeScroll.current;
+    pendingTreeScroll.current = null;
+    if (position && position.projectId === project?.id && fileTree.current)
+      fileTree.current.scrollTop = position.top;
+  }, [project?.id, project?.files]);
+  const directories = useDirectoryListing(project, expandedFolders);
+  function directoryStatus(path: string) {
+    const name = path || 'project root';
+    const error = directories.error(path);
+    if (directories.loading(path))
+      return (
+        <p key={path} className="tree-note" role="status">
+          Loading {name}…
+        </p>
+      );
+    if (error)
+      return (
+        <div key={path} className="tree-note" role="alert">
+          <span>{error} </span>
+          <Button variant="toolbar" onClick={() => void directories.load(path)}>
+            Retry {name}
+          </Button>
+        </div>
+      );
+    if (typeof project?.directoryPages?.[path] !== 'number') return null;
+    return (
+      <div key={path} className="tree-note">
+        <Button variant="toolbar" onClick={() => void directories.load(path, true)}>
+          Load more in {name}
+        </Button>
+      </div>
+    );
+  }
   const expandPath = (previous: Set<string>, folder: string) => {
     const next = new Set(previous);
     const parts = folder.split('/').filter(Boolean);
@@ -941,6 +994,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const polling = useRef(false);
   const operations = useRef(0);
   const active = documents.find((document) => document.path === activePath);
+  const showingComparison = Boolean(
+    active && (comparison?.path === active.path || historyDiff?.snapshot.path === active.path),
+  );
   const hasMarkdown = Boolean(
     (activePath && /\.md(?:own)?$/i.test(activePath)) ||
     documents.some((document) => /\.md(?:own)?$/i.test(document.path)),
@@ -1354,6 +1410,11 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         return;
       if (event.state === 'watching') return;
       if (event.state === 'stable') {
+        // Lock as soon as the watcher confirms an external revision. Background
+        // reconciliation may take several async reads before it can prove a match.
+        markExternalChange(event.path, 'stable');
+        setExternalChange(event);
+        setConflictPath((existing) => existing ?? event.path);
         const operationKey = `${event.projectId}\0${event.path}`;
         if (!backgroundMergeOperations.has(operationKey)) {
           const operation = (async (): Promise<boolean> => {
@@ -1482,18 +1543,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         return;
       }
       if (event.state === 'changing') {
-        void window.textra.getProjectConflictPolicy(event.projectId).then((policy) => {
-          if (policy.ok && policy.value === 'background-merge') {
-            setExternalChange(event);
-            return;
-          }
-          markExternalChange(
-            event.path,
-            event.state as Exclude<ExternalFileChangeEvent['state'], 'watching'>,
-          );
-          setExternalChange(event);
-          setConflictPath((existing) => existing ?? event.path);
-        });
+        markExternalChange(event.path, 'changing');
+        setExternalChange(event);
+        setConflictPath((existing) => existing ?? event.path);
         return;
       }
       markExternalChange(event.path, event.state);
@@ -1543,7 +1595,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id]);
   useEffect(() => {
     logEnd.current?.scrollIntoView({ block: 'end' });
@@ -1643,7 +1694,15 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
         '',
       ].join('\n');
 
-      const fileExists = currentProject.files.some((file) => file.path === fileToOpen);
+      let fileExists = currentProject.files.some((file) => file.path === fileToOpen);
+      if (!fileExists && currentProject.treeState === 'partial') {
+        const existingFile = await window.textra.readFile({
+          projectId: currentProject.id,
+          path: fileToOpen,
+        });
+        if (existingFile.ok) fileExists = true;
+        else if (existingFile.code !== 'NOT_FOUND') throw new Error(existingFile.error);
+      }
       if (!fileExists) {
         const createResult = await window.textra.createEntry({
           projectId: currentProject.id,
@@ -1663,10 +1722,23 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     });
   }
   async function refresh() {
-    if (!project) return;
-    const refreshed = unwrap(await window.textra.refreshProject(project.id));
-    if (useWorkspace.getState().project?.id === project.id)
+    const previous = useWorkspace.getState().project;
+    if (!previous) return;
+    const root = unwrap(await window.textra.refreshProject(previous.id));
+    const refreshed = await refreshLoadedProjectTree(previous, root, async (request) => {
+      const result = await window.textra.listProjectDirectory(request);
+      if (!result.ok && result.code === 'NOT_FOUND') return null;
+      return unwrap(result);
+    });
+    const current = useWorkspace.getState().project;
+    if (
+      current?.id === previous.id &&
+      current.listingId === previous.listingId &&
+      current.files === previous.files
+    ) {
+      pendingTreeScroll.current = { projectId: current.id, top: fileTree.current?.scrollTop ?? 0 };
       useWorkspace.setState({ project: refreshed });
+    }
   }
   function newEntry(kind: 'file' | 'directory') {
     if (!project) return;
@@ -1751,9 +1823,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       },
     });
   }
-  const conflictedDocument = conflictPath
-    ? (documents.find((document) => document.path === conflictPath) ?? null)
-    : null;
   const externalStatus: ExternalChangeStatus = {
     state:
       externalChange?.state === 'deleted'
@@ -1791,7 +1860,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
     },
     [conflictPath, project, preferences.previewVisible, updatePreferences],
   );
-  async function preserveConflictCopy(compare: boolean): Promise<void> {
+  async function preserveConflictCopy(compare: boolean, path = conflictPath): Promise<void> {
+    const conflictedDocument = path
+      ? (useWorkspace.getState().documents.find((document) => document.path === path) ?? null)
+      : null;
     if (!conflictedDocument) return;
     const result = await window.textra.createConflictCopy({
       projectId: conflictedDocument.projectId,
@@ -1811,19 +1883,26 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       setCompareWhenStable(true);
       if (externalStatus.state === 'stable') {
         await refreshConflictComparison(conflictedDocument.path);
-        setConflictPath(null);
         setCompareWhenStable(false);
       }
     } else {
-      // A dated sibling copy is a complete recovery action, including after a
-      // rename or deletion. Dismiss the modal so it cannot trap the user.
+      // The protected buffer now has its own open, durable sibling copy.
+      // Close the stale original buffer so the user can continue in that copy.
+      await window.textra.unwatchExternalFile({
+        projectId: conflictedDocument.projectId,
+        path: conflictedDocument.path,
+      });
+      closeDocument(conflictedDocument.path);
       setConflictPath(null);
       setExternalChange(null);
       setConflictSnapshotPath(undefined);
       setCompareWhenStable(false);
     }
   }
-  async function discardConflictBuffer(): Promise<void> {
+  async function discardConflictBuffer(path = conflictPath): Promise<void> {
+    const conflictedDocument = path
+      ? (useWorkspace.getState().documents.find((document) => document.path === path) ?? null)
+      : null;
     if (!conflictedDocument) return;
     await window.textra.unwatchExternalFile({
       projectId: conflictedDocument.projectId,
@@ -1838,9 +1917,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   }
   useEffect(() => {
     if (!compareWhenStable || externalStatus.state !== 'stable' || !conflictPath) return;
-    void refreshConflictComparison(conflictPath)
-      .then(() => setConflictPath(null))
-      .catch(showError);
+    void refreshConflictComparison(conflictPath).catch(showError);
   }, [compareWhenStable, conflictPath, externalStatus.state, refreshConflictComparison]);
   function rename() {
     if (!project || !selected) return;
@@ -1864,9 +1941,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 : previousRoot;
             useWorkspace.setState({
               project: next,
-              rootFile: next.files.some((file) => file.path === movedRoot)
-                ? movedRoot
-                : (next.mainFile ?? ''),
+              rootFile:
+                next.treeState === 'partial' || next.files.some((file) => file.path === movedRoot)
+                  ? movedRoot
+                  : (next.mainFile ?? ''),
             });
             for (const document of useWorkspace.getState().documents)
               if (document.path === path || document.path.startsWith(`${path}/`))
@@ -1887,12 +1965,19 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       if (useWorkspace.getState().project?.id !== project.id) return;
       if (next) {
         const previousRoot = useWorkspace.getState().rootFile;
-        useWorkspace.setState({
-          project: next,
-          rootFile: next.files.some((file) => file.path === previousRoot)
-            ? previousRoot
-            : (next.mainFile ?? ''),
-        });
+        pendingTreeScroll.current = {
+          projectId: project.id,
+          top: fileTree.current?.scrollTop ?? 0,
+        };
+        useWorkspace.setState((state) => ({
+          project: state.project ? removeProjectEntry(state.project, path, next) : next,
+          rootFile:
+            previousRoot !== path &&
+            !previousRoot.startsWith(`${path}/`) &&
+            (next.treeState === 'partial' || next.files.some((file) => file.path === previousRoot))
+              ? previousRoot
+              : (next.mainFile ?? ''),
+        }));
         for (const document of useWorkspace.getState().documents)
           if (document.path === path || document.path.startsWith(`${path}/`))
             closeDocument(document.path);
@@ -2795,8 +2880,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 isDirty={Boolean(active && dirty(active))}
                 selectedSnapshotId={historyDiff?.snapshot.id ?? null}
                 onCompareSnapshot={(snapshot) => void compareHistorySnapshot(snapshot)}
-                onRestoreSnapshot={(snapshot) => restoreHistorySnapshot(snapshot)}
-                onExportSnapshot={(snapshot) => exportHistorySnapshot(snapshot)}
                 onDeleteSnapshot={(snapshot) => deleteHistorySnapshot(snapshot)}
                 onPinSnapshot={(snapshot, pinned, label) =>
                   pinHistorySnapshot(snapshot, pinned, label)
@@ -2881,7 +2964,8 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                     <span className="sr-only">Filter project files</span>
                     <input
                       aria-label="Filter project files"
-                      placeholder="Filter files"
+                      placeholder="Filter loaded files"
+                      title="Filters listed files. Expand folders to load more files."
                       value={fileFilter}
                       onChange={(event) => setFileFilter(event.target.value)}
                     />
@@ -2916,7 +3000,12 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 </div>
                 {project ? (
                   <>
-                    <div className="file-tree" aria-label="Project files">
+                    <div
+                      ref={fileTree}
+                      className="file-tree"
+                      aria-label="Project files"
+                      data-listing-id={project.listingId}
+                    >
                       {creating?.parent === '' && (
                         <NewEntryRow
                           kind={creating.kind}
@@ -2925,7 +3014,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                           onCancel={() => setCreating(null)}
                         />
                       )}
-                      {visibleFiles.map((file) => (
+                      {visibleFiles.map((file, index) => (
                         <Fragment key={file.path}>
                           <ContextMenu.Root
                             onOpenChange={(open) => {
@@ -2953,6 +3042,10 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                     file.kind === 'directory'
                                       ? expandedFolders.has(file.path)
                                       : undefined
+                                  }
+                                  aria-busy={
+                                    (file.kind === 'directory' && directories.loading(file.path)) ||
+                                    undefined
                                   }
                                   onClick={() => {
                                     if (file.kind === 'directory') toggleFolder(file.path);
@@ -3294,15 +3387,28 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                                 onCancel={() => setCreating(null)}
                               />
                             )}
+                          {[
+                            ...(file.kind === 'directory' ? [file.path] : []),
+                            ...file.path
+                              .split('/')
+                              .slice(0, -1)
+                              .map((_, index, parts) => parts.slice(0, index + 1).join('/'))
+                              .reverse(),
+                          ]
+                            .filter(
+                              (path) =>
+                                expandedFolders.has(path) &&
+                                !visibleFiles[index + 1]?.path.startsWith(`${path}/`),
+                            )
+                            .map(directoryStatus)}
                         </Fragment>
                       ))}
+                      {directoryStatus('')}
                       {!project.files.length && !creating && (
                         <p className="tree-note">This folder is empty. Create a file to begin.</p>
                       )}
-                      {project.truncated && (
-                        <p className="tree-note">
-                          The file list reached its limit. Use a smaller project folder.
-                        </p>
+                      {project.treeState === 'partial' && (
+                        <p className="tree-note">Expand folders to load their contents.</p>
                       )}
                     </div>
                   </>
@@ -3499,31 +3605,65 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                 <>
                   {active.conflict && (
                     <div className="conflict-banner" role="alert">
-                      <span>
-                        {active.externalState === 'changing'
-                          ? 'This file is changing outside TeXtra. Your open text is protected.'
-                          : 'This file changed outside TeXtra. Your open text is protected.'}
-                      </span>
-                      <div>
-                        <button
-                          onClick={() => {
-                            setConflictPath(active.path);
-                            setExternalChange((current) =>
-                              current?.path === active.path
-                                ? current
-                                : {
-                                    projectId: active.projectId,
-                                    path: active.path,
-                                    state: active.externalState ?? 'stable',
-                                    revision: null,
-                                    observedAt: Date.now(),
-                                  },
-                            );
-                          }}
-                        >
-                          Resolve conflict
-                        </button>
-                        <button onClick={saveAs}>Save as…</button>
+                      <div className="conflict-banner-copy">
+                        <strong>External change detected</strong>
+                        <span>
+                          {active.externalState === 'changing'
+                            ? 'This file is changing outside TeXtra. Saving is paused and your open text is protected.'
+                            : 'Your open text is protected. Preserve it as a copy or discard this buffer.'}
+                        </span>
+                      </div>
+                      <div className="conflict-banner-actions">
+                        <label className="conflict-compare-option">
+                          <span>Compare when stable</span>
+                          <SettingSwitch
+                            label="Compare with the external version when it is stable"
+                            checked={compareWhenStable}
+                            onCheckedChange={setCompareWhenStable}
+                            disabled={
+                              externalStatus.state === 'missing' ||
+                              externalStatus.state === 'renamed'
+                            }
+                          />
+                        </label>
+                        <div className="conflict-banner-buttons">
+                          <Button
+                            variant="primary"
+                            className="conflict-banner-button"
+                            disabled={busy || !active.conflict}
+                            onClick={() => {
+                              setConflictPath(active.path);
+                              setExternalChange((current) =>
+                                current?.path === active.path
+                                  ? current
+                                  : {
+                                      projectId: active.projectId,
+                                      path: active.path,
+                                      state:
+                                        active.externalState === 'changing' ? 'changing' : 'stable',
+                                      revision: null,
+                                      observedAt: Date.now(),
+                                    },
+                              );
+                              void preserveConflictCopy(compareWhenStable, active.path).catch(
+                                showError,
+                              );
+                            }}
+                          >
+                            Save conflicted copy
+                          </Button>
+                          <Button
+                            variant="toolbar"
+                            className="conflict-banner-button"
+                            disabled={busy || !active.conflict}
+                            onClick={() => {
+                              setConflictPath(active.path);
+                              void discardConflictBuffer(active.path).catch(showError);
+                            }}
+                          >
+                            Discard and close tab
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -3549,56 +3689,59 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
                         pinHistorySnapshot(historyDiff.snapshot, pinned, label)
                       }
                     />
-                  ) : (
-                    <div className="agent-review-editor-stack">
-                      <div
-                        className={`agent-review-source-host${agentProposal ? ' is-reviewing' : ''}${agentWorking ? ' is-agent-working' : ''}`}
-                        inert={agentProposal !== null}
-                      >
-                        <SourceEditor
-                          key={project?.id}
-                          documents={documents}
-                          activePath={active.path}
-                          theme={preferences.theme}
-                          navigation={navigation}
-                          fontSize={fontSize}
-                          wrap={wrap}
-                          readOnly={busy || active.conflict}
-                          saveDisabled={!dirty(active) || busy || active.conflict}
-                          aiSuppressed={Boolean(agentProposal)}
-                          autoSavePaused={agentProposal !== null}
-                          formatToolbarVisible={formatToolbarVisible}
-                          onSave={() =>
-                            void run(async () => {
-                              await saveAndLint(active.path);
-                            })
-                          }
-                          onSaveAs={() => void saveAs()}
-                          onFontSizeChange={(size) => setFontSize(size)}
-                          onToggleWrap={() => setWrap(!wrap)}
-                          bibliographyEntries={bibliographyEntries}
-                          texlab={texlabAdapter}
-                        />
-                      </div>
-                      {agentProposal && (
-                        <AgentInlineReview
-                          proposal={agentProposal}
-                          hunks={agentHunks}
-                          onDecide={(id, decision) =>
-                            void runAgentReview(() =>
-                              decideAgentHunks(
-                                decision === 'approved' ? [id] : [],
-                                decision === 'rejected' ? [id] : [],
-                              ),
-                            )
-                          }
-                          invalidReason={agentInvalidReason}
-                          busy={agentReviewBusy}
-                          theme={preferences.theme}
-                        />
-                      )}
+                  ) : null}
+                  <div
+                    className="agent-review-editor-stack"
+                    style={showingComparison ? { display: 'none' } : undefined}
+                    inert={showingComparison}
+                  >
+                    <div
+                      className={`agent-review-source-host${agentProposal ? ' is-reviewing' : ''}${agentWorking ? ' is-agent-working' : ''}`}
+                      inert={agentProposal !== null}
+                    >
+                      <SourceEditor
+                        key={project?.id}
+                        documents={documents}
+                        activePath={active.path}
+                        theme={preferences.theme}
+                        navigation={navigation}
+                        fontSize={fontSize}
+                        wrap={wrap}
+                        readOnly={busy || active.conflict || showingComparison}
+                        saveDisabled={!dirty(active) || busy || active.conflict}
+                        aiSuppressed={Boolean(agentProposal) || showingComparison}
+                        autoSavePaused={agentProposal !== null || showingComparison}
+                        formatToolbarVisible={formatToolbarVisible}
+                        onSave={() =>
+                          void run(async () => {
+                            await saveAndLint(active.path);
+                          })
+                        }
+                        onSaveAs={() => void saveAs()}
+                        onFontSizeChange={(size) => setFontSize(size)}
+                        onToggleWrap={() => setWrap(!wrap)}
+                        bibliographyEntries={bibliographyEntries}
+                        texlab={texlabAdapter}
+                      />
                     </div>
-                  )}
+                    {agentProposal && (
+                      <AgentInlineReview
+                        proposal={agentProposal}
+                        hunks={agentHunks}
+                        onDecide={(id, decision) =>
+                          void runAgentReview(() =>
+                            decideAgentHunks(
+                              decision === 'approved' ? [id] : [],
+                              decision === 'rejected' ? [id] : [],
+                            ),
+                          )
+                        }
+                        invalidReason={agentInvalidReason}
+                        busy={agentReviewBusy}
+                        theme={preferences.theme}
+                      />
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="welcome-content">
@@ -4231,31 +4374,6 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      {conflictedDocument && (
-        <ConflictDialog
-          open={!!conflictedDocument}
-          document={conflictedDocument}
-          external={externalStatus}
-          onRefresh={async () => {
-            if (!conflictedDocument) return;
-            const result = await window.textra.watchExternalFile({
-              projectId: conflictedDocument.projectId,
-              path: conflictedDocument.path,
-              pollingOnly: preferences.externalChangePollingOnly,
-              quietPeriodMs: preferences.externalChangeQuietPeriodMs,
-            });
-            if (!result.ok) throw new Error(result.error);
-            if (result.value.state !== 'watching') setExternalChange(result.value);
-          }}
-          onPreserve={({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)}
-          onCreateSnapshot={
-            conflictSnapshotPath
-              ? ({ compareWhenStable }) => preserveConflictCopy(compareWhenStable)
-              : undefined
-          }
-          onDiscard={discardConflictBuffer}
-        />
-      )}
       <PromptDialog prompt={prompt} close={() => setPrompt(null)} />
       <Dialog.Root
         open={!!pending}

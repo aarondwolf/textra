@@ -236,4 +236,17 @@ describe('buildDocumentModel', () => {
     expect(model.limited).toBe(true);
     expect(model.root.children.length).toBeLessThanOrEqual(2);
   });
+
+  it('reads referenced chapters directly when their folders have not been expanded', async () => {
+    const model = await buildDocumentModel('main.tex', {
+      ...options,
+      index: buildFileIndex(['main.tex']),
+      listingComplete: false,
+    });
+    expect(model.outline.map((item) => item.title)).toEqual(['One', 'A1', 'B1', 'A2', 'Two']);
+    expect(model.root.children[0]).toMatchObject({ path: 'chapters/a.tex', status: 'ok' });
+    expect(model.root.children.find((entry) => entry.target === 'chapters/missing')?.status).toBe(
+      'unchecked',
+    );
+  });
 });

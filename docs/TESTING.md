@@ -1,5 +1,60 @@
 # Testing
 
+2026-10-26 explorer scroll/MiKTeX follow-up: 60 focused tests pass for tree deletion
+and refresh, preference migration/persistence, and recipe installer policy. The
+tree helper's final cache-map change also passes its four cases. Four native cases
+pass: explorer, project workflow, recipe editor/compilation, and UI settings. The
+explorer case deletes two files from a scrolled 503-entry folder, checks loaded
+rows and scroll position, and repeats those checks after focus-triggered refresh.
+Only Trash is mocked for deletion, using bounded removal of disposable fixture files.
+The MiKTeX switch defaults on and persists off. Unit tests verify enable/disable
+flags for engines, latexmk and bibliography steps, with shell execution disabled.
+Real native compilation profiles explicitly disable package downloads; automated
+tests do not exercise a live package download. Typecheck, lint, format and build pass.
+
+2026-10-26 incremental explorer: typecheck, lint, formatting and production build
+pass. Focused project/source/session tests passed 54/54 before the final source
+discovery regression was added. The full suite passed 744/746; two configured
+MiKTeX recipe cases timed out during concurrent suite/build work, and the isolated
+recipe suite then passed 5/5. Real filesystem fixtures page through 10,005 files,
+reach a folder 24 levels deep, and reject stale project IDs, traversal and junctions.
+The native explorer, project workflow, document-session and startup checks pass
+6/6, with one opt-in benchmark skipped. Native coverage expands a folder with 503
+children, loads the second page, opens a nested source and reopens cached folders.
+Source-model tests cover following included chapters despite a partial listing.
+
+2026-10-26 theme/loading follow-up: typecheck, lint and production build pass.
+Focused theme, feature-cache, workspace-startup and document-session unit coverage
+passes 19/19. Native project workflow, theme/UI consistency, 50-tab restoration,
+missing-active-file restoration, validated-PDF restoration and document-session
+checks pass (6 executed cases; the startup benchmark remains opt-in). New checks
+cover palette/Appearance color parity, compact adjacent conflict buttons, editing
+snapshot labels from cards and comparisons, and preservation of the source editor
+DOM and undo workflow across comparisons. The initial timing probe needed Monaco
+nonbreaking-space normalization; the startup fixture cleanup now captures its
+child-process handle before closing the app. Both affected cases passed rerun.
+
+## Conflict, history, and settings UI follow-up (2026-10-25)
+
+- External edits now remain in the inline banner through manual review and
+  background-merge fallback. The banner provides a standard Compare switch,
+  Save conflicted copy, and Discard action. A watcher event locks Save, Ctrl/Cmd+S,
+  and autosave before background reconciliation finishes. Saving a recovery copy
+  opens it and closes the stale conflicted buffer; discard closes that buffer
+  without writing over the external file.
+- The History card is the compare target and keyboard accessible. Its action row
+  keeps pin/unpin, label editing, and delete; restore/export remain in the diff view.
+  Collaboration has its own UsersThree icon. Command palette shortcut details now
+  have bottom spacing. Per-project last-PDF metadata records the actual last-built
+  `.tex` file, recipe, and output fingerprint; it does not hard-code `main.tex`.
+- Evidence: typecheck, lint, and format check pass; production build passes with
+  `TEXTRA_PRESERVE_RENDERER_OUTPUT=true` (the ordinary build cleanup hit the known
+  Dropbox `out/renderer/assets` EPERM lock). Full `npm test` completed 734/736; the
+  two real MiKTeX timing failures passed on serial rerun (12/12 for both files).
+  Native collaboration fallback, History restore, project workflow, and Agent
+  conflict workflows pass. The project workflow verifies both disabled Save and
+  Ctrl+S preserving the external disk contents.
+
 ## Standard checks
 
 Run `npm run format:check`, `npm run typecheck`, `npm run lint`, `npm test`,

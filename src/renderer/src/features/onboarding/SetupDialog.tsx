@@ -1,4 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { lazyFeature } from '../startup/LazyFeature';
+import { scheduleBackgroundTasks } from '../startup/scheduling';
 import { LayeredDialog as Dialog } from '../../components/overlay-layers';
 import {
   AIChat,
@@ -12,6 +14,7 @@ import {
   Save,
   Trash2,
   Undo2,
+  UsersThree,
   Wrench,
   X,
 } from '../../icons';
@@ -25,10 +28,10 @@ import {
   type DiagnosticSeverity,
   type ProjectConfig,
   type SetupLink,
-  type Theme,
   type TexlabStatus,
 } from '../../../../shared/api';
 import { preferencesSaved, useUI } from '../../state/ui';
+import { THEME_DEFAULTS, themeSelection } from '../../state/themes';
 import {
   documentSavesSettled,
   dirty,
@@ -49,18 +52,37 @@ import {
 } from '../../../../shared/shortcuts';
 import './setup.css';
 
-const TexLabSettings = lazy(() =>
-  import('./TexLabSettings').then((module) => ({ default: module.TexLabSettings })),
+const TexLabSettings = lazyFeature<
+  ComponentProps<typeof import('./TexLabSettings').TexLabSettings>
+>(
+  () => import('./TexLabSettings').then((module) => ({ default: module.TexLabSettings })),
+  'Language settings',
 );
-const AISettingsPanel = lazy(() =>
-  import('../chat/AISettingsDialog').then((module) => ({ default: module.AISettingsPanel })),
+const AISettingsPanel = lazyFeature<
+  ComponentProps<typeof import('../chat/AISettingsDialog').AISettingsPanel>
+>(
+  () => import('../chat/AISettingsDialog').then((module) => ({ default: module.AISettingsPanel })),
+  'Assistant settings',
 );
-const CompileRecipeEditor = lazy(() =>
-  import('../compile/CompileRecipeEditor').then((module) => ({
-    default: module.CompileRecipeEditor,
-  })),
+const CompileRecipeEditor = lazyFeature<
+  ComponentProps<typeof import('../compile/CompileRecipeEditor').CompileRecipeEditor>
+>(
+  () =>
+    import('../compile/CompileRecipeEditor').then((module) => ({
+      default: module.CompileRecipeEditor,
+    })),
+  'Recipe settings',
 );
-const RecipeDialog = lazy(() => import('./RecipeDialog'));
+const RecipeDialog = lazyFeature(() => import('./RecipeDialog'), 'Recipe dialog');
+
+export function preloadSettingsPanels(): () => void {
+  return scheduleBackgroundTasks([
+    TexLabSettings.preload,
+    AISettingsPanel.preload,
+    CompileRecipeEditor.preload,
+    RecipeDialog.preload,
+  ]);
+}
 
 export type SectionId =
   | 'appearance'
@@ -79,7 +101,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Palette }> = 
   { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { id: 'tools', label: 'LaTeX tools', icon: Wrench },
   { id: 'compilation', label: 'Compilation', icon: Hammer },
-  { id: 'collaboration', label: 'Collaboration', icon: Files },
+  { id: 'collaboration', label: 'Collaboration', icon: UsersThree },
   { id: 'ai', label: 'AI Settings', icon: AIChat },
   { id: 'backup', label: 'Import & export', icon: Save },
 ];
@@ -145,75 +167,6 @@ function parseChktexSeverities(value: string): Record<string, DiagnosticSeverity
   }
   return result;
 }
-
-export const THEME_DEFAULTS: Record<
-  string,
-  {
-    accent: string;
-    accentStrong: string;
-    accentBackground: string;
-    background: string;
-    surface: string;
-    text: string;
-  }
-> = {
-  dark: {
-    accent: '#9bc9bb',
-    accentStrong: '#b0ddcf',
-    accentBackground: '#293e37',
-    background: '#1c1e20',
-    surface: '#222426',
-    text: '#e4e5e2',
-  },
-  light: {
-    accent: '#326958',
-    accentStrong: '#245442',
-    accentBackground: '#e1eee6',
-    background: '#faf9f6',
-    surface: '#f4f3ef',
-    text: '#292f2c',
-  },
-  midnight: {
-    accent: '#b2c8ff',
-    accentStrong: '#d2ddff',
-    accentBackground: '#29385e',
-    background: '#141725',
-    surface: '#1b2032',
-    text: '#e8ebf5',
-  },
-  forest: {
-    accent: '#a8d7a9',
-    accentStrong: '#c8ecc9',
-    accentBackground: '#2d4833',
-    background: '#18221e',
-    surface: '#202d26',
-    text: '#e3ece4',
-  },
-  ocean: {
-    accent: '#8ed3db',
-    accentStrong: '#b9edf1',
-    accentBackground: '#28505a',
-    background: '#142329',
-    surface: '#1b3038',
-    text: '#e1eff1',
-  },
-  rose: {
-    accent: '#efacc8',
-    accentStrong: '#ffd0e1',
-    accentBackground: '#60384f',
-    background: '#261a23',
-    surface: '#33212e',
-    text: '#f1e4eb',
-  },
-  sand: {
-    accent: '#9a6443',
-    accentStrong: '#76482f',
-    accentBackground: '#f0dcca',
-    background: '#f5f0e4',
-    surface: '#ede5d4',
-    text: '#3b342a',
-  },
-};
 
 interface ActionSelectMenuProps {
   selectedId: string;
@@ -627,20 +580,9 @@ export default function SetupDialog({
                             ]
                           : []),
                       ]}
-                      onChange={(newTheme) => {
-                        const def = THEME_DEFAULTS[newTheme as Theme] ?? THEME_DEFAULTS.dark;
-                        updatePreferences({
-                          theme: newTheme as Theme,
-                          themeCustomizations: {
-                            accent: def.accent,
-                            accentStrong: def.accentStrong,
-                            accentBackground: def.accentBackground,
-                            background: def.background,
-                            surface: def.surface,
-                            text: def.text,
-                          },
-                        });
-                      }}
+                      onChange={(newTheme) =>
+                        updatePreferences(themeSelection(newTheme, preferences.customThemes))
+                      }
                     />
                   </label>
                   {(preferences.customThemes ?? []).some((ct) => ct.id === preferences.theme) && (
@@ -656,7 +598,7 @@ export default function SetupDialog({
                           (ct) => ct.id !== preferences.theme,
                         );
                         updatePreferences({
-                          theme: 'dark',
+                          ...themeSelection('dark'),
                           customThemes: remaining,
                         });
                       }}
@@ -1656,6 +1598,19 @@ export default function SetupDialog({
               {section === 'compilation' && (
                 <>
                   <h3>Compilation</h3>
+                  <SettingPair
+                    label="Install missing MiKTeX packages"
+                    help="When you compile, MiKTeX may download required packages from its configured repository. Turn this off for offline or manually managed installations."
+                  >
+                    <SettingSwitch
+                      label="Install missing MiKTeX packages"
+                      checked={preferences.miktexAutoInstall}
+                      onCheckedChange={(checked) =>
+                        updatePreferences({ miktexAutoInstall: checked })
+                      }
+                      disabled={buildRunning}
+                    />
+                  </SettingPair>
                   <SettingPair
                     label="Root document (.tex)"
                     help="Choose which project document TeXtra builds. Auto-detect uses the active or detected main file."

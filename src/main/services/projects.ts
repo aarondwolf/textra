@@ -1,7 +1,7 @@
 import { AsyncMutex } from './mutex';
 import { writeAtomic } from './atomic-write';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readdir, readFile, realpath, rename } from 'node:fs/promises';
+import { lstat, mkdir, open, opendir, readFile, realpath, rename } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import type {
@@ -11,6 +11,8 @@ import type {
   FileRevision,
   FileSnapshot,
   ProjectInfo,
+  ProjectDirectoryRequest,
+  ProjectDirectoryPage,
   RecentProject,
   RenameRequest,
   SaveRequest,
@@ -19,9 +21,7 @@ import { readBounded } from './bounded-read';
 
 const MAX_TEXT_BYTES = 5 * 1024 * 1024;
 const MAX_PREVIEW_PDF_BYTES = 64 * 1024 * 1024;
-const MAX_TREE_ENTRIES = 10000;
-/** Listed in the tree but not walked, so they cannot exhaust the entry limit. */
-const unexpandedNames = new Set(['.git', 'node_modules']);
+const DIRECTORY_PAGE_SIZE = 500;
 
 export class ProjectError extends Error {
   constructor(
@@ -302,26 +302,33 @@ export class ProjectService {
     });
   }
 
-  private async scan(projectId: string, initialTree = false): Promise<ProjectInfo> {
-    const root = this.getRoot(projectId);
-    const files: FileEntry[] = [];
-    let truncated = false;
-    const walk = async (path: string, depth: number): Promise<void> => {
-      if (depth > 20 || files.length >= MAX_TREE_ENTRIES) {
-        truncated = true;
-        return;
-      }
-      const target = await this.resolvePath({ projectId, path }, true);
-      const entries = await readdir(target, { withFileTypes: true });
-      entries.sort(
-        (a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name),
-      );
-      for (const entry of entries) {
-        if (files.length >= MAX_TREE_ENTRIES) {
-          truncated = true;
-          return;
-        }
-        const child = path ? `${path}/${entry.name}` : entry.name;
+  /** Enumerate one folder without walking descendants or imposing a project-wide cap. */
+  async listDirectory(value: ProjectDirectoryRequest): Promise<ProjectDirectoryPage> {
+    const parsed = z
+      .object({
+        projectId: z.string(),
+        path: z.string(),
+        offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+      })
+      .strict()
+      .safeParse(value);
+    if (!parsed.success)
+      throw new ProjectError('INVALID_ARGUMENT', 'Choose a project folder and a valid page.');
+    const { projectId, path, offset = 0 } = parsed.data;
+    const target = await this.resolvePath({ projectId, path }, true);
+    const directoryInfo = await lstat(target);
+    if (!directoryInfo.isDirectory()) throw new ProjectError('INVALID_PATH', 'Select a folder.');
+    const entries: FileEntry[] = [];
+    let nextOffset: number | null = null;
+    if (
+      path !== '.textra/history' &&
+      path !== '.textra/crdt' &&
+      !path.startsWith('.textra/history/') &&
+      !path.startsWith('.textra/crdt/')
+    ) {
+      let seen = 0;
+      for await (const entry of await opendir(target)) {
+        const child = path ? path + '/' + entry.name : entry.name;
         try {
           validateRelativePath(child);
         } catch {
@@ -330,27 +337,46 @@ export class ProjectService {
         if (
           entry.isSymbolicLink() ||
           (!entry.isFile() && !entry.isDirectory()) ||
-          entry.name.startsWith('.textra-save-') ||
           child === '.textra/crdt'
         )
           continue;
-        files.push({
+        if (seen++ < offset) continue;
+        if (entries.length === DIRECTORY_PAGE_SIZE) {
+          nextOffset = offset + entries.length;
+          break;
+        }
+        entries.push({
           path: child,
           name: entry.name,
           kind: entry.isDirectory() ? 'directory' : 'file',
         });
-        if (
-          !initialTree &&
-          entry.isDirectory() &&
-          !unexpandedNames.has(entry.name.toLowerCase()) &&
-          child !== '.textra/history' &&
-          child !== '.textra/crdt'
-        )
-          await walk(child, depth + 1);
       }
-    };
-    await walk('', 0);
+    }
     this.getRoot(projectId);
+    // Revalidate the folder after enumeration, including junction replacement.
+    if ((await this.resolvePath({ projectId, path }, true)) !== target)
+      throw new ProjectError('UNSAFE_PATH', 'The folder changed while it was being listed.');
+    entries.sort(
+      (a, b) =>
+        Number(b.kind === 'directory') - Number(a.kind === 'directory') ||
+        a.name.localeCompare(b.name),
+    );
+    return { projectId, path, entries, nextOffset };
+  }
+
+  private async scan(projectId: string, initialTree = false): Promise<ProjectInfo> {
+    const root = this.getRoot(projectId);
+    const page = await this.listDirectory({ projectId, path: '' });
+    const files = page.entries;
+    if (!files.some((file) => file.path === 'main.tex')) {
+      try {
+        const main = await this.resolvePath({ projectId, path: 'main.tex' });
+        if ((await lstat(main)).isFile())
+          files.push({ path: 'main.tex', name: 'main.tex', kind: 'file' });
+      } catch {
+        /* Main is optional and may be outside this directory page. */
+      }
+    }
     const tex = files.filter((entry) => entry.kind === 'file' && /\.tex$/i.test(entry.path));
     let mainFile = tex.find((entry) => entry.path === 'main.tex')?.path ?? null;
     if (!mainFile && !initialTree) {
@@ -379,14 +405,20 @@ export class ProjectService {
       }
     }
     mainFile ??= tex[0]?.path ?? null;
+    this.getRoot(projectId);
     return {
       id: projectId,
       name: basename(root),
       rootPath: root,
       files,
       mainFile,
-      truncated,
-      treeState: initialTree ? 'loading' : 'complete',
+      truncated: false,
+      treeState:
+        page.nextOffset !== null || files.some((file) => file.kind === 'directory')
+          ? 'partial'
+          : 'complete',
+      directoryPages: { '': page.nextOffset },
+      listingId: randomUUID(),
     };
   }
 

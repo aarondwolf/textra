@@ -935,7 +935,7 @@
 }
 .setting-switch-root[data-state='checked'] .setting-switch-thumb {
   background: var(--surface);
-  transform: translateX(13px);
+  transform: translateX(11px);
 }
 @media (max-width: 680px) {
   .setting-pair {
@@ -1056,25 +1056,57 @@
   font-size: 8px;
 }
 .conflict-banner {
-  background: #493e25;
-  color: #e7d7aa;
-  padding: 10px 13px;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  color: var(--text);
+  padding: 9px 13px;
   font-size: 11px;
   line-height: 1.6;
-  border-bottom: 1px solid #6f5a2c;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
 }
-.conflict-banner > div {
+.conflict-banner-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.conflict-banner-copy strong {
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+  font-size: 12px;
+}
+.conflict-banner-copy span {
+  color: var(--muted);
+}
+.conflict-banner-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  margin-top: 7px;
 }
-.conflict-banner button {
-  background: #ffffff15;
-  color: inherit;
-  border: 1px solid #ffffff25;
-  border-radius: var(--radius-pill);
-  padding: 3px 7px;
-  font-size: 10px;
+.conflict-compare-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 0;
+  color: var(--muted);
+}
+.conflict-banner .conflict-banner-button {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.conflict-banner-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .setup-note {
   color: var(--muted);
@@ -2449,6 +2481,17 @@ h1 > span {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+.command-shortcuts {
+  margin: 12px 8px 16px;
+  padding: 10px 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.command-shortcuts summary {
+  padding-bottom: 7px;
+}
+.command-shortcuts p:last-child {
+  margin-bottom: 4px;
 }
 .command-list::-webkit-scrollbar {
   width: 5px;

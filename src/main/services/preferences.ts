@@ -121,6 +121,7 @@ export const preferencesSchema = z
       .default(DEFAULT_PREFERENCES.fontSize),
     wrap: z.boolean().optional().default(DEFAULT_PREFERENCES.wrap),
     autoSave: z.boolean().optional().default(DEFAULT_PREFERENCES.autoSave),
+    miktexAutoInstall: z.boolean().optional().default(DEFAULT_PREFERENCES.miktexAutoInstall),
     autoSaveDelayMs: z
       .number()
       .int()

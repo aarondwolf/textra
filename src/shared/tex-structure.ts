@@ -263,12 +263,11 @@ const EXTENSIONS: Record<Exclude<ReferenceKind, 'package'>, string[]> = {
  * Resolves a reference to a project file. TeX runs from the project root, but chapter files
  * often use paths relative to themselves, so both bases are tried (root first).
  */
-export function resolveReference(
+export function referenceCandidates(
   reference: TexReference,
   fromPath: string,
-  index: FileIndex,
   graphicsPaths: string[] = [],
-): string | null {
+): string[] {
   const fromDirectory = dirnameOf(fromPath);
   const bases = fromDirectory ? ['', fromDirectory] : [''];
   const directories: string[] = [];
@@ -280,13 +279,26 @@ export function resolveReference(
   }
   const extensions =
     reference.kind === 'package' ? [reference.extension ?? '.sty'] : EXTENSIONS[reference.kind];
+  const candidates: string[] = [];
   for (const directory of directories)
     for (const extension of extensions) {
       const candidate = normalizeProjectPath(
         `${directory}/${reference.target}${extension}`.replace(/^\//, ''),
       );
-      const found = candidate ? index.get(candidate.toLowerCase()) : undefined;
-      if (found) return found;
+      if (candidate && !candidates.includes(candidate)) candidates.push(candidate);
     }
+  return candidates;
+}
+
+export function resolveReference(
+  reference: TexReference,
+  fromPath: string,
+  index: FileIndex,
+  graphicsPaths: string[] = [],
+): string | null {
+  for (const candidate of referenceCandidates(reference, fromPath, graphicsPaths)) {
+    const found = index.get(candidate.toLowerCase());
+    if (found) return found;
+  }
   return null;
 }

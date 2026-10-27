@@ -17,6 +17,10 @@ test('approved formatting stays undoable and history restore preserves dirty tex
   const formatted = original.replace('Original content.', 'Formatted content.');
   const filename = join(projectRoot, 'main.tex');
   await writeFile(filename, original);
+  await writeFile(
+    join(projectRoot, 'notes.tex'),
+    original.replace('Original content.', 'Second tab content.'),
+  );
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   env.TEXTRA_USER_DATA_DIR = userData;
@@ -43,6 +47,40 @@ test('approved formatting stays undoable and history restore preserves dirty tex
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     const editor = page.getByTestId('source-editor');
     await expect(editor).toContainText('Original content.');
+    await page.getByRole('button', { name: 'Open notes.tex', exact: true }).click();
+    await expect(editor).toContainText('Second tab content.');
+    const tabTimings = await page.evaluate(async () => {
+      const timings: number[] = [];
+      for (const [name, text] of [
+        ['main.tex', 'Original content.'],
+        ['notes.tex', 'Second tab content.'],
+        ['main.tex', 'Original content.'],
+      ]) {
+        const tab = [
+          ...document.querySelectorAll<HTMLButtonElement>('.document-tab > button[role="tab"]'),
+        ].find((button) => button.textContent?.trim() === name)!;
+        const started = performance.now();
+        tab.click();
+        await new Promise<void>((resolve, reject) => {
+          const check = () => {
+            if (
+              document
+                .querySelector('[data-testid="source-editor"]')
+                ?.textContent?.replace(/\u00a0/g, ' ')
+                .includes(text)
+            )
+              resolve();
+            else if (performance.now() - started > 5000)
+              reject(new Error('Tab did not become visible'));
+            else requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        });
+        timings.push(performance.now() - started);
+      }
+      return timings;
+    });
+    console.info('Native tab-switch click-to-text milliseconds', tabTimings);
     await page.getByRole('button', { name: 'History & Projects', exact: true }).click();
     await page.getByRole('button', { name: 'Create snapshot now', exact: true }).click();
     const snapshotLabel = page.getByPlaceholder('Snapshot label (optional, e.g. Pre-Submission)');
@@ -53,6 +91,27 @@ test('approved formatting stays undoable and history restore preserves dirty tex
       .filter({ hasText: 'Original baseline' })
       .first();
     await expect(originalSnapshot).toBeVisible();
+    const sourceNode = await editor.elementHandle();
+    await originalSnapshot.getByRole('button', { name: 'Snapshot actions' }).click();
+    await page.getByRole('menuitem', { name: 'Edit version label', exact: true }).click();
+    await page
+      .getByPlaceholder('Tag name (e.g. Camera-Ready, Draft 2)')
+      .fill('Original baseline edited');
+    await page.getByRole('button', { name: 'Save label', exact: true }).click();
+    await expect(originalSnapshot).toContainText('Original baseline edited');
+    await originalSnapshot.locator('.history-item-info').click();
+    await expect(editor).toBeHidden();
+    await page.getByRole('button', { name: 'Edit snapshot label', exact: true }).click();
+    await page
+      .getByRole('textbox', { name: 'Snapshot label', exact: true })
+      .fill('Original baseline final');
+    await page.getByRole('button', { name: 'Save label', exact: true }).click();
+    await expect(page.locator('.history-diff-header-label')).toHaveText('Original baseline final');
+    await page.screenshot({ path: test.info().outputPath('snapshot-label-edited.png') });
+    await page.getByRole('button', { name: 'Exit history comparison', exact: true }).click();
+    await expect(editor).toBeVisible();
+    expect(await sourceNode!.evaluate((element) => element.isConnected)).toBe(true);
+    await expect(originalSnapshot).toContainText('Original baseline final');
     await page.evaluate(() => window.dispatchEvent(new Event('textra:format-document')));
     const preview = page.getByRole('dialog', { name: 'Format preview', exact: true });
     await expect(preview).toContainText('Formatted content.');
@@ -100,19 +159,12 @@ test('approved formatting stays undoable and history restore preserves dirty tex
     await expect(editor).toContainText('Dirty text must survive history restoration exactly.');
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeEnabled();
     const dirtyText = savedText + dirtySuffix;
-    // Use the ordinary snapshot actions and renderer confirmation; all history storage is real.
-    const narrowActions = originalSnapshot.getByRole('button', {
-      name: 'Snapshot actions',
-      exact: true,
-    });
-    const hasNarrowActions = (await narrowActions.count()) > 0;
-    if (hasNarrowActions) await narrowActions.click();
+    // Open the card's comparison; restore is available in the diff view.
+    await originalSnapshot.locator('.history-item-info').click();
     page.once('dialog', (dialog) => void dialog.accept());
-    if (hasNarrowActions) {
-      await page.getByRole('menuitem', { name: 'Restore version', exact: true }).click();
-    } else {
-      await originalSnapshot.getByRole('button', { name: 'Restore snapshot', exact: true }).click();
-    }
+    await page
+      .getByRole('button', { name: 'Restore this version (replaces current file on disk)' })
+      .click();
     await expect.poll(() => readFile(filename, 'utf8')).toBe(original);
     await expect(editor).toContainText('Original content.');
     await expect(editor).not.toContainText('Dirty text must survive');
@@ -140,9 +192,7 @@ test('approved formatting stays undoable and history restore preserves dirty tex
     ).toBe(savedText);
     // Cross two real watcher samples; TeXtra's own restore must remain a local save.
     await page.waitForTimeout(2500);
-    await expect(
-      page.getByRole('dialog', { name: 'External change detected', exact: true }),
-    ).toHaveCount(0);
+    await expect(page.locator('.conflict-banner')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Resolve conflict', exact: true })).toHaveCount(
       0,
     );

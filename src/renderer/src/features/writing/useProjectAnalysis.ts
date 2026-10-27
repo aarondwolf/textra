@@ -14,7 +14,10 @@ export function useProjectAnalysis(
 ) {
   const projectId = project?.id ?? null;
   const files = project?.files;
-  const listingComplete = !!project && project.treeState !== 'loading' && !project.truncated;
+  const listingComplete =
+    !!project &&
+    (project.treeState === undefined || project.treeState === 'complete') &&
+    !project.truncated;
   const knownFiles = useMemo(
     () => new Set(files?.filter((file) => file.kind === 'file').map((file) => file.path)),
     [files],
@@ -72,6 +75,7 @@ export function useProjectAnalysis(
     }));
     void indexProjectSources({
       paths,
+      discoverReferences: !listingComplete,
       activePath,
       index,
       initialSources,

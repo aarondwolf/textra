@@ -2,6 +2,7 @@ import { parseBibliography, type BibliographyEntry } from '../../../../shared/bi
 import {
   parseTexStructure,
   resolveReference,
+  referenceCandidates,
   type FileIndex,
   type TexStructure,
 } from '../../../../shared/tex-structure';
@@ -119,11 +120,13 @@ interface IndexOptions {
   onBatch: (sources: Record<string, string>) => void;
   yieldBatch: () => Promise<void>;
   limit?: number;
+  discoverReferences?: boolean;
 }
 
 /** Four reads per yielded batch, with active-document dependencies ahead of unrelated files. */
 export async function indexProjectSources(options: IndexOptions): Promise<{ complete: boolean }> {
   const remaining = new Set(options.paths);
+  const visited = new Set<string>();
   const priority: string[] = [];
   const prioritize = (path: string) => {
     if (remaining.has(path) && !priority.includes(path)) priority.push(path);
@@ -135,6 +138,13 @@ export async function indexProjectSources(options: IndexOptions): Promise<{ comp
       if (ref.kind !== 'tex' && ref.kind !== 'bib') continue;
       const resolved = resolveReference(ref, path, options.index, structure.graphicsPaths);
       if (resolved) prioritize(resolved);
+      else if (options.discoverReferences) {
+        for (const candidate of referenceCandidates(ref, path, structure.graphicsPaths)) {
+          if (!/\.(tex|bib)$/i.test(candidate) || visited.has(candidate)) continue;
+          remaining.add(candidate);
+          prioritize(candidate);
+        }
+      }
     }
   };
   if (options.activePath) {
@@ -149,6 +159,7 @@ export async function indexProjectSources(options: IndexOptions): Promise<{ comp
     while (batch.length < 4 && remaining.size && reads < (options.limit ?? 250)) {
       const path = priority.shift() ?? remaining.values().next().value;
       if (!path || !remaining.delete(path)) continue;
+      visited.add(path);
       batch.push(path);
       reads++;
     }

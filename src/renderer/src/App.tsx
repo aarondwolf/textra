@@ -31,9 +31,13 @@ import {
   TextraLogo,
   Trash2,
 } from './icons';
-import { DEFAULT_PREFERENCES, type Theme } from '../../shared/api';
+import { DEFAULT_PREFERENCES } from '../../shared/api';
 import { DEFAULT_SHORTCUTS, matchesShortcut } from '../../shared/shortcuts';
 import { hydratePreferences, useUI } from './state/ui';
+import { THEME_DEFAULTS, themeSelection } from './state/themes';
+import { useStartup } from './state/startup';
+import { useWorkspace } from './state/workspace';
+import { scheduleBackground } from './features/startup/scheduling';
 import { Workspace } from './Workspace';
 import type { SectionId } from './features/onboarding/SetupDialog';
 import { ToastViewport } from './features/notifications/ToastViewport';
@@ -243,11 +247,14 @@ function CommandPalette() {
         });
       },
     },
-    ...(['light', 'midnight', 'forest', 'ocean', 'rose', 'sand'] as Theme[]).map((theme) => ({
-      label: `Switch theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`,
+    ...[
+      ...Object.keys(THEME_DEFAULTS),
+      ...(preferences.customThemes ?? []).map((theme) => theme.id),
+    ].map((theme) => ({
+      label: `Switch theme: ${preferences.customThemes?.find((custom) => custom.id === theme)?.name ?? theme.charAt(0).toUpperCase() + theme.slice(1)}`,
       shortcut: '',
       icon: Palette,
-      run: () => updatePreferences({ theme }),
+      run: () => updatePreferences(themeSelection(theme, preferences.customThemes)),
     })),
   ];
   const search = query.toLowerCase().trim();
@@ -411,8 +418,31 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SectionId | undefined>(undefined);
   const { preferences, hydrated, error, updatePreferences } = useUI();
+  const editorReady = useStartup((state) => state.editorReady);
+  const restoration = useStartup((state) => state.restoration);
+  const activePath = useWorkspace((state) => state.activePath);
+  const coreReady = editorReady || (hydrated && restoration === 'settled' && !activePath);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [appVersion, setAppVersion] = useState<string>('0.2.0');
+
+  useEffect(() => {
+    if (!coreReady) return;
+    let cancelled = false;
+    let cancelPanels = () => {};
+    const cancel = scheduleBackground(() => {
+      void SetupDialog.preload()
+        .then(() => import('./features/onboarding/SetupDialog'))
+        .then((module) => {
+          if (!cancelled) cancelPanels = module.preloadSettingsPanels();
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      cancel();
+      cancelPanels();
+    };
+  }, [coreReady]);
 
   useEffect(() => {
     void window.textra

@@ -222,6 +222,11 @@
   border-color: var(--border);
 }
 
+.history-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .history-item.is-selected {
   background: var(--hover);
   border-color: var(--accent);
@@ -501,8 +506,37 @@
 
 .history-diff-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.history-diff-label-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-diff-label-form input {
+  width: min(220px, 28vw);
+  min-width: 120px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.history-diff-label-form input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 2px;
+}
+
+.history-diff-label-form > button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 11px;
 }
 
 .history-diff-actions button {

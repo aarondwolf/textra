@@ -19,7 +19,13 @@ import { getToolPath } from './tool-paths';
 import { terminateProcessTree } from './owned-process';
 import which from 'which';
 import type { RecipeSettings } from '../../shared/recipes';
-import { planRecipe, recipeArguments, recipeDirectory, type RecipePlan } from './recipe-plan';
+import {
+  planRecipe,
+  recipeArguments,
+  recipeDirectory,
+  texSafetyFlags,
+  type RecipePlan,
+} from './recipe-plan';
 
 export class BuildError extends Error {
   constructor(message: string) {
@@ -374,7 +380,11 @@ export class BuildService {
     });
   }
 
-  async compile(request: BuildRequest, settings?: RecipeSettings): Promise<BuildState> {
+  async compile(
+    request: BuildRequest,
+    settings?: RecipeSettings,
+    miktexAutoInstall = false,
+  ): Promise<BuildState> {
     if (this.state.running) throw new BuildError('A build is already running. Cancel it first.');
     if (
       !request ||
@@ -407,7 +417,7 @@ export class BuildService {
       if (request.recipe !== undefined) {
         if (typeof request.recipe !== 'string' || !settings)
           throw new BuildError('Configured recipe settings are required.');
-        await this.compileRecipe(request, root, settings);
+        await this.compileRecipe(request, root, settings, miktexAutoInstall);
       } else {
         const compilerName =
           request.engine === 'bibtex-pipeline' || request.engine === 'latexmk'
@@ -421,9 +431,7 @@ export class BuildService {
         const version = await probe(compiler);
         if (this.cancelled) throw new BuildError('Build cancelled.');
         const miktex = /MiKTeX/i.test(version ?? '');
-        const safeFlags = miktex
-          ? ['-disable-installer', '-disable-write18', '-dont-parse-first-line']
-          : ['-no-shell-escape', '-no-parse-first-line'];
+        const safeFlags = texSafetyFlags(miktex, miktexAutoInstall);
         const targetKey = createHash('sha256').update(rootFile).digest('hex').slice(0, 12);
         const outputRelative = `build/textra/${targetKey}/${randomUUID()}`;
         const output = await checkedPath(root, outputRelative, true);
@@ -489,7 +497,7 @@ export class BuildService {
             code = await this.run(
               bibtex,
               [
-                ...(miktex ? ['-disable-installer'] : []),
+                ...(miktex ? [miktexAutoInstall ? '-enable-installer' : '-disable-installer'] : []),
                 basename(rootFile).replace(/\.tex$/i, ''),
               ],
               output,
@@ -557,6 +565,7 @@ export class BuildService {
     request: BuildRequest,
     root: string,
     settings: RecipeSettings,
+    miktexAutoInstall: boolean,
   ): Promise<void> {
     const plan = await planRecipe(root, request.rootFile, request.recipe!, settings);
     // Validate the entire sequence before starting even the first process.
@@ -581,7 +590,7 @@ export class BuildService {
       prepared.push({
         ...step,
         executable: capability.executable,
-        args: recipeArguments(step, plan, capability.miktex),
+        args: recipeArguments(step, plan, capability.miktex, miktexAutoInstall),
       });
       if (this.cancelled) throw new BuildError('Build cancelled.');
     }

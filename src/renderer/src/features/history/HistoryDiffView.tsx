@@ -3,7 +3,8 @@ import * as monaco from 'monaco-editor/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import type { HistorySnapshotSummary } from '../../../../shared/api';
 import { minimalEditorScrollbars } from '../editor/scrollbars';
-import { Pin, ArrowSquareOut, Undo2, X } from '../../icons';
+import { Pin, ArrowSquareOut, Undo2, X, Pencil } from '../../icons';
+import { Button, IconButton } from '../../components/Button';
 import './history.css';
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
@@ -49,6 +50,12 @@ export function HistoryDiffView({
     historicalContent,
   });
   const [busy, setBusy] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState(historicalSnapshot.label ?? '');
+
+  useEffect(() => {
+    setLabelDraft(historicalSnapshot.label ?? '');
+  }, [historicalSnapshot.id, historicalSnapshot.label]);
 
   useEffect(() => {
     if (!host.current) return;
@@ -122,6 +129,16 @@ export function HistoryDiffView({
     }
   };
 
+  const handleSaveLabel = async () => {
+    setBusy(true);
+    try {
+      await onPin(true, labelDraft.trim() || null);
+      setEditingLabel(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const dateFormatted = new Date(historicalSnapshot.createdAt).toLocaleString();
 
   return (
@@ -140,6 +157,51 @@ export function HistoryDiffView({
           </p>
         </div>
         <div className="history-diff-actions">
+          {editingLabel ? (
+            <form
+              className="history-diff-label-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleSaveLabel();
+              }}
+            >
+              <input
+                aria-label="Snapshot label"
+                autoFocus
+                value={labelDraft}
+                placeholder="Snapshot label"
+                onChange={(event) => setLabelDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setEditingLabel(false);
+                }}
+                disabled={busy}
+              />
+              <Button variant="primary" type="submit" disabled={busy}>
+                Save label
+              </Button>
+              <IconButton
+                label="Cancel label edit"
+                className="exit-diff-btn"
+                onClick={() => setEditingLabel(false)}
+                disabled={busy}
+              >
+                <X size={14} />
+              </IconButton>
+            </form>
+          ) : (
+            <Button
+              aria-label={historicalSnapshot.label ? 'Edit snapshot label' : 'Add snapshot label'}
+              title={historicalSnapshot.label ? 'Edit snapshot label' : 'Add snapshot label'}
+              onClick={() => {
+                setLabelDraft(historicalSnapshot.label ?? '');
+                setEditingLabel(true);
+              }}
+              disabled={busy}
+            >
+              <Pencil size={13} />
+              {historicalSnapshot.label ? 'Edit label' : 'Add label'}
+            </Button>
+          )}
           <button
             type="button"
             className={historicalSnapshot.pinned ? 'is-pinned' : ''}

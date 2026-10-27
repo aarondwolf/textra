@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test';
 
@@ -87,7 +87,41 @@ test('sidebar palette scrolls as one view and settings controls retain their bor
       expect(bounds.backgroundClip).toBe('border-box');
       await page.screenshot({ path: test.info().outputPath(`appearance-${value}.png`) });
     }
+    const appearanceColors = await page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement);
+      return ['--bg', '--surface', '--raised', '--border', '--accent', '--text'].map((name) =>
+        style.getPropertyValue(name).trim(),
+      );
+    });
+    await page.getByRole('button', { name: 'Compilation', exact: true }).click();
+    const installer = page.getByRole('switch', {
+      name: 'Install missing MiKTeX packages',
+      exact: true,
+    });
+    await expect(installer).toBeChecked();
+    await installer.click();
+    await expect(installer).not.toBeChecked();
     await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          JSON.parse(await readFile(join(userData, 'preferences.json'), 'utf8')).miktexAutoInstall,
+      )
+      .toBe(false);
+    for (const name of ['Dark', 'Light']) {
+      await page.keyboard.press('Control+k');
+      const search = page.getByRole('combobox', { name: 'Search commands', exact: true });
+      await search.fill(`Switch theme: ${name}`);
+      await page.getByRole('option', { name: `Switch theme: ${name}`, exact: true }).click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', name.toLowerCase());
+    }
+    const paletteColors = await page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement);
+      return ['--bg', '--surface', '--raised', '--border', '--accent', '--text'].map((name) =>
+        style.getPropertyValue(name).trim(),
+      );
+    });
+    expect(paletteColors).toEqual(appearanceColors);
   } finally {
     await application?.close();
     await rm(userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

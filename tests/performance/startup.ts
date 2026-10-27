@@ -14,7 +14,10 @@ import { DEFAULT_PREFERENCES } from '../../src/shared/api';
 export async function closeStartupApplication(application: ElectronApplication) {
   // Bound teardown of this disposable test process, including a native close
   // dialog during a failed assertion. Never search for or stop other processes.
-  const timer = setTimeout(() => application.process().kill(), 10000);
+  const child = application.process();
+  const timer = setTimeout(() => {
+    if (child.exitCode === null) child.kill();
+  }, 10000);
   try {
     await application.evaluate(({ dialog }) => {
       // Only disposable fixture documents can be dirty here, after a failed test.

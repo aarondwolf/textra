@@ -1,5 +1,26 @@
 # Architecture memory
 
+2026-10-26 Explorer refresh and package policy:
+
+- Confirmed deletion edits the cached tree instead of publishing a root-only scan.
+  Refresh gathers prior page budgets with four directory reads at a time, then
+  commits once if the project/listing/files generation still matches. Scroll
+  restoration runs before paint. Main retains authority for validation and Trash.
+- Main owns the miktexAutoInstall preference and supplies it to BuildService for
+  normal builds. Shared safety flags preserve shell/first-line restrictions while
+  choosing installer policy. Recipe arguments cannot override the global policy.
+
+2026-10-26 Incremental directory listings:
+
+- ProjectInfo.directoryPages describes loaded directory pages; treeState partial
+  is not an error or proof that an absent path is missing. listingId changes on
+  refresh. Main validates listProjectDirectory project/path/offset and enumerates
+  only that folder via opendir (500 entries per response), with no recursive walk.
+- Renderer merges and orders cached pages, bounds automatic folder reads to four,
+  rejects pages from stale project/refresh generations, and reveals ancestors of
+  opened documents. Optional source discovery follows explicit TeX/bibliography
+  references through existing checked reads rather than a project-wide tree scan.
+
 2026-10-24 Electron architecture refactor:
 
 - Bootstrap acquires the per-profile instance lock before importing application services.

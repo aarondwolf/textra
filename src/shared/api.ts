@@ -65,6 +65,8 @@ export interface Preferences {
   outputVisible: boolean;
   editorWidth: number;
   defaultRecipe: BuildEngine;
+  /** Allow MiKTeX to download missing packages during an explicit compile. */
+  miktexAutoInstall: boolean;
   fontSize: number;
   wrap: boolean;
   /** Save edited documents after the configured idle delay. Disabled by default. */
@@ -159,6 +161,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   outputVisible: true,
   editorWidth: 55,
   defaultRecipe: 'pdflatex',
+  miktexAutoInstall: true,
   fontSize: 14,
   wrap: false,
   autoSave: false,
@@ -197,6 +200,18 @@ export interface FileEntry {
   name: string;
   kind: 'file' | 'directory';
 }
+export interface ProjectDirectoryRequest {
+  projectId: string;
+  /** Empty string selects the project root. */
+  path: string;
+  offset?: number;
+}
+export interface ProjectDirectoryPage {
+  projectId: string;
+  path: string;
+  entries: FileEntry[];
+  nextOffset: number | null;
+}
 export interface ProjectInfo {
   id: string;
   name: string;
@@ -204,7 +219,11 @@ export interface ProjectInfo {
   files: FileEntry[];
   mainFile: string | null;
   truncated: boolean;
-  treeState?: 'loading' | 'complete';
+  treeState?: 'loading' | 'partial' | 'complete';
+  /** Loaded directory pages; absent keys have not been expanded yet. */
+  directoryPages?: Record<string, number | null>;
+  /** Changes on refresh so earlier directory reads cannot repopulate an obsolete listing. */
+  listingId?: string;
 }
 export interface RestoredPdf {
   projectId: string;
@@ -551,6 +570,7 @@ export interface TextraAPI {
   acknowledgeBeforeClose(request: { requestId: string; ready: boolean }): Promise<Result<void>>;
   chooseProject(): Promise<Result<ProjectInfo | null>>;
   refreshProject(projectId: string): Promise<Result<ProjectInfo>>;
+  listProjectDirectory(request: ProjectDirectoryRequest): Promise<Result<ProjectDirectoryPage>>;
   prepareProject(projectId: string): Promise<Result<void>>;
   readFile(request: FileRef): Promise<Result<FileSnapshot>>;
   saveFile(request: SaveRequest): Promise<Result<FileSnapshot>>;

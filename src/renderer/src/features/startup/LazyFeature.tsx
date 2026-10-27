@@ -28,18 +28,37 @@ class FeatureBoundary extends Component<
 export function lazyFeature<Props extends object>(
   load: () => Promise<{ default: ComponentType<Props> }>,
   label: string,
-): ComponentType<Props> {
-  return function DeferredFeature(props: Props) {
+): ComponentType<Props> & { preload(): Promise<void> } {
+  let resolved: ComponentType<Props> | undefined;
+  let pending: ReturnType<typeof load> | undefined;
+  const loadOnce = () => {
+    pending ??= load().then(
+      (module) => {
+        resolved = module.default;
+        return module;
+      },
+      (error: unknown) => {
+        pending = undefined;
+        throw error;
+      },
+    );
+    return pending;
+  };
+  let deferred = lazy(loadOnce);
+  function DeferredFeature(props: Props) {
     const [attempt, setAttempt] = useState(0);
-    const [component, setComponent] = useState(() => lazy(load));
+    const [component, setComponent] = useState(() => deferred);
     // The cast retains the loader's exact props across React's lazy exotic component wrapper.
-    const Loaded = component as ComponentType<Props>;
+    const Loaded = (resolved ?? component) as ComponentType<Props>;
     return (
       <FeatureBoundary
         key={attempt}
         label={label}
         retry={() => {
-          setComponent(() => lazy(load));
+          pending = undefined;
+          resolved = undefined;
+          deferred = lazy(loadOnce);
+          setComponent(() => deferred);
           setAttempt((value) => value + 1);
         }}
       >
@@ -56,5 +75,10 @@ export function lazyFeature<Props extends object>(
         </Suspense>
       </FeatureBoundary>
     );
-  };
+  }
+  return Object.assign(DeferredFeature, {
+    preload: async () => {
+      await loadOnce();
+    },
+  });
 }

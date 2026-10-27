@@ -29,7 +29,12 @@ describe('real project files and data preservation', () => {
   it('opens a Unicode/spaced root, lists files, and reads exact UTF-8 content', async () => {
     expect(project.rootPath).toBe(root);
     expect(project.mainFile).toBe('main.tex');
-    expect(project.files.map((entry) => entry.path)).toContain('chapters/one.tex');
+    expect(project.files.map((entry) => entry.path)).not.toContain('chapters/one.tex');
+    expect(
+      (await service.listDirectory({ projectId: project.id, path: 'chapters' })).entries.map(
+        (entry) => entry.path,
+      ),
+    ).toContain('chapters/one.tex');
     const snapshot = await service.readFile({ projectId: project.id, path: 'main.tex' });
     expect(snapshot.content).toBe('\\documentclass{article}\nOriginal café.\n');
     expect(snapshot.revision).toMatch(/^[a-f0-9]{64}$/);
@@ -146,7 +151,7 @@ describe('real project files and data preservation', () => {
     }
   });
 
-  it('lists every entry but does not walk .git or node_modules', async () => {
+  it('lists root entries without walking descendants, which can be expanded explicitly', async () => {
     await mkdir(join(root, 'build'), { recursive: true });
     await mkdir(join(root, '.git', 'objects'), { recursive: true });
     await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
@@ -157,17 +162,70 @@ describe('real project files and data preservation', () => {
     await writeFile(join(root, 'node_modules', 'pkg', 'index.js'), 'x');
     const paths = (await service.refreshProject(project.id)).files.map((entry) => entry.path);
     expect(paths).toEqual(
-      expect.arrayContaining([
-        'build',
-        'build/main.pdf',
-        'main.aux',
-        '.gitignore',
-        '.git',
-        'node_modules',
-      ]),
+      expect.arrayContaining(['build', 'main.aux', '.gitignore', '.git', 'node_modules']),
     );
     expect(paths).not.toContain('.git/objects');
     expect(paths).not.toContain('node_modules/pkg');
+    expect(paths).not.toContain('build/main.pdf');
+    expect(
+      (await service.listDirectory({ projectId: project.id, path: 'build' })).entries,
+    ).toContainEqual({ path: 'build/main.pdf', name: 'main.pdf', kind: 'file' });
+    expect(
+      (await service.listDirectory({ projectId: project.id, path: 'node_modules' })).entries.map(
+        (entry) => entry.path,
+      ),
+    ).toContain('node_modules/pkg');
+  });
+
+  it('pages through more than 10,000 files and reaches folders beyond twenty levels', async () => {
+    const bulk = join(root, 'bulk');
+    await mkdir(bulk);
+    const count = 10_005;
+    for (let start = 0; start < count; start += 100)
+      await Promise.all(
+        Array.from({ length: Math.min(100, count - start) }, (_, index) =>
+          writeFile(join(bulk, `file-${start + index}.txt`), ''),
+        ),
+      );
+    const opened = await service.refreshProject(project.id);
+    expect(opened.truncated).toBe(false);
+    expect(opened.files).toHaveLength(3);
+    const paths = new Set<string>();
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const page = await service.listDirectory({ projectId: project.id, path: 'bulk', offset });
+      expect(page.entries.length).toBeLessThanOrEqual(500);
+      page.entries.forEach((entry) => paths.add(entry.path));
+      offset = page.nextOffset;
+    }
+    expect(paths.size).toBe(count);
+    const deep = Array.from({ length: 24 }, () => 'nested').join('/');
+    await mkdir(join(root, deep), { recursive: true });
+    await writeFile(join(root, deep, 'deep.tex'), 'Deep content');
+    expect(
+      (await service.listDirectory({ projectId: project.id, path: deep })).entries.map(
+        (entry) => entry.path,
+      ),
+    ).toContain(`${deep}/deep.tex`);
+  }, 120000);
+
+  it('validates directory requests and never follows linked folders', async () => {
+    const outside = join(directory, 'directory-outside');
+    await mkdir(outside);
+    await symlink(outside, join(root, 'linked'), 'junction');
+    for (const request of [
+      { projectId: project.id, path: '../' },
+      { projectId: project.id, path: 'linked' },
+      { projectId: project.id, path: 'main.tex' },
+      { projectId: project.id, path: '', offset: -1 },
+      { projectId: 'stale', path: '' },
+    ])
+      await expect(service.listDirectory(request)).rejects.toThrow();
+    expect(
+      (await service.listDirectory({ projectId: project.id, path: '' })).entries.map(
+        (entry) => entry.path,
+      ),
+    ).not.toContain('linked');
   });
 
   it('rejects directory symlinks even when they point inside the project', async () => {

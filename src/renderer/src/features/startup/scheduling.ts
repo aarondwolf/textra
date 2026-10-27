@@ -25,6 +25,27 @@ export function scheduleBackground(task: () => void, timeout = 1000): () => void
   };
 }
 
+/** Import one optional feature per idle opportunity after core content is visible. */
+export function scheduleBackgroundTasks(tasks: readonly (() => Promise<unknown>)[]): () => void {
+  let cancelled = false;
+  let cancelTask = () => {};
+  let index = 0;
+  const next = () => {
+    if (cancelled || index >= tasks.length) return;
+    const task = tasks[index++];
+    cancelTask = scheduleBackground(() => {
+      void task()
+        .catch(() => undefined)
+        .then(next);
+    });
+  };
+  next();
+  return () => {
+    cancelled = true;
+    cancelTask();
+  };
+}
+
 export function markStartup(
   name: 'shell-visible' | 'editor-ready' | 'pdf-ready' | 'compile-dispatch',
 ): void {

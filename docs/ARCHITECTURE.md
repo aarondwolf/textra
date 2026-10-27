@@ -63,15 +63,27 @@ plain-file merge, storage limits, and intentionally deferred behavior.
 
 Startup separates shell, editor, tree, recipe configuration, tool discovery and
 optional-feature readiness. Project opening returns a canonical root token and an
-initial listing marked `treeState: loading`; `refreshProject` completes enumeration
-after the editor paints. Known files can be read before that scan. Session restore
+initial root directory page. The typed `listProjectDirectory` capability enumerates
+one validated folder with `opendir` and returns at most 500 entries and a next offset.
+Expansion caches and merges pages. Refresh prepares the previously loaded page
+budgets before publishing one replacement, and confirmed deletion prunes only the
+deleted subtree while adjusting its parent's cursor. The explorer restores its
+scroll offset before paint. Listing IDs reject obsolete in-flight pages. There is
+no project-wide entry or scan-depth cap, and pages never recursively walk folders.
+Partial listings cannot establish missing files. Known documents open directly,
+and source analysis/outline follow explicit chapter and bibliography references
+without enumerating unrelated folders. Session restore
 opens the saved active file first and reads remaining tabs without changing focus;
 explicit user actions cancel restoration. Session metadata is versioned, accepts
 the previous shape, and is not rewritten while restoration is incomplete.
 
 Each renderer feature has its own loading/error boundary. Monaco and PDF.js are
 separate chunks; settings sections, provider editing, chat, writing, snippets and
-diff views load when used. File-type icon catalogues and optional AI editor
+diff views prepare sequentially at idle after core content is visible, or load
+immediately when requested sooner. Feature factories cache both their import and
+resolved React component across mounts; background preparation imports code without
+mounting panels or running their effects. Comparisons hide the existing source
+editor instead of destroying its models and undo history. File-type icon catalogues and optional AI editor
 extensions follow the first editor frame. Shared button, pane-header, compile,
 problems, field and dialog components retain existing classes and layout.
 Core editor host styles load with the shell. Monaco's ghost-text contribution

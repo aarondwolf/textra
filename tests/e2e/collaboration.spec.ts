@@ -113,6 +113,11 @@ test('two isolated profiles merge saved Yjs updates and preserve local typing', 
     expect(finalText).toContain('Concurrent A');
     expect(finalText).toContain('Peer B');
     await expect(pageB.locator('.workspace-error')).toHaveCount(0);
+
+    await writeFile(sourcePath, `${finalText}% Plain external edit without a Yjs record.\n`);
+    await expect(pageB.locator('.conflict-banner')).toBeVisible({ timeout: 15000 });
+    await expect(pageB.getByRole('dialog', { name: 'External change detected' })).toHaveCount(0);
+    await expect(pageB.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
   } finally {
     await appB?.close().catch(() => undefined);
     await appA?.close().catch(() => undefined);

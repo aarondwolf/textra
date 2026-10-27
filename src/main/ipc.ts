@@ -100,6 +100,7 @@ function isWorkspaceChannel(channel: string): boolean {
     ) ||
     [
       'textra:project:refresh',
+      'textra:project:directory',
       'textra:project:prepare',
       'textra:project:conflict-policy:get',
       'textra:project:conflict-policy:set',
@@ -432,6 +433,9 @@ export function registerApplicationIpc(services: IpcServices): void {
     });
   });
   handleRequest<'refreshProject'>('textra:project:refresh', (id) => projects.refreshProject(id));
+  handleRequest<'listProjectDirectory'>('textra:project:directory', (request) =>
+    projects.listDirectory(request),
+  );
   handleRequest<'prepareProject'>('textra:project:prepare', async (id) => {
     await config.ensureProjectConfig(id);
     await history.prune(id);
@@ -855,7 +859,7 @@ export function registerApplicationIpc(services: IpcServices): void {
       ? validateRecipeSettings(await config.getProjectConfig(request.projectId))
       : undefined;
     workspace.assertCurrent(generation);
-    return builds.compile(request, settings);
+    return builds.compile(request, settings, prefs.miktexAutoInstall);
   });
   handle('textra:build:cancel', 0, async () => {
     await Promise.all([builds.cancel(), state.healthBuild?.cancel()]);

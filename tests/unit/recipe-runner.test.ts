@@ -2,10 +2,24 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDefaultRecipeSettings } from '../../src/shared/recipes';
-import { planRecipe, recipeArguments, recipeDirectory } from '../../src/main/services/recipe-plan';
+import {
+  planRecipe,
+  recipeArguments,
+  recipeDirectory,
+  texSafetyFlags,
+} from '../../src/main/services/recipe-plan';
 import { BuildService } from '../../src/main/services/latex';
 
 describe('configured recipe execution boundary', () => {
+  it('enables MiKTeX package installation independently of shell execution', () => {
+    expect(texSafetyFlags(true, true)).toEqual([
+      '-enable-installer',
+      '-disable-write18',
+      '-dont-parse-first-line',
+    ]);
+    expect(texSafetyFlags(true, false)).toContain('-disable-installer');
+    expect(texSafetyFlags(false, true)).toEqual(['-no-shell-escape', '-no-parse-first-line']);
+  });
   let root: string;
   beforeEach(async () => {
     const parent = join(process.cwd(), '.test-data', 'recipe-unit');
@@ -54,6 +68,29 @@ describe('configured recipe execution boundary', () => {
     expect(args).toContain('-disable-installer');
     expect(plan.output).toBe(join(root, 'build', 'textra', 'résumé sources', 'my document'));
     expect(plan.steps[0]!.cwd).toBe(join(root, 'résumé sources'));
+  });
+  it('applies application installer policy to engines, latexmk and bibliography steps', async () => {
+    const settings = createDefaultRecipeSettings();
+    for (const recipe of ['pdflatex', 'latexmk', 'bibtex-pipeline']) {
+      const plan = await planRecipe(root, 'main.tex', recipe, settings);
+      for (const step of plan.steps) {
+        const enabled = recipeArguments(step, plan, true, true);
+        expect(enabled).toContain(
+          step.command === 'latexmk' ? '-latexoption=-enable-installer' : '-enable-installer',
+        );
+        expect(enabled).not.toContain('-disable-installer');
+        const disabled = recipeArguments(
+          { ...step, args: ['-enable-installer', ...step.args] },
+          plan,
+          true,
+          false,
+        );
+        expect(disabled).toContain(
+          step.command === 'latexmk' ? '-latexoption=-disable-installer' : '-disable-installer',
+        );
+        expect(disabled).not.toContain('-enable-installer');
+      }
+    }
   });
 
   it('separates identically named documents with relative Workshop placeholders', async () => {

@@ -1,5 +1,16 @@
 # Startup performance
 
+2026-10-26 interaction follow-up: optional feature code now prepares sequentially
+at idle after the first editor frame. Both the import and resolved React component
+are cached across mounts, and the source editor stays mounted behind comparisons.
+ES modules were already cached; the previous per-mount lazy wrappers could still
+show a loading fallback, while unused panels waited until their first activation.
+The native document-session fixture observed three existing-tab switches at
+66.8, 54.0, and 54.1 ms from click to visible text; a final rerun observed
+55.5, 50.6, and 49.1 ms. These are small-fixture samples,
+not before/after measurements or a large-project performance guarantee. Startup
+restoration checks still pass; packaged cold-launch targets remain open.
+
 Run `npm run build`, then `npm run test:startup` on Windows with no other native
 test suite or development instance running. The benchmark launches the production
 app in an isolated disposable profile and writes a `startup-benchmark.json`

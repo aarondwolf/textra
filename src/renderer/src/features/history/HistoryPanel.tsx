@@ -14,13 +14,11 @@ import {
   RefreshCw,
   Plus,
   Pin,
-  Undo2,
-  Columns2,
-  ArrowSquareOut,
   Trash2,
   X,
   Check,
   Ellipsis,
+  Pencil,
 } from '../../icons';
 import './history.css';
 
@@ -39,8 +37,6 @@ export interface HistoryPanelProps {
   isDirty?: boolean;
   selectedSnapshotId?: string | null;
   onCompareSnapshot: (snapshot: HistorySnapshotSummary) => void;
-  onRestoreSnapshot: (snapshot: HistorySnapshotSummary) => Promise<void>;
-  onExportSnapshot: (snapshot: HistorySnapshotSummary) => Promise<void>;
   onDeleteSnapshot?: (snapshot: HistorySnapshotSummary) => Promise<void>;
   onPinSnapshot: (
     snapshot: HistorySnapshotSummary,
@@ -103,8 +99,6 @@ export function HistoryPanel({
   isDirty = false,
   selectedSnapshotId,
   onCompareSnapshot,
-  onRestoreSnapshot,
-  onExportSnapshot,
   onDeleteSnapshot,
   onPinSnapshot,
   onCreateSnapshot,
@@ -124,6 +118,7 @@ export function HistoryPanel({
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [pinDialogSnapshot, setPinDialogSnapshot] = useState<HistorySnapshotSummary | null>(null);
   const [pinLabelInput, setPinLabelInput] = useState('');
+  const [editingSnapshotLabel, setEditingSnapshotLabel] = useState(false);
   const [manualSnapshotPrompt, setManualSnapshotPrompt] = useState(false);
   const [manualLabelInput, setManualLabelInput] = useState('');
 
@@ -377,7 +372,8 @@ export function HistoryPanel({
               {pinDialogSnapshot && (
                 <div className="history-prompt-card">
                   <span style={{ fontSize: '11px', color: 'var(--text)', fontWeight: 500 }}>
-                    Pin version ({formatTime(pinDialogSnapshot.createdAt)}):
+                    {editingSnapshotLabel ? 'Edit version label' : 'Pin version'} (
+                    {formatTime(pinDialogSnapshot.createdAt)}):
                   </span>
                   <div style={{ display: 'flex', width: '100%', gap: 6, alignItems: 'center' }}>
                     <input
@@ -406,7 +402,7 @@ export function HistoryPanel({
                       onClick={() => void handleConfirmPin()}
                       disabled={Boolean(busyAction)}
                     >
-                      Pin
+                      {editingSnapshotLabel ? 'Save label' : 'Pin'}
                     </button>
                     <button
                       className="icon-button"
@@ -458,7 +454,17 @@ export function HistoryPanel({
                           <div
                             key={`${group.title}-${snap.id}`}
                             className={`history-item${isSelected ? ' is-selected' : ''}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={isSelected}
                             onClick={() => onCompareSnapshot(snap)}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                onCompareSnapshot(snap);
+                              }
+                            }}
                           >
                             <div className="history-item-top">
                               <div className="history-item-info">
@@ -505,18 +511,12 @@ export function HistoryPanel({
                                         onClick={(e) => e.stopPropagation()}
                                       >
                                         <DropdownMenu.Item
-                                          className="history-menu-item"
-                                          onSelect={() => onCompareSnapshot(snap)}
-                                        >
-                                          <Columns2 size={13} />
-                                          <span>Compare with current file</span>
-                                        </DropdownMenu.Item>
-                                        <DropdownMenu.Item
                                           className={`history-menu-item${snap.pinned ? ' is-pinned' : ''}`}
                                           onSelect={() => {
                                             if (snap.pinned) {
                                               void handleUnpin(snap);
                                             } else {
+                                              setEditingSnapshotLabel(false);
                                               setPinLabelInput(snap.label ?? '');
                                               setPinDialogSnapshot(snap);
                                             }
@@ -532,17 +532,14 @@ export function HistoryPanel({
                                         </DropdownMenu.Item>
                                         <DropdownMenu.Item
                                           className="history-menu-item"
-                                          onSelect={() => void onRestoreSnapshot(snap)}
+                                          onSelect={() => {
+                                            setEditingSnapshotLabel(true);
+                                            setPinLabelInput(snap.label ?? '');
+                                            setPinDialogSnapshot(snap);
+                                          }}
                                         >
-                                          <Undo2 size={13} />
-                                          <span>Restore version</span>
-                                        </DropdownMenu.Item>
-                                        <DropdownMenu.Item
-                                          className="history-menu-item"
-                                          onSelect={() => void onExportSnapshot(snap)}
-                                        >
-                                          <ArrowSquareOut size={13} />
-                                          <span>Export version...</span>
+                                          <Pencil size={13} />
+                                          <span>Edit version label</span>
                                         </DropdownMenu.Item>
                                         <DropdownMenu.Separator className="history-menu-divider" />
                                         <DropdownMenu.Item
@@ -565,15 +562,6 @@ export function HistoryPanel({
                                   <div className="history-item-icons">
                                     <IconButton
                                       small={true}
-                                      className="icon-button small history-card-btn"
-                                      label="Compare snapshot"
-                                      title="Compare side-by-side with current file"
-                                      onClick={() => onCompareSnapshot(snap)}
-                                    >
-                                      <Columns2 size={13} />
-                                    </IconButton>
-                                    <IconButton
-                                      small={true}
                                       className={`icon-button small history-card-btn${snap.pinned ? ' is-pinned' : ''}`}
                                       label={snap.pinned ? 'Unpin snapshot' : 'Pin snapshot'}
                                       title={
@@ -585,6 +573,7 @@ export function HistoryPanel({
                                         if (snap.pinned) {
                                           void handleUnpin(snap);
                                         } else {
+                                          setEditingSnapshotLabel(false);
                                           setPinLabelInput(snap.label ?? '');
                                           setPinDialogSnapshot(snap);
                                         }
@@ -595,20 +584,15 @@ export function HistoryPanel({
                                     <IconButton
                                       small={true}
                                       className="icon-button small history-card-btn"
-                                      label="Restore snapshot"
-                                      title="Restore this snapshot to disk"
-                                      onClick={() => void onRestoreSnapshot(snap)}
+                                      label="Edit version label"
+                                      title="Edit version label"
+                                      onClick={() => {
+                                        setEditingSnapshotLabel(true);
+                                        setPinLabelInput(snap.label ?? '');
+                                        setPinDialogSnapshot(snap);
+                                      }}
                                     >
-                                      <Undo2 size={13} />
-                                    </IconButton>
-                                    <IconButton
-                                      small={true}
-                                      className="icon-button small history-card-btn"
-                                      label="Export snapshot"
-                                      title="Export snapshot to a file"
-                                      onClick={() => void onExportSnapshot(snap)}
-                                    >
-                                      <ArrowSquareOut size={13} />
+                                      <Pencil size={13} />
                                     </IconButton>
                                     <IconButton
                                       small={true}

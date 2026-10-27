@@ -2,6 +2,7 @@ import {
   basenameOf,
   parseTexStructure,
   resolveReference,
+  referenceCandidates,
   type FileIndex,
   type ParsedSection,
   type ReferenceKind,
@@ -21,7 +22,7 @@ export interface DocumentNode {
   label: string;
   target: string;
   path: string | null;
-  /** 'unchecked' means the project listing was truncated so absence proves nothing. */
+  /** 'unchecked' means the project listing is partial, so absence proves nothing. */
   status: 'ok' | 'missing' | 'unchecked';
   line: number | null;
   /** The file includes one of its own ancestors; it is shown but not expanded again. */
@@ -42,7 +43,7 @@ export interface DocumentModelOptions {
   /** Current text of a project file (unsaved edits included), or null if unreadable. */
   readSource: (path: string) => Promise<string | null>;
   index: FileIndex;
-  /** False when the project file listing was truncated. */
+  /** False when folders or directory pages are still unlisted. */
   listingComplete?: boolean;
   maxNodes?: number;
   maxDepth?: number;
@@ -55,12 +56,13 @@ export async function buildDocumentModel(
   const maxNodes = options.maxNodes ?? 400;
   const maxDepth = options.maxDepth ?? 16;
   const structures = new Map<string, TexStructure | null>();
+  const sources = new Map<string, string | null>();
   let count = 0;
   let limited = false;
 
   async function structureOf(path: string): Promise<TexStructure | null> {
     if (structures.has(path)) return structures.get(path) ?? null;
-    const source = await options.readSource(path);
+    const source = sources.has(path) ? (sources.get(path) ?? null) : await options.readSource(path);
     const structure = source === null ? null : parseTexStructure(source);
     structures.set(path, structure);
     return structure;
@@ -81,15 +83,28 @@ export async function buildDocumentModel(
     }));
     const seenLeaves = new Set<string>();
     for (const reference of structure.references) {
-      const resolved = resolveReference(reference, path, options.index, structure.graphicsPaths);
+      if (count >= maxNodes) {
+        limited = true;
+        break;
+      }
+      let resolved = resolveReference(reference, path, options.index, structure.graphicsPaths);
+      if (
+        !resolved &&
+        options.listingComplete === false &&
+        (reference.kind === 'tex' || reference.kind === 'bib')
+      ) {
+        for (const candidate of referenceCandidates(reference, path, structure.graphicsPaths)) {
+          if (!sources.has(candidate)) sources.set(candidate, await options.readSource(candidate));
+          if (sources.get(candidate) !== null) {
+            resolved = candidate;
+            break;
+          }
+        }
+      }
       if (resolved === null && reference.kind === 'package') continue;
       if (resolved !== null && reference.kind !== 'tex') {
         if (seenLeaves.has(resolved)) continue;
         seenLeaves.add(resolved);
-      }
-      if (count >= maxNodes) {
-        limited = true;
-        break;
       }
       count++;
       const key = `${parentKey}/${children.length}:${resolved ?? reference.target}`;

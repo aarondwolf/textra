@@ -15,6 +15,7 @@ test('real project editing preserves external changes, compiles, and renders a P
     JSON.stringify({
       version: 1,
       theme: 'dark',
+      miktexAutoInstall: false,
       sidebarVisible: true,
       outputVisible: false,
       editorWidth: 55,
@@ -147,17 +148,26 @@ test('real project editing preserves external changes, compiles, and renders a P
     const externalContent =
       (await readFile(join(projectRoot, 'main.tex'), 'utf8')) + '% External writer content.\n';
     await writeFile(join(projectRoot, 'main.tex'), externalContent, 'utf8');
-    const conflict = page.getByRole('dialog', { name: 'External change detected', exact: true });
+    const conflict = page.locator('.conflict-banner');
     await expect(conflict).toBeVisible({ timeout: 10000 });
+    const actions = conflict.locator('.conflict-banner-buttons');
+    const preserveBounds = (await actions
+      .getByRole('button', { name: 'Save conflicted copy' })
+      .boundingBox())!;
+    const discardBounds = (await actions
+      .getByRole('button', { name: 'Discard and close tab' })
+      .boundingBox())!;
+    expect(Math.abs(preserveBounds.y - discardBounds.y)).toBeLessThan(2);
+    expect(preserveBounds.width).toBeLessThan(200);
+    expect(discardBounds.width).toBeLessThan(200);
+    await page.screenshot({ path: test.info().outputPath('conflict-banner-compact.png') });
     await expect(
       page.getByRole('button', { name: 'Save file', exact: true, includeHidden: true }),
     ).toBeDisabled();
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
-    await expect(conflict.getByRole('status')).toContainText('external file appears stable', {
-      timeout: 10000,
-    });
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
+    expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
     await conflict.getByRole('button', { name: 'Save conflicted copy', exact: true }).click();
-    await expect(conflict).toBeHidden();
     const isPreservedCopy = (name: string) => /^main\.CONFLICTED_.*\.tex$/.test(name);
     await expect
       .poll(async () => (await readdir(projectRoot)).filter(isPreservedCopy))
@@ -168,14 +178,12 @@ test('real project editing preserves external changes, compiles, and renders a P
     expect(preservedContent).not.toContain('External writer content.');
     expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
 
-    // Resolving the original closes only its protected buffer; reopening reads the external version.
-    await page.getByRole('tab', { name: 'Edit main.tex', exact: true }).click();
-    await page.getByRole('button', { name: 'Resolve conflict', exact: true }).click();
-    await conflict.getByRole('button', { name: 'Discard and close tab', exact: true }).click();
+    // Saving the recovery copy closes the protected buffer; reopening reads the external version.
     await expect(page.getByRole('tab', { name: 'Edit main.tex', exact: true })).toHaveCount(0);
-    expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
     await page.getByRole('button', { name: 'Open main.tex', exact: true }).click();
     await expect(page.locator('.conflict-banner')).toHaveCount(0);
+    await expect(page.locator('.source-editor')).toContainText('External writer content.');
+    expect(await readFile(join(projectRoot, 'main.tex'), 'utf8')).toBe(externalContent);
     await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
 
     const tools = await page.evaluate(() => window.textra.detectTools());

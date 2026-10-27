@@ -143,7 +143,8 @@ function NodeIcon({ node }: { node: DocumentNode }) {
 
 function nodeHint(node: DocumentNode): string {
   if (node.status === 'missing') return `Not found: ${node.target}`;
-  if (node.status === 'unchecked') return `${node.target} (project listing was truncated)`;
+  if (node.status === 'unchecked')
+    return `${node.target} (folder contents have not been fully listed)`;
   if (node.cycle) return `${node.path} includes itself through this chain`;
   if (node.unreadable) return `${node.path} could not be read`;
   if (node.kind === 'graphic') return `${node.path} (image)`;
@@ -414,7 +415,8 @@ export function DocumentView({
   const request = useRef(0);
   const projectId = project?.id;
   const projectFiles = project?.files;
-  const listingComplete = !project?.truncated;
+  const listingComplete =
+    !project?.truncated && project?.treeState !== 'partial' && project?.treeState !== 'loading';
   const active = activePath && TEX_FILE.test(activePath) ? activePath : null;
   const activeLine =
     activeLineOverride ?? (source?.path === activePath ? (source.line ?? null) : null);

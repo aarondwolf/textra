@@ -293,6 +293,7 @@ export {
   PushPin as Pin,
   Stop as Square,
   Trash as Trash2,
+  UsersThree,
   Warning,
   WarningCircle,
   Scroll,

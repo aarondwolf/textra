@@ -94,6 +94,31 @@ describe('incremental project analysis', () => {
     expect(result.complete).toBe(false);
   });
 
+  it('discovers referenced sources in unloaded folders without revisiting cycles', async () => {
+    const sources: Record<string, string> = {
+      'main.tex': '\\input{chapters/one}\\bibliography{data/refs}',
+      'chapters/one.tex': '\\section{One}\\input{main}',
+      'data/refs.bib': '@book{example,title={Example}}',
+    };
+    const read = vi.fn(async (path: string) => sources[path] ?? null);
+    const batches: Record<string, string> = {};
+    await indexProjectSources({
+      paths: ['main.tex'],
+      activePath: 'main.tex',
+      index: buildFileIndex(['main.tex']),
+      initialSources: { 'main.tex': sources['main.tex'] },
+      discoverReferences: true,
+      read,
+      cancelled: () => false,
+      onBatch: (batch) => Object.assign(batches, batch),
+      yieldBatch: async () => undefined,
+    });
+    expect(batches).toEqual(sources);
+    expect(
+      read.mock.calls.map(([path]) => path).filter((path) => path === 'main.tex'),
+    ).toHaveLength(1);
+  });
+
   it('does not publish a completed read batch after cancellation and tolerates unreadable files', async () => {
     let cancelled = false;
     const onBatch = vi.fn();

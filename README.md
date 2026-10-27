@@ -34,10 +34,17 @@ npm run dev
 Validation: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`,
 `npm run build`, `npm run test:e2e`. Installer packaging is not configured yet.
 The primary iteration loop is a native Electron window with React HMR.
-Startup restores the active saved document first, then the remaining tabs and file
-tree. The editor, PDF preview and optional panels load separately. When available,
+Startup restores the active saved document first, then the remaining tabs. The
+explorer initially lists the top-level folder; expanding a folder loads its contents.
+Large folders offer **Load more** in pages of 500 entries, with no project-wide
+file-count or scan-depth cutoff. The filter searches the files already listed.
+The editor, PDF preview and optional panels load separately. After the first
+editor frame, optional panels prepare their code sequentially during idle time;
+opening them reuses the prepared components. Comparisons keep the source editor
+mounted to preserve models and undo history. When available,
 the last validated PDF is labelled **Last compiled**; compilation still requires
-your action. AI background preparation only reads local settings and imports code,
+your action. Its per-project metadata records the `.tex` file used by the last successful build,
+the recipe, and a fingerprint of the output PDF; it does not assume `main.tex`. AI background preparation only reads local settings and imports code,
 prioritizing selected defaults without contacting a provider or warming a model.
 See [startup measurements](docs/PERFORMANCE.md) for reproducible checks and limits.
 `npm run test:dev` verifies HMR and main/preload reload behavior; run it without
@@ -79,11 +86,12 @@ Recent Projects is a collapsible section at the bottom of the explorer, closed b
    Double-click the PDF to jump back to source with the installed SyncTeX tool.
 
 External changes are watched as well as revision-polled. On detection, TeXtra locks ordinary
-Save, autosave and Ctrl/Cmd+S for that tab, preserves its complete in-memory buffer, and opens a
-conflict decision. Save a collision-safe sibling such as
+Save, autosave and Ctrl/Cmd+S for that tab and shows an inline conflict banner while preserving
+the complete in-memory buffer. Save a collision-safe sibling such as
 `chapter.CONFLICTED_2026-10-20_143522.tex`, or close TeXtra’s buffer to give the external editor
-precedence. After a configurable 2–5 second quiet period, a read-only Monaco diff can compare the
-preserved buffer with the external file; it does not merge. Preferences can use polling only for
+precedence. The banner can request a comparison after a configurable 2–5 second quiet period; a
+read-only Monaco diff compares the preserved buffer with the external file and does not merge.
+Preferences can use polling only for
 Dropbox/network folders. Save As never replaces an existing file. Closing/switching checks unsaved
 edits. Delete uses the OS trash.
 
@@ -106,7 +114,10 @@ The bundled release is TexLab 5.26.0; attribution and source details are in
 
 The gear button opens **Settings**, with a side list of sections: Appearance,
 LaTeX tools (detected executables with an edit icon for each path, re-detection, a real
-temporary test compile, official installer pages), Compilation, and Import & export. No installers or missing packages run automatically. Windows uses
+temporary test compile, official installer pages), Compilation, and Import & export.
+During an explicit Compile, MiKTeX can install missing packages from its configured
+repository. This is enabled by default and can be disabled under Compilation.
+Startup and installation checks do not download packages. Windows uses
 MiKTeX/TeX Live; macOS can use MacTeX; Linux users should use their distribution's
 TeX packages. Restart after PATH changes. If a tool is not on PATH, use the pencil beside it
 in Settings to choose the executable. Guided installation moves to Phase 4.

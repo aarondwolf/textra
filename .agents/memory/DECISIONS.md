@@ -1,5 +1,13 @@
 # Decisions
 
+- 2026-10-26 User-requested MiKTeX package installation:
+  - Normal explicit builds use a global miktexAutoInstall preference, enabled by
+    default and exposed in Compilation. Main supplies it to both built-in and
+    configured recipes; recipe arguments cannot override installer policy.
+  - Direct BuildService calls default to installation disabled, keeping health
+    checks and isolated tests offline. Shell execution and first-line parsing
+    remain disabled. MiKTeX owns repository choice and package installation.
+
 - 2026-10-25 Background collaboration implementation:
   - Yjs 13.x stores CRDT operations; y-monaco binds editor models and
     `Y.UndoManager` tracks local edits. Shared accepted state remains separate from

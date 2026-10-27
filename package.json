@@ -19,7 +19,9 @@
     "test:e2e": "playwright test",
     "test:dev": "node tests/dev-smoke.mjs --restart-check",
     "test:startup": "node tests/performance/run-startup.mjs",
-    "generate:icons": "node scripts/generate-icons.mjs"
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "pack:win": "npm run build && electron-builder --win --x64 --dir"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.85",
@@ -92,6 +94,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "electron": "44.9.3",
+    "electron-builder": "^26.18.0",
     "electron-vite": "6.0.0",
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",

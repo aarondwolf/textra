@@ -32,8 +32,19 @@ npm run dev
 ```
 
 Validation: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`,
-`npm run build`, `npm run test:e2e`. Installer packaging is not configured yet.
+`npm run build`, `npm run test:e2e`.
 The primary iteration loop is a native Electron window with React HMR.
+
+### Windows packaging
+
+On Windows x64, run `npm ci` followed by `npm run dist:win` to build the
+application and an NSIS installer in `dist/`. `npm run pack:win` produces the
+unpacked application folder for testing. Packaging scans the production dependency
+tree and may take several minutes, particularly in a synced checkout. The first run
+may download Electron and installer tooling. Builds are unsigned unless signing is configured;
+Windows may warn when opening an unsigned installer. TeXtra includes TexLab but
+requires a separate TeX distribution, such as MiKTeX or TeX Live, to compile.
+Installer upgrade, uninstall and credential migration remain release checks.
 Startup restores the active saved document first, then the remaining tabs. The
 explorer initially lists the top-level folder, then loads two folder levels in the
 background without expanding them. The file filter and command palette search loaded

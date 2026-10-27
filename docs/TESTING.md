@@ -1,5 +1,18 @@
 # Testing
 
+2026-10-27 Windows packaging: electron-builder produced the unsigned x64 NSIS
+installer and unpacked app. The initial attempt was stopped prematurely: diagnostic
+logging showed 315 production packages followed by a slow serial file scan. A
+subsequent build completed. The unpacked executable opened a native window with
+the preload bridge; the attempted isolated profile did not take effect, so this
+smoke used the existing profile without editing a project. Install, upgrade,
+uninstall, packaged compilation and credential migration remain unverified. The
+production build, typecheck, lint and format check passed. A sandboxed full test
+run was stopped after filesystem failures and denied localhost fixture connections;
+it does not establish a full-suite result. The native shell smoke launched but
+failed its bridge allowlist because `readReferenceCandidate` is present at runtime
+and absent from the expected list.
+
 2026-10-27 editor scrollbar follow-up: a native Windows test drags both the Visual
 and Code scrollbars without changing the pane width, then drags the adjacent split
 handle and verifies that it resizes the pane. The production build and this native

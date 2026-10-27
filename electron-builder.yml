@@ -1,0 +1,22 @@
+appId: com.textra.desktop
+productName: TeXtra
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/texlab
+    to: texlab
+  - from: resources/icon.png
+    to: icon.png
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

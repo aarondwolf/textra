@@ -1,5 +1,21 @@
 # Testing
 
+2026-10-27 editor scrollbar follow-up: a native Windows test drags both the Visual
+and Code scrollbars without changing the pane width, then drags the adjacent split
+handle and verifies that it resizes the pane. The production build and this native
+test pass.
+
+2026-10-27 visual LaTeX editor: the full unit/integration suite passes 769/769
+across 79 files. Typecheck, lint, formatting and production build pass. Four
+native cases pass: existing collaboration and document sessions, visual/source
+editing with source-draft recovery, and two-profile Visual/Code collaboration.
+The native project workflow and window smoke also pass. The smoke test's bridge
+allowlist was updated to include the existing directory-listing API. The visual
+workflow checks light/dark and a saved custom theme, radio-key navigation,
+125%/150% browser zoom, and a Chromium-simulated composition input. Native checks
+run on Windows; actual OS display scaling, physical IMEs and other platforms remain
+unverified.
+
 2026-10-26 explorer scroll/MiKTeX follow-up: 60 focused tests pass for tree deletion
 and refresh, preference migration/persistence, and recipe installer policy. The
 tree helper's final cache-map change also passes its four cases. Four native cases

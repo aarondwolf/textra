@@ -11,6 +11,8 @@ import {
   TextB,
   TextItalic,
 } from '@phosphor-icons/react';
+import * as RadioGroup from '@radix-ui/react-radio-group';
+import type { TexEditorMode } from '../../../../shared/api';
 import { MarkdownLogo } from '../../icons';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import { TooltipButton } from '../../components/Button';
@@ -41,6 +43,8 @@ export default function FormattingToolbar({
   onFontSizeChange,
   wrap,
   onToggleWrap,
+  texEditorMode,
+  onTexEditorModeChange,
 }: {
   disabled: boolean;
   formattingDisabled?: boolean;
@@ -56,191 +60,228 @@ export default function FormattingToolbar({
   onFontSizeChange?: (size: number) => void;
   wrap?: boolean;
   onToggleWrap?: () => void;
+  texEditorMode?: TexEditorMode;
+  onTexEditorModeChange?: (mode: TexEditorMode) => void;
 }) {
   return (
     <div className="editor-format-toolbar" role="toolbar" aria-label="LaTeX formatting">
-      <TooltipButton
-        type="button"
-        aria-label="Bold"
-        title="Bold (\\textbf)"
-        disabled={formattingDisabled}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => dispatch({ command: 'bold' })}
-      >
-        <TextB size={15} weight="bold" />
-      </TooltipButton>
-      <TooltipButton
-        type="button"
-        aria-label="Italic"
-        title="Italic (\\textit)"
-        disabled={formattingDisabled}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => dispatch({ command: 'italic' })}
-      >
-        <TextItalic size={15} />
-      </TooltipButton>
-      <span className="editor-format-separator" aria-hidden="true" />
-      <TooltipButton
-        type="button"
-        aria-label="Numbered list"
-        title="Numbered list (enumerate)"
-        disabled={formattingDisabled}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => dispatch({ command: 'enumerate' })}
-      >
-        <ListNumbers size={15} />
-      </TooltipButton>
-      <TooltipButton
-        type="button"
-        aria-label="Bulleted list"
-        title="Bulleted list (itemize)"
-        disabled={formattingDisabled}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => dispatch({ command: 'itemize' })}
-      >
-        <ListBullets size={15} />
-      </TooltipButton>
-      <span className="editor-format-separator" aria-hidden="true" />
-      <TooltipButton
-        type="button"
-        aria-label="Insert figure"
-        title="Insert figure"
-        disabled={formattingDisabled}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => dispatch({ command: 'figure' })}
-      >
-        <ImageSquare size={15} />
-      </TooltipButton>
-      <TooltipButton
-        type="button"
-        aria-label="Insert table"
-        title="Insert table"
-        disabled={formattingDisabled}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => dispatch({ command: 'table' })}
-      >
-        <Table size={15} />
-      </TooltipButton>
-      <span className="editor-format-separator" aria-hidden="true" />
-      <DropdownMenu
-        ariaLabel="Insert heading"
-        title="Insert heading"
-        placeholder="Heading"
-        fullWidth={false}
-        disabled={formattingDisabled}
-        preventFocusSteal={true}
-        items={[
-          {
-            value: '1',
-            label: 'Section',
-            onClick: () => dispatch({ command: 'heading', level: 1 }),
-          },
-          {
-            value: '2',
-            label: 'Subsection',
-            onClick: () => dispatch({ command: 'heading', level: 2 }),
-          },
-          {
-            value: '3',
-            label: 'Subsubsection',
-            onClick: () => dispatch({ command: 'heading', level: 3 }),
-          },
-          {
-            value: '4',
-            label: 'Paragraph',
-            onClick: () => dispatch({ command: 'heading', level: 4 }),
-          },
-          {
-            value: '5',
-            label: 'Subparagraph',
-            onClick: () => dispatch({ command: 'heading', level: 5 }),
-          },
-        ]}
-      />
-      <span className="editor-format-spacer" />
-      {onSave && (
+      <div className="editor-format-actions">
         <TooltipButton
           type="button"
-          aria-label="Save file"
-          title="Save (Ctrl/Cmd+S)"
-          disabled={disabled || saveDisabled}
-          onClick={onSave}
+          aria-label="Bold"
+          title="Bold (\\textbf)"
+          disabled={formattingDisabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => dispatch({ command: 'bold' })}
         >
-          <FloppyDiskBack size={15} />
+          <TextB size={15} weight="bold" />
         </TooltipButton>
-      )}
-      {onSaveAs && (
         <TooltipButton
           type="button"
-          aria-label="Save file as"
-          title="Save as…"
-          disabled={disabled}
-          onClick={onSaveAs}
+          aria-label="Italic"
+          title="Italic (\\textit)"
+          disabled={formattingDisabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => dispatch({ command: 'italic' })}
         >
-          <FilePlus size={15} />
+          <TextItalic size={15} />
         </TooltipButton>
-      )}
-      {typeof fontSize === 'number' && onFontSizeChange && (
+        <span className="editor-format-separator" aria-hidden="true" />
+        <TooltipButton
+          type="button"
+          aria-label="Numbered list"
+          title="Numbered list (enumerate)"
+          disabled={formattingDisabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => dispatch({ command: 'enumerate' })}
+        >
+          <ListNumbers size={15} />
+        </TooltipButton>
+        <TooltipButton
+          type="button"
+          aria-label="Bulleted list"
+          title="Bulleted list (itemize)"
+          disabled={formattingDisabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => dispatch({ command: 'itemize' })}
+        >
+          <ListBullets size={15} />
+        </TooltipButton>
+        <span className="editor-format-separator" aria-hidden="true" />
+        <TooltipButton
+          type="button"
+          aria-label="Insert figure"
+          title="Insert figure"
+          disabled={formattingDisabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => dispatch({ command: 'figure' })}
+        >
+          <ImageSquare size={15} />
+        </TooltipButton>
+        <TooltipButton
+          type="button"
+          aria-label="Insert table"
+          title="Insert table"
+          disabled={formattingDisabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => dispatch({ command: 'table' })}
+        >
+          <Table size={15} />
+        </TooltipButton>
+        <span className="editor-format-separator" aria-hidden="true" />
         <DropdownMenu
-          ariaLabel="Editor font size"
-          title="Editor font size"
-          className="editor-format-font-size"
+          ariaLabel="Insert heading"
+          title="Insert heading"
+          placeholder="Heading"
           fullWidth={false}
-          value={String(fontSize)}
-          items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
-            .sort((a, b) => a - b)
-            .map((size) => ({ value: String(size), label: `${size}px` }))}
-          onChange={(value) => onFontSizeChange(Number(value))}
+          disabled={formattingDisabled}
+          preventFocusSteal={true}
+          items={[
+            {
+              value: '1',
+              label: 'Section',
+              onClick: () => dispatch({ command: 'heading', level: 1 }),
+            },
+            {
+              value: '2',
+              label: 'Subsection',
+              onClick: () => dispatch({ command: 'heading', level: 2 }),
+            },
+            {
+              value: '3',
+              label: 'Subsubsection',
+              onClick: () => dispatch({ command: 'heading', level: 3 }),
+            },
+            {
+              value: '4',
+              label: 'Paragraph',
+              onClick: () => dispatch({ command: 'heading', level: 4 }),
+            },
+            {
+              value: '5',
+              label: 'Subparagraph',
+              onClick: () => dispatch({ command: 'heading', level: 5 }),
+            },
+          ]}
         />
-      )}
-      {onToggleWrap && (
+        <span className="editor-format-spacer" />
+        {onSave && (
+          <TooltipButton
+            type="button"
+            aria-label="Save file"
+            title="Save (Ctrl/Cmd+S)"
+            disabled={disabled || saveDisabled}
+            onClick={onSave}
+          >
+            <FloppyDiskBack size={15} />
+          </TooltipButton>
+        )}
+        {onSaveAs && (
+          <TooltipButton
+            type="button"
+            aria-label="Save file as"
+            title="Save as…"
+            disabled={disabled}
+            onClick={onSaveAs}
+          >
+            <FilePlus size={15} />
+          </TooltipButton>
+        )}
+        {typeof fontSize === 'number' && onFontSizeChange && (
+          <DropdownMenu
+            ariaLabel="Editor font size"
+            title="Editor font size"
+            className="editor-format-font-size"
+            fullWidth={false}
+            value={String(fontSize)}
+            items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
+              .sort((a, b) => a - b)
+              .map((size) => ({ value: String(size), label: `${size}px` }))}
+            onChange={(value) => onFontSizeChange(Number(value))}
+          />
+        )}
+        {onToggleWrap && (
+          <TooltipButton
+            className="editor-format-wrap-control"
+            type="button"
+            aria-label="Toggle word wrap"
+            title={`Word wrap ${wrap ? 'on' : 'off'}`}
+            aria-pressed={wrap}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onToggleWrap}
+          >
+            <TextAlignLeft size={15} />
+          </TooltipButton>
+        )}
+      </div>
+      <div className="editor-format-fixed">
+        {texEditorMode && onTexEditorModeChange && (
+          <RadioGroup.Root
+            className="editor-mode-control"
+            aria-label="Editor mode"
+            value={texEditorMode}
+            orientation="horizontal"
+            onKeyDownCapture={(event) => {
+              const mode =
+                event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                  ? 'code'
+                  : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                    ? 'visual'
+                    : null;
+              if (!mode) return;
+              event.preventDefault();
+              event.stopPropagation();
+              event.currentTarget.querySelector<HTMLButtonElement>(`[value="${mode}"]`)?.focus();
+              onTexEditorModeChange(mode);
+            }}
+            onValueChange={(value) => {
+              if (value === 'code' || value === 'visual') onTexEditorModeChange(value);
+            }}
+          >
+            <RadioGroup.Item className="editor-mode-option" value="code">
+              Code
+            </RadioGroup.Item>
+            <RadioGroup.Item className="editor-mode-option" value="visual">
+              Visual
+            </RadioGroup.Item>
+          </RadioGroup.Root>
+        )}
+        {isMarkdown ? (
+          <TooltipButton
+            type="button"
+            className="editor-format-pdf"
+            aria-label="View Markdown preview"
+            title="View Markdown preview"
+            disabled={false}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onOpenMarkdown}
+          >
+            <MarkdownLogo size={15} />
+          </TooltipButton>
+        ) : (
+          <TooltipButton
+            type="button"
+            className="editor-format-pdf"
+            aria-label="View PDF in preview"
+            title={hasPdf ? 'View compiled PDF in Preview' : 'No compiled PDF found'}
+            disabled={disabled || !hasPdf}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onOpenPdf}
+          >
+            <FilePdf size={15} />
+          </TooltipButton>
+        )}
         <TooltipButton
-          className="editor-format-wrap-control"
           type="button"
-          aria-label="Toggle word wrap"
-          title={`Word wrap ${wrap ? 'on' : 'off'}`}
-          aria-pressed={wrap}
+          className="editor-format-hide"
+          aria-label="Hide formatting toolbar"
+          title="Hide formatting toolbar"
           onMouseDown={(event) => event.preventDefault()}
-          onClick={onToggleWrap}
+          onClick={onHide}
         >
-          <TextAlignLeft size={15} />
+          <EyeSlash size={15} aria-hidden="true" />
         </TooltipButton>
-      )}
-      {isMarkdown ? (
-        <TooltipButton
-          type="button"
-          className="editor-format-pdf"
-          aria-label="View Markdown preview"
-          title="View Markdown preview"
-          disabled={false}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={onOpenMarkdown}
-        >
-          <MarkdownLogo size={15} />
-        </TooltipButton>
-      ) : (
-        <TooltipButton
-          type="button"
-          className="editor-format-pdf"
-          aria-label="View PDF in preview"
-          title={hasPdf ? 'View compiled PDF in Preview' : 'No compiled PDF found'}
-          disabled={disabled || !hasPdf}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={onOpenPdf}
-        >
-          <FilePdf size={15} />
-        </TooltipButton>
-      )}
-      <TooltipButton
-        type="button"
-        className="editor-format-hide"
-        aria-label="Hide formatting toolbar"
-        title="Hide formatting toolbar"
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={onHide}
-      >
-        <EyeSlash size={15} aria-hidden="true" />
-      </TooltipButton>
+      </div>
     </div>
   );
 }

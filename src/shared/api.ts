@@ -29,6 +29,7 @@ export const PRODUCT_NAME = 'TeXtra';
 export type Theme =
   'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand' | (string & {});
 export type ChktexRunMode = 'save' | 'live';
+export type TexEditorMode = 'code' | 'visual';
 /** Policy for external changes to open .tex documents. Local to this device. */
 export type ConflictPolicy = 'manual-review' | 'background-merge';
 export type DiagnosticSeverity = Diagnostic['severity'];
@@ -86,6 +87,8 @@ export interface Preferences {
   commonProblemHelp: boolean;
   /** Controls the compact rich-text-style LaTeX formatting bar above the source editor. */
   formatToolbarVisible: boolean;
+  /** Preferred editing surface for TeX files. */
+  texEditorMode: TexEditorMode;
   sidebarWidth: number;
   /** TexLab is bundled and enabled by default; users may opt out of enhanced language tooling. */
   texlabEnabled: boolean;
@@ -173,6 +176,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorMinimap: false,
   commonProblemHelp: true,
   formatToolbarVisible: true,
+  texEditorMode: 'code',
   sidebarWidth: 226,
   texlabEnabled: true,
   chktexEnabled: true,

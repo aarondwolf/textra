@@ -8,11 +8,21 @@ describe('preference boundary validation', () => {
     delete legacy.defaultRecipe;
     delete legacy.previewVisible;
     delete legacy.miktexAutoInstall;
+    delete legacy.texEditorMode;
     expect(validatePreferences(legacy)).toEqual(DEFAULT_PREFERENCES);
     expect(validatePreferences({ ...legacy, defaultRecipe: 'xelatex' }).defaultRecipe).toBe(
       'xelatex',
     );
     expect(() => validatePreferences({ ...legacy, defaultRecipe: 'shell' })).toThrow();
+  });
+  it('migrates and validates the preferred TeX editor mode', () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+    delete legacy.texEditorMode;
+    expect(validatePreferences(legacy).texEditorMode).toBe('code');
+    expect(validatePreferences({ ...legacy, texEditorMode: 'visual' }).texEditorMode).toBe(
+      'visual',
+    );
+    expect(() => validatePreferences({ ...legacy, texEditorMode: 'other' })).toThrow();
   });
   it('allows automatic MiKTeX packages to be disabled and rejects non-boolean values', () => {
     expect(

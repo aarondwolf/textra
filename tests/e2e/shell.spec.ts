@@ -106,6 +106,7 @@ test('native shell keeps security boundaries and persists representative UI acti
       'listAIChats',
       'listFileHistory',
       'listLegacyFileHistories',
+      'listProjectDirectory',
       'onAIAssistantEvent',
       'onAIInlineEditChunk',
       'onBeforeClose',

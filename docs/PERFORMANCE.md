@@ -1,5 +1,15 @@
 # Startup performance
 
+2026-10-27 Visual editor measurements: native small-document runs observed
+15–44 ms from the prepared Visual control click to the next animation frame after
+its surface appeared. An isolated Node 24 adapter probe used plain-text fixtures
+with 1,667 and 8,334 paragraphs: a 100,000-character import took 576 ms and a
+500,000-character import took 3,770 ms. Median localized edit projection plus a
+structured clone over five samples took 29.3 ms and 103.1 ms respectively. The
+import runs in a worker in the app; these are synthetic measurements, not native
+large-document typing or cold packaged startup measurements. Very large documents
+may still show noticeable editing delay.
+
 2026-10-26 interaction follow-up: optional feature code now prepares sequentially
 at idle after the first editor frame. Both the import and resolved React component
 are cached across mounts, and the source editor stays mounted behind comparisons.

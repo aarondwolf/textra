@@ -132,6 +132,7 @@ export const preferencesSchema = z
     editorMinimap: z.boolean().optional().default(DEFAULT_PREFERENCES.editorMinimap),
     commonProblemHelp: z.boolean().optional().default(DEFAULT_PREFERENCES.commonProblemHelp),
     formatToolbarVisible: z.boolean().optional().default(DEFAULT_PREFERENCES.formatToolbarVisible),
+    texEditorMode: z.enum(['code', 'visual']).optional().default(DEFAULT_PREFERENCES.texEditorMode),
     sidebarWidth: z
       .number()
       .refine(

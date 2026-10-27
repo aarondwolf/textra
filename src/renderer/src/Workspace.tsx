@@ -412,7 +412,7 @@ function SplitHandle({ container }: { container: React.RefObject<HTMLDivElement 
   return (
     <ResizableSeparator
       orientation="vertical"
-      className="split-handle"
+      className="split-handle editor-preview-handle"
       label="Editor and preview split"
       value={preferences.editorWidth}
       min={30}
@@ -806,6 +806,7 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
   const [formatPreview, setFormatPreview] = useState<FormattingPreview | null>(null);
   const [conflictPath, setConflictPath] = useState<string | null>(null);
   const [externalChange, setExternalChange] = useState<ExternalFileChangeEvent | null>(null);
+  const externalChangeGenerations = useRef(new Map<string, number>());
   const [conflictSnapshotPath, setConflictSnapshotPath] = useState<string | undefined>();
   const [comparison, setComparison] = useState<{
     path: string;
@@ -1409,6 +1410,9 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
       )
         return;
       if (event.state === 'watching') return;
+      const eventKey = `${event.projectId}\0${event.path}`;
+      const eventGeneration = (externalChangeGenerations.current.get(eventKey) ?? 0) + 1;
+      externalChangeGenerations.current.set(eventKey, eventGeneration);
       if (event.state === 'stable') {
         // Lock as soon as the watcher confirms an external revision. Background
         // reconciliation may take several async reads before it can prove a match.
@@ -1434,7 +1438,41 @@ export function Workspace({ onOpenSettings }: { onOpenSettings?: (section?: Sect
               path: event.path,
             });
             if (!external.ok || !external.value.revision) return false;
-            if (external.value.revision === before.revision) return true;
+            if (external.value.revision === before.revision) {
+              const live = useWorkspace
+                .getState()
+                .documents.find(
+                  (document) =>
+                    document.projectId === event.projectId && document.path === event.path,
+                );
+              if (externalChangeGenerations.current.get(eventKey) !== eventGeneration) return true;
+              if (
+                !live ||
+                live.revision !== before.revision ||
+                live.externalState !== 'stable' ||
+                (event.revision !== null && event.revision !== external.value.revision)
+              )
+                return false;
+              useWorkspace.setState((state) => ({
+                documents: state.documents.map((document) =>
+                  document.projectId === event.projectId &&
+                  document.path === event.path &&
+                  document.revision === before.revision &&
+                  document.externalState === 'stable'
+                    ? { ...document, conflict: false, externalState: null }
+                    : document,
+                ),
+              }));
+              setExternalChange((current) =>
+                current?.projectId === event.projectId &&
+                current.path === event.path &&
+                current.observedAt === event.observedAt
+                  ? null
+                  : current,
+              );
+              setConflictPath((path) => (path === event.path ? null : path));
+              return true;
+            }
             const records = await window.textra.getCollaborationRecords({
               projectId: event.projectId,
               path: event.path,

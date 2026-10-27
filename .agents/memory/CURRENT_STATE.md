@@ -1,5 +1,9 @@
 # Current state
 
+2026-10-27 editor scrollbar follow-up: the editor/preview splitter reserves its own width and expands its pointer target only into the preview, keeping both Monaco and Visual scrollbars draggable. The production build and native scrollbar/splitter drag test pass.
+
+2026-10-27 Visual LaTeX editing (working tree): Code/Visual uses Tiptap over the authoritative Monaco model. The source adapter keeps opaque constructs and original slices, with guarded localized edits, shared undo, conflict handling, and Yjs integration. Source-dialog and rejected-edit drafts block save/close until handled. Full unit/integration suite passed 769/769; Windows native visual, collaboration, document-session, project workflow and shell checks passed. The prepared small-fixture toggle measured 44 ms to the next animation frame. Synthetic adapter timings and limits are in docs/PERFORMANCE.md. macOS/Linux, the broader IME and scaling matrix, and packaged cold startup remain unverified. Launch with npm run dev. Phase 1 cross-platform verification remains the next open gate.
+
 2026-10-26 Explorer scroll and MiKTeX package policy (working tree):
 
 - Confirmed deletions now prune cached rows and subtree metadata, retain loaded

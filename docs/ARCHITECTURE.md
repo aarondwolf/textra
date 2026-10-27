@@ -29,6 +29,30 @@ later typing and updates the saved baseline without overwriting a newer buffer.
 History/formatting controllers and close-preparation owners keep those operations
 outside presentation components.
 
+The optional Visual editor is a renderer-only Tiptap/ProseMirror view of the active
+`.tex` buffer. The Monaco model remains the authoritative document and stays mounted
+while Visual is shown. The adapter uses the existing `unified-latex` parser with
+source ranges to import a conservative set of prose, headings, lists, and math; it
+keeps unsupported commands, comments, and environments as protected source nodes.
+No-op viewing or mode changes do not serialize the document. Accepted visual
+transactions serialize affected supported blocks, reuse untouched source slices, and
+apply bounded edits to the Monaco model after checking document lifetime, model
+version, and editability. A source-edit dialog similarly checks its captured range
+before applying. Save, change detection, history, TexLab, and the Monaco/Yjs binding
+therefore continue through the existing document-session and main-process paths.
+Visual undo and redo route to the existing Monaco or Yjs history rather than a
+second rich-text undo stack. Positions crossing the bridge use UTF-16 offsets in
+LF-normalized text and are converted to model line/column positions.
+
+The visual feature and its local KaTeX assets load separately from the initial
+editor frame. A renderer worker prepares document projections; document identity,
+model version, and worker generations reject stale results. Math rendering uses
+bounded KaTeX options with trust disabled and isolated macro state. The view uses
+plain-text paste and does not load project media or remote content. A failed visual
+load returns the user to Code; unsupported or ambiguous source remains available for
+explicit editing. Native and cross-platform validation for Visual mode is still in
+progress.
+
 Project history has one canonical storage resolver, bounded validated version-1
 indexes and paginated listings. Portable history lives in `.textra/history`; opaque
 legacy app-data store IDs are recoverable only through explicit reviewed import.

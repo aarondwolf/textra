@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { includeProjectFile } from '../../../shared/project-tree';
 import { useStartup } from './startup';
 import { documentSessions, type DocumentCapture } from './document-sessions';
+import { hasVisualDraft } from './visual-drafts';
 import type {
   BuildEngine,
   BuildState,
@@ -66,7 +67,8 @@ export const useWorkspace = create<WorkspaceState>(() => ({
   navigation: null,
   source: null,
 }));
-export const dirty = (document: OpenDocument) => document.content !== document.savedContent;
+export const dirty = (document: OpenDocument) =>
+  document.content !== document.savedContent || hasVisualDraft(document.projectId, document.path);
 useWorkspace.subscribe((state, previous) => {
   if (state.documents !== previous.documents) documentSessions.observe(state.documents);
 });
@@ -262,6 +264,11 @@ export function editDocument(path: string, content: string): void {
   }));
 }
 export function closeDocument(path: string): void {
+  const existing = useWorkspace.getState().documents.find((document) => document.path === path);
+  if (existing && hasVisualDraft(existing.projectId, path)) {
+    showError('Recover or discard the visual editor draft before closing this file.');
+    return;
+  }
   cancelWorkspaceRestoration();
   selectionGeneration++;
   useWorkspace.setState((state) => {
@@ -299,6 +306,10 @@ export function reorderDocuments(fromIndex: number, toIndex: number): void {
 export function saveDocument(path: string): Promise<boolean> {
   const document = useWorkspace.getState().documents.find((item) => item.path === path);
   if (!document) return Promise.resolve(true);
+  if (hasVisualDraft(document.projectId, path)) {
+    showError('Recover or discard the visual editor draft before saving this file.');
+    return Promise.resolve(false);
+  }
   return documentSessions.save(document.projectId, path, () =>
     saveDocumentOnce(document.projectId, path),
   );

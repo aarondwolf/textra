@@ -126,6 +126,18 @@ export class DocumentSessionController {
     return this.sessions.get(key(projectId, path))?.collaboration ?? null;
   }
 
+  /** Retire only a newly prepared, unattached collaboration session. */
+  releaseCollaboration(
+    projectId: string,
+    path: string,
+    collaboration: import('./collaboration-session').CollaborationSession,
+  ): void {
+    const session = this.sessions.get(key(projectId, path));
+    if (session?.collaboration !== collaboration) return;
+    delete session.collaboration;
+    collaboration.destroy();
+  }
+
   discardCollaborationLocals(): void {
     for (const session of this.sessions.values()) session.collaboration?.discardLocal();
   }

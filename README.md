@@ -85,6 +85,29 @@ Recent Projects is a collapsible section at the bottom of the explorer, closed b
    zoom/fit width, or use **Go to source line**.
    Double-click the PDF to jump back to source with the installed SyncTeX tool.
 
+**Visual editing** is available for `.tex` files through the **Code / Visual** control
+at the right of the formatting toolbar. Code is the default, and TeXtra remembers your
+choice. Visual mode presents prose as a continuous, theme-aware writing surface with
+headings, emphasis, lists, quotes, and rendered equations. The PDF preview remains the
+typeset result. The editor works locally and does not require a connection or account.
+
+Type and paste ordinary text in Visual mode; TeXtra escapes LaTeX special characters
+when applying edits. Pasted formatting is reduced to plain text. Use the existing
+formatting toolbar for bold, italic, headings, and lists. Enter starts a new paragraph
+or list item, and Shift+Enter inserts a line break. Click a rendered equation to edit
+its LaTeX. Document setup, comments, citations, references, tables, figures, and
+other constructs that cannot safely be represented as prose appear as labelled
+source markers or blocks with **Edit source**. Some unusual or incomplete LaTeX may
+require Code mode. Edit source applies to the open buffer; use Save to write the file.
+
+Switching modes alone does not change the file. A visual edit can rewrite the affected
+paragraph or list structure while preserving untouched source and protected constructs.
+An edit that would remove protected source is refused; edit that source explicitly or
+switch to Code. Save, undo, redo, history, collaboration, and external-change handling
+use the same document buffer in both modes. Source-oriented actions such as replace
+or Ctrl/Cmd+I may open Code at the relevant position. Visual mode has not yet completed
+the full native and cross-platform verification matrix.
+
 External changes are watched as well as revision-polled. On detection, TeXtra locks ordinary
 Save, autosave and Ctrl/Cmd+S for that tab and shows an inline conflict banner while preserving
 the complete in-memory buffer. Save a collision-safe sibling such as

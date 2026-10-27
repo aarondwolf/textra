@@ -1,5 +1,7 @@
 # Architecture memory
 
+2026-10-27 Visual editor: Tiptap renders a conservative projection prepared by the existing unified-latex parser in a worker. Monaco remains the authoritative buffer and the sole Yjs editor binding. UTF-16 LF projection edits are converted to model positions, version/lifetime checked and applied atomically. Protected source and comments retain their bytes; recovery drafts participate in save/close barriers. Visual mode waits for collaboration attachment, and mode switches end undo groups.
+
 2026-10-26 Explorer refresh and package policy:
 
 - Confirmed deletion edits the cached tree instead of publishing a root-only scan.

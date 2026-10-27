@@ -861,7 +861,7 @@ export default function SetupDialog({
                           const updated = [...(preferences.customThemes ?? []), created];
                           updatePreferences({
                             customThemes: updated,
-                            theme: id,
+                            ...themeSelection(id, updated),
                           });
                           setNewThemeName('');
                         }}

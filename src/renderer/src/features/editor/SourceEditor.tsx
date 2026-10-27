@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { latexFoldingRanges } from './folding';
 import { minimalEditorScrollbars } from './scrollbars';
 import FormattingToolbar from './FormattingToolbar';
+import type { VisualEditorHandle, VisualViewState } from '../visual-editor/VisualEditor';
+import {
+  positionAtLfOffset,
+  validateVisualEdits,
+  type VisualSourceEdit,
+} from '../visual-editor/source-bridge';
 import type { installAICompletion } from './ai-completion';
 import type { installInlineEdit } from './inline-edit';
 import { isLatexSuggestionContext } from '../../../../shared/latex-completion';
@@ -29,14 +35,44 @@ import 'monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands.js';
 import 'monaco-editor/editor/contrib/hover/browser/hoverContribution.js';
 import 'monaco-editor/editor/contrib/inlayHints/browser/inlayHints.js';
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
-import type { Theme, SourceLocation } from '../../../../shared/api';
+import type { Theme, SourceLocation, TexEditorMode } from '../../../../shared/api';
 import type { AIEditProposal } from '../../../../shared/ai';
 import { bibliographyDetail, type BibliographyEntry } from '../../../../shared/bibliography';
 import { analyzeLatexDocument } from '../../../../shared/writing-analysis';
-import { editDocument, saveDocument, useWorkspace, type OpenDocument } from '../../state/workspace';
+import { referenceCandidates } from '../../../../shared/tex-structure';
+import {
+  editDocument,
+  openDocument,
+  saveDocument,
+  useWorkspace,
+  type OpenDocument,
+} from '../../state/workspace';
 import { documentSessions } from '../../state/document-sessions';
+import { hasAnyVisualDraft, setVisualDraft } from '../../state/visual-drafts';
+import { registerClosePreparation } from '../../state/shutdown';
 import { useUI } from '../../state/ui';
 import { emitTextraEvent } from '../../services/events';
+
+const loadVisualEditor = () =>
+  import('../visual-editor/VisualEditor').then((module) => ({ default: module.VisualEditor }));
+let LazyVisualEditor = lazy(loadVisualEditor);
+
+class VisualLoadBoundary extends Component<
+  { children: ReactNode; onFailure: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    LazyVisualEditor = lazy(loadVisualEditor);
+    this.props.onFailure();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 (self as typeof self & { MonacoEnvironment: { getWorker: () => Worker } }).MonacoEnvironment = {
   getWorker: () => new EditorWorker(),
@@ -463,6 +499,8 @@ function EditorFormattingToolbar({
   onFontSizeChange,
   wrap,
   onToggleWrap,
+  editorMode,
+  onEditorModeChange,
 }: {
   disabled: boolean;
   activePath: string;
@@ -473,6 +511,8 @@ function EditorFormattingToolbar({
   onFontSizeChange?: (size: number) => void;
   wrap: boolean;
   onToggleWrap?: () => void;
+  editorMode: TexEditorMode;
+  onEditorModeChange: (mode: TexEditorMode) => void;
 }) {
   const updatePreferences = useUI((state) => state.updatePreferences);
   const setPanel = useUI((state) => state.setPanel);
@@ -503,7 +543,7 @@ function EditorFormattingToolbar({
   return (
     <FormattingToolbar
       disabled={disabled}
-      formattingDisabled={!isTexPath(activePath)}
+      formattingDisabled={disabled || !isTexPath(activePath)}
       hasPdf={hasPdf}
       isMarkdown={isMarkdown}
       onOpenPdf={handleOpenPdf}
@@ -516,6 +556,8 @@ function EditorFormattingToolbar({
       onFontSizeChange={onFontSizeChange}
       wrap={wrap}
       onToggleWrap={onToggleWrap}
+      texEditorMode={isTexPath(activePath) ? editorMode : undefined}
+      onTexEditorModeChange={isTexPath(activePath) ? onEditorModeChange : undefined}
     />
   );
 }
@@ -618,11 +660,43 @@ export function SourceEditor({
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const collaborationBinding = useRef<{ destroy(): void } | null>(null);
   const collaborationUndoListener = useRef<(() => void) | null>(null);
+  const collaborationPreparingRef = useRef(false);
+  const [collaborationPreparing, setCollaborationPreparing] = useState(false);
+  const setCollaborationGate = (preparing: boolean) => {
+    collaborationPreparingRef.current = preparing;
+    setCollaborationPreparing(preparing);
+  };
   const models = useRef(new Map<string, monaco.editor.ITextModel>());
   const modelOwners = useRef(new Map<string, () => void>());
   const synchronizingModel = useRef(false);
   const views = useRef(new Map<string, monaco.editor.ICodeEditorViewState>());
   const current = useRef<string | null>(null);
+  const visualEditor = useRef<VisualEditorHandle | null>(null);
+  const visualViews = useRef(new Map<string, VisualViewState>());
+  const visualViewKey = useRef<string | null>(null);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly || aiSuppressed;
+  const [temporaryCode, setTemporaryCode] = useState(false);
+  const [visualReady, setVisualReady] = useState(false);
+  const [visualMounted, setVisualMounted] = useState(false);
+  const [visualSnapshot, setVisualSnapshot] = useState<{
+    projectId: string;
+    path: string;
+    lifetime: number;
+    modelVersion: number;
+    source: string;
+  } | null>(null);
+  const lastVisualTyping = useRef(0);
+  const stopModeUndoGroup = () => {
+    editor.current?.pushUndoStop();
+    const path = current.current;
+    const document = useWorkspace.getState().documents.find((item) => item.path === path);
+    if (document)
+      documentSessions
+        .collaborationFor(document.projectId, document.path)
+        ?.undoManager.stopCapturing();
+    lastVisualTyping.current = 0;
+  };
   const aiCompletion = useRef<ReturnType<typeof installAICompletion> | null>(null);
   const inlineEdit = useRef<ReturnType<typeof installInlineEdit> | null>(null);
   const { settings: aiSettings } = useAISettings(false);
@@ -634,9 +708,76 @@ export function SourceEditor({
   const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
   const bibliographyEntriesRef = useRef(bibliographyEntries);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { autoSave, autoSaveDelayMs, editorMinimap, editorFont } = useUI(
+  const { autoSave, autoSaveDelayMs, editorMinimap, editorFont, texEditorMode } = useUI(
     (state) => state.preferences,
   );
+  const updatePreferences = useUI((state) => state.updatePreferences);
+  const wantsVisual = isTexPath(activePath) && texEditorMode === 'visual' && !temporaryCode;
+  const visualVisible = wantsVisual && visualReady && visualSnapshot?.path === activePath;
+  const wantsVisualRef = useRef(wantsVisual);
+  wantsVisualRef.current = wantsVisual;
+  const visualVisibleRef = useRef(visualVisible);
+  visualVisibleRef.current = visualVisible;
+  const refreshVisualSnapshot = () => {
+    const path = current.current;
+    const instance = editor.current;
+    const model = instance?.getModel();
+    const document = useWorkspace.getState().documents.find((item) => item.path === path);
+    if (!path || !model || !document || models.current.get(path) !== model) return;
+    const capture = documentSessions.capture(document.projectId, path);
+    if (!capture) return;
+    const snapshot = {
+      projectId: document.projectId,
+      path,
+      lifetime: capture.lifetime,
+      modelVersion: model.getVersionId(),
+      source: model.getValue(monaco.editor.EndOfLinePreference.LF),
+    };
+    setVisualSnapshot((previous) =>
+      previous?.projectId === snapshot.projectId &&
+      previous.path === snapshot.path &&
+      previous.lifetime === snapshot.lifetime &&
+      previous.modelVersion === snapshot.modelVersion
+        ? previous
+        : snapshot,
+    );
+  };
+  const refreshVisualRef = useRef(refreshVisualSnapshot);
+  refreshVisualRef.current = refreshVisualSnapshot;
+  useEffect(() => {
+    const cancel = scheduleBackground(() => {
+      void loadVisualEditor().catch(() => undefined);
+    });
+    return cancel;
+  }, []);
+  useEffect(
+    () =>
+      registerClosePreparation(async () => {
+        if (hasAnyVisualDraft()) {
+          window.dispatchEvent(
+            new CustomEvent('textra:notify', {
+              detail: {
+                message: 'Recover or discard the visual editor draft before closing the workspace.',
+                tone: 'error',
+              },
+            }),
+          );
+          throw new Error('A visual editor recovery draft is still open.');
+        }
+      }),
+    [],
+  );
+  useEffect(() => {
+    setVisualReady(false);
+    setVisualMounted(false);
+    setTemporaryCode(false);
+  }, [activePath]);
+  useEffect(() => {
+    if (wantsVisual) {
+      setVisualMounted(true);
+      refreshVisualRef.current();
+    }
+  }, [wantsVisual, activePath]);
   const autoSavePreferences = useRef({
     enabled: autoSave && !autoSavePaused,
     delayMs: autoSaveDelayMs,
@@ -789,12 +930,63 @@ export function SourceEditor({
         return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      stopModeUndoGroup();
       void prepareAI().then(() => {
         if (!disposed) inlineEdit.current?.open();
       });
     };
     const keyboardHost = instance.getDomNode();
     keyboardHost?.addEventListener('keydown', prepareOnKey, true);
+    const visualInlineKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      const key = event.key.toLowerCase();
+      if (
+        !visualVisibleRef.current ||
+        !(target instanceof Element) ||
+        !target.closest('[data-testid="visual-editor"]') ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        (key !== 'i' && key !== 'f')
+      )
+        return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const selection = visualEditor.current?.sourceSelection();
+      stopModeUndoGroup();
+      const model = instance.getModel();
+      if (key === 'i' && (!selection || !model)) {
+        setTemporaryCode(true);
+        window.dispatchEvent(
+          new CustomEvent('textra:notify', {
+            detail: {
+              message: 'Choose a source location in Code mode before using inline editing here.',
+              tone: 'info',
+            },
+          }),
+        );
+        requestAnimationFrame(() => instance.focus());
+        return;
+      }
+      if (selection && model) {
+        const text = model.getValue(monaco.editor.EndOfLinePreference.LF);
+        const anchor = positionAtLfOffset(text, selection.anchor);
+        const head = positionAtLfOffset(text, selection.head);
+        instance.setSelection(
+          new monaco.Selection(anchor.lineNumber, anchor.column, head.lineNumber, head.column),
+        );
+      }
+      setTemporaryCode(true);
+      requestAnimationFrame(() => {
+        instance.focus();
+        if (key === 'f') void instance.getAction('actions.find')?.run();
+        else
+          void prepareAI().then(() => {
+            if (!disposed) inlineEdit.current?.open();
+          });
+      });
+    };
+    window.addEventListener('keydown', visualInlineKey, true);
     const applyAgentEdit = (event: Event) => {
       if (documentSessions.locked) return;
       const proposal = (event as CustomEvent<AIEditProposal>).detail;
@@ -838,13 +1030,52 @@ export function SourceEditor({
     window.addEventListener('textra:apply-document-content', applyDocumentContent);
     const replaceSource = () => {
       if (!instance.getModel()) return;
+      if (visualVisibleRef.current) {
+        stopModeUndoGroup();
+        const selection = visualEditor.current?.sourceSelection();
+        const model = instance.getModel();
+        if (selection && model) {
+          const text = model.getValue(monaco.editor.EndOfLinePreference.LF);
+          const anchor = positionAtLfOffset(text, selection.anchor);
+          const head = positionAtLfOffset(text, selection.head);
+          instance.setSelection(
+            new monaco.Selection(anchor.lineNumber, anchor.column, head.lineNumber, head.column),
+          );
+        }
+        setTemporaryCode(true);
+        requestAnimationFrame(() => {
+          instance.focus();
+          void instance.getAction('editor.action.startFindReplaceAction')?.run();
+        });
+        return;
+      }
       instance.focus();
       void instance.getAction('editor.action.startFindReplaceAction')?.run();
     };
     window.addEventListener('textra:replace-source', replaceSource);
+    const showSourceForFormatting = () => {
+      if (!visualVisibleRef.current) return;
+      stopModeUndoGroup();
+      const selection = visualEditor.current?.sourceSelection();
+      const model = instance.getModel();
+      if (selection && model) {
+        const text = model.getValue(monaco.editor.EndOfLinePreference.LF);
+        const anchor = positionAtLfOffset(text, selection.anchor);
+        const head = positionAtLfOffset(text, selection.head);
+        instance.setSelection(
+          new monaco.Selection(anchor.lineNumber, anchor.column, head.lineNumber, head.column),
+        );
+      }
+      setTemporaryCode(true);
+    };
+    window.addEventListener('textra:format-document', showSourceForFormatting);
     const insertSource = (event: Event) => {
       if (documentSessions.locked) return;
       const detail = (event as CustomEvent<{ text: string; caret: number }>).detail;
+      if (visualVisibleRef.current && detail) {
+        if (visualEditor.current?.insertSource(detail.text, detail.caret)) event.preventDefault();
+        return;
+      }
       const model = instance.getModel();
       const selection = instance.getSelection();
       if (!model || !selection || !detail) return;
@@ -865,6 +1096,10 @@ export function SourceEditor({
     const formatSource = (event: Event) => {
       if (documentSessions.locked) return;
       const detail = (event as CustomEvent<EditorFormatRequest>).detail;
+      if (visualVisibleRef.current && detail) {
+        if (visualEditor.current?.format(detail)) event.preventDefault();
+        return;
+      }
       const model = instance.getModel();
       const selection = instance.getSelection();
       if (!model || !selection || !detail || model.getLanguageId() !== 'latex') return;
@@ -938,6 +1173,7 @@ export function SourceEditor({
     };
     window.addEventListener('textra:format-source', formatSource);
     const content = instance.onDidChangeModelContent(() => {
+      if (wantsVisualRef.current) refreshVisualSnapshot();
       if (synchronizingModel.current) return;
       if (documentSessions.locked) {
         documentSessions.observe(useWorkspace.getState().documents, true);
@@ -1341,11 +1577,13 @@ export function SourceEditor({
       collaborationBinding.current = null;
       cancelPreparation();
       keyboardHost?.removeEventListener('keydown', prepareOnKey, true);
+      window.removeEventListener('keydown', visualInlineKey, true);
       inlineEdit.current?.dispose();
       inlineEdit.current = null;
       aiCompletion.current?.dispose();
       aiCompletion.current = null;
       window.removeEventListener('textra:replace-source', replaceSource);
+      window.removeEventListener('textra:format-document', showSourceForFormatting);
       window.removeEventListener('textra:apply-agent-edit', applyAgentEdit);
       window.removeEventListener('textra:apply-document-content', applyDocumentContent);
       window.removeEventListener('textra:insert-source', insertSource);
@@ -1385,7 +1623,14 @@ export function SourceEditor({
   useEffect(() => {
     aiCompletion.current?.invalidate();
     inlineEdit.current?.invalidate();
-  }, [activePath, activeDocument?.projectId, activeDocument?.conflict, readOnly, aiSuppressed]);
+  }, [
+    activePath,
+    activeDocument?.projectId,
+    activeDocument?.conflict,
+    readOnly,
+    aiSuppressed,
+    visualVisible,
+  ]);
   useEffect(() => {
     const instance = editor.current;
     if (!instance) return;
@@ -1448,141 +1693,223 @@ export function SourceEditor({
       if (current.current && previousView) views.current.set(current.current, previousView);
       current.current = activePath;
       instance.setModel(models.current.get(activePath)!);
+      if (wantsVisualRef.current) refreshVisualSnapshot();
       collaborationUndoListener.current?.();
       collaborationUndoListener.current = null;
       collaborationBinding.current?.destroy();
       collaborationBinding.current = null;
       const activeModel = models.current.get(activePath);
+      setCollaborationGate(Boolean(activeModel && isTexPath(activePath)));
       if (activeModel && isTexPath(activePath)) {
         void (async () => {
-          const policy = await window.textra.getProjectConflictPolicy(active.projectId);
-          if (
-            !policy.ok ||
-            policy.value !== 'background-merge' ||
-            current.current !== activePath ||
-            editor.current !== instance
-          )
-            return;
-          const latest = useWorkspace
-            .getState()
-            .documents.find(
-              (item) => item.projectId === active.projectId && item.path === activePath,
-            );
-          if (!latest || latest.content !== latest.savedContent) return;
-          const recordsResult = await window.textra.getCollaborationRecords({
-            projectId: active.projectId,
-            path: activePath,
-          });
-          if (!recordsResult.ok) throw new Error(recordsResult.error);
-          if (recordsResult.value.competingInitializations) {
-            window.dispatchEvent(
-              new CustomEvent('textra:notify', {
-                detail: {
-                  message:
-                    'This file has competing collaboration histories and needs manual review.',
-                  tone: 'error',
-                },
-              }),
-            );
-            return;
-          }
-          const records = [...recordsResult.value.records].sort((a, b) =>
-            a.createdAt.localeCompare(b.createdAt),
-          );
-          const diskRecord = records.find((record) => record.sourceRevision === latest.revision);
-          if (records.length && !diskRecord) {
-            window.dispatchEvent(
-              new CustomEvent('textra:notify', {
-                detail: {
-                  message: 'The shared history does not match this saved file. Use manual review.',
-                  tone: 'error',
-                },
-              }),
-            );
-            return;
-          }
-          const decodeState = (state: string) => {
-            const bytes = atob(state);
-            return Uint8Array.from(bytes, (character) => character.charCodeAt(0));
-          };
-          const session = await documentSessions.collaboration(
-            active.projectId,
-            activePath,
-            diskRecord ? [decodeState(diskRecord.stateBase64)] : [],
-            diskRecord?.initializationId,
-          );
-          const incoming = records.filter((record) => record.id !== diskRecord?.id);
-          if (incoming.length) {
-            for (;;) {
-              const currentDocument = useWorkspace
-                .getState()
-                .documents.find(
-                  (item) => item.projectId === active.projectId && item.path === activePath,
-                );
-              if (!currentDocument || currentDocument.content !== currentDocument.savedContent)
-                throw new Error('The document changed while recovery was being prepared.');
-              const captured = currentDocument.content;
-              const backup = await window.textra.createFileHistorySnapshot({
-                projectId: active.projectId,
-                path: activePath,
-                content: captured,
-                trigger: 'manual',
-                force: true,
-                purpose: 'recovery',
-                label: 'Before merging saved collaboration updates',
-              });
-              if (!backup.ok) throw new Error(backup.error);
-              const afterBackup = useWorkspace
-                .getState()
-                .documents.find(
-                  (item) => item.projectId === active.projectId && item.path === activePath,
-                );
-              if (afterBackup?.content === captured && afterBackup.savedContent === captured) break;
-            }
-            emitTextraEvent('textra:history:updated');
-            for (const record of incoming) session.applyIncoming(decodeState(record.stateBase64));
-          }
-          const { MonacoBinding } = await import('y-monaco');
-          if (current.current !== activePath || editor.current !== instance) return;
-          const binding = new MonacoBinding(session.localText, activeModel, new Set([instance]));
-          session.trackEditorBinding(binding);
-          collaborationBinding.current = binding;
-          const host = instance.getDomNode();
-          if (host) {
-            const keydown = (event: KeyboardEvent) => {
-              const command = event.ctrlKey || event.metaKey;
-              if (!command || event.altKey) return;
-              const key = event.key.toLowerCase();
-              if (key === 'z') {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                if (event.shiftKey) session.undoManager.redo();
-                else session.undoManager.undo();
-              } else if (key === 'y' && event.ctrlKey) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                session.undoManager.redo();
-              }
-            };
-            host.addEventListener('keydown', keydown, true);
-            collaborationUndoListener.current = () =>
-              host.removeEventListener('keydown', keydown, true);
-          }
-          if (incoming.length) {
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            if (current.current === activePath && editor.current === instance) {
-              if (!(await saveDocument(activePath)))
+          let createdSession:
+            import('../../state/collaboration-session').CollaborationSession | null = null;
+          let attached = false;
+          try {
+            const policy = await window.textra.getProjectConflictPolicy(active.projectId);
+            if (
+              !policy.ok ||
+              policy.value !== 'background-merge' ||
+              current.current !== activePath ||
+              editor.current !== instance
+            )
+              return;
+            const latest = useWorkspace
+              .getState()
+              .documents.find(
+                (item) => item.projectId === active.projectId && item.path === activePath,
+              );
+            if (!latest) return;
+            if (latest.content !== latest.savedContent) {
+              const existing = documentSessions.collaborationFor(active.projectId, activePath);
+              if (!existing) return;
+              if (existing.localText.toString() !== activeModel.getValue())
                 throw new Error(
-                  'The shared updates were merged locally; review the file before saving again.',
+                  'The collaboration session is not synchronized. Save a conflicted copy before continuing.',
                 );
+              const { MonacoBinding } = await import('y-monaco');
+              if (
+                current.current !== activePath ||
+                editor.current !== instance ||
+                documentSessions.collaborationFor(active.projectId, activePath) !== existing ||
+                existing.localText.toString() !== activeModel.getValue()
+              )
+                return;
+              const binding = new MonacoBinding(
+                existing.localText,
+                activeModel,
+                new Set([instance]),
+              );
+              existing.trackEditorBinding(binding);
+              collaborationBinding.current = binding;
+              attached = true;
+              const host = instance.getDomNode();
+              if (host) {
+                const keydown = (event: KeyboardEvent) => {
+                  if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+                  const key = event.key.toLowerCase();
+                  if (key === 'z') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    if (event.shiftKey) existing.undoManager.redo();
+                    else existing.undoManager.undo();
+                  } else if (key === 'y' && event.ctrlKey) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    existing.undoManager.redo();
+                  }
+                };
+                host.addEventListener('keydown', keydown, true);
+                collaborationUndoListener.current = () =>
+                  host.removeEventListener('keydown', keydown, true);
+              }
+              return;
+            }
+            const recordsResult = await window.textra.getCollaborationRecords({
+              projectId: active.projectId,
+              path: activePath,
+            });
+            if (!recordsResult.ok) throw new Error(recordsResult.error);
+            if (recordsResult.value.competingInitializations) {
               window.dispatchEvent(
                 new CustomEvent('textra:notify', {
                   detail: {
-                    message: 'Saved shared changes. A pre-merge copy is available in History.',
-                    tone: 'success',
+                    message:
+                      'This file has competing collaboration histories and needs manual review.',
+                    tone: 'error',
                   },
                 }),
               );
+              return;
+            }
+            const records = [...recordsResult.value.records].sort((a, b) =>
+              a.createdAt.localeCompare(b.createdAt),
+            );
+            const diskRecord = records.find((record) => record.sourceRevision === latest.revision);
+            if (records.length && !diskRecord) {
+              window.dispatchEvent(
+                new CustomEvent('textra:notify', {
+                  detail: {
+                    message:
+                      'The shared history does not match this saved file. Use manual review.',
+                    tone: 'error',
+                  },
+                }),
+              );
+              return;
+            }
+            const decodeState = (state: string) => {
+              const bytes = atob(state);
+              return Uint8Array.from(bytes, (character) => character.charCodeAt(0));
+            };
+            const baselineVersion = activeModel.getVersionId();
+            if (activeModel.getValue() !== latest.content) return;
+            const existingSession = documentSessions.collaborationFor(active.projectId, activePath);
+            const session = await documentSessions.collaboration(
+              active.projectId,
+              activePath,
+              diskRecord ? [decodeState(diskRecord.stateBase64)] : [],
+              diskRecord?.initializationId,
+            );
+            if (!existingSession) createdSession = session;
+            const incoming = records.filter((record) => record.id !== diskRecord?.id);
+            if (incoming.length) {
+              for (;;) {
+                const currentDocument = useWorkspace
+                  .getState()
+                  .documents.find(
+                    (item) => item.projectId === active.projectId && item.path === activePath,
+                  );
+                if (!currentDocument || currentDocument.content !== currentDocument.savedContent)
+                  throw new Error('The document changed while recovery was being prepared.');
+                const captured = currentDocument.content;
+                const backup = await window.textra.createFileHistorySnapshot({
+                  projectId: active.projectId,
+                  path: activePath,
+                  content: captured,
+                  trigger: 'manual',
+                  force: true,
+                  purpose: 'recovery',
+                  label: 'Before merging saved collaboration updates',
+                });
+                if (!backup.ok) throw new Error(backup.error);
+                const afterBackup = useWorkspace
+                  .getState()
+                  .documents.find(
+                    (item) => item.projectId === active.projectId && item.path === activePath,
+                  );
+                if (afterBackup?.content === captured && afterBackup.savedContent === captured)
+                  break;
+              }
+              emitTextraEvent('textra:history:updated');
+              for (const record of incoming) session.applyIncoming(decodeState(record.stateBase64));
+            }
+            const { MonacoBinding } = await import('y-monaco');
+            if (
+              current.current !== activePath ||
+              editor.current !== instance ||
+              activeModel.getVersionId() !== baselineVersion ||
+              documentSessions.collaborationFor(active.projectId, activePath) !== session
+            )
+              return;
+            const binding = new MonacoBinding(session.localText, activeModel, new Set([instance]));
+            session.trackEditorBinding(binding);
+            collaborationBinding.current = binding;
+            attached = true;
+            const host = instance.getDomNode();
+            if (host) {
+              const keydown = (event: KeyboardEvent) => {
+                const command = event.ctrlKey || event.metaKey;
+                if (!command || event.altKey) return;
+                const key = event.key.toLowerCase();
+                if (key === 'z') {
+                  event.preventDefault();
+                  event.stopImmediatePropagation();
+                  if (event.shiftKey) session.undoManager.redo();
+                  else session.undoManager.undo();
+                } else if (key === 'y' && event.ctrlKey) {
+                  event.preventDefault();
+                  event.stopImmediatePropagation();
+                  session.undoManager.redo();
+                }
+              };
+              host.addEventListener('keydown', keydown, true);
+              collaborationUndoListener.current = () =>
+                host.removeEventListener('keydown', keydown, true);
+            }
+            if (incoming.length) {
+              await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+              if (current.current === activePath && editor.current === instance) {
+                if (!(await saveDocument(activePath)))
+                  throw new Error(
+                    'The shared updates were merged locally; review the file before saving again.',
+                  );
+                window.dispatchEvent(
+                  new CustomEvent('textra:notify', {
+                    detail: {
+                      message: 'Saved shared changes. A pre-merge copy is available in History.',
+                      tone: 'success',
+                    },
+                  }),
+                );
+              }
+            }
+          } finally {
+            if (
+              createdSession &&
+              !attached &&
+              current.current === activePath &&
+              instance.getModel() === activeModel &&
+              !collaborationBinding.current
+            )
+              documentSessions.releaseCollaboration(active.projectId, activePath, createdSession);
+            if (
+              current.current === activePath &&
+              editor.current === instance &&
+              instance.getModel() === activeModel
+            ) {
+              const session = documentSessions.collaborationFor(active.projectId, activePath);
+              setCollaborationGate(Boolean(session && !collaborationBinding.current));
             }
           }
         })().catch((error: unknown) => {
@@ -1674,9 +2001,29 @@ export function SourceEditor({
   }, [fontSize, wrap, readOnly, editorMinimap, editorFont]);
   useEffect(() => {
     if (navigation && navigation.path === activePath) {
-      editor.current?.setPosition({ lineNumber: navigation.line, column: navigation.column });
-      editor.current?.revealLineInCenter(navigation.line);
-      editor.current?.focus();
+      const instance = editor.current;
+      const model = instance?.getModel();
+      if (instance && model && visualVisibleRef.current) {
+        const position = model.validatePosition({
+          lineNumber: navigation.line,
+          column: navigation.column,
+        });
+        const offset = model.getValueInRange(
+          new monaco.Range(1, 1, position.lineNumber, position.column),
+          monaco.editor.EndOfLinePreference.LF,
+        ).length;
+        if (!visualEditor.current?.navigateSource(offset)) {
+          stopModeUndoGroup();
+          setTemporaryCode(true);
+          instance.setPosition(position);
+          instance.revealLineInCenter(position.lineNumber);
+          requestAnimationFrame(() => instance.focus());
+        }
+      } else {
+        instance?.setPosition({ lineNumber: navigation.line, column: navigation.column });
+        instance?.revealLineInCenter(navigation.line);
+        instance?.focus();
+      }
       useWorkspace.setState({ navigation: null });
     }
   }, [navigation, activePath]);
@@ -1700,13 +2047,25 @@ export function SourceEditor({
   const handleGotoLine = () => {
     const inst = editor.current;
     if (!inst) return;
-    inst.focus();
-    void inst.getAction('editor.action.gotoLine')?.run();
+    if (visualVisibleRef.current) {
+      stopModeUndoGroup();
+      setTemporaryCode(true);
+      requestAnimationFrame(() => {
+        inst.focus();
+        void inst.getAction('editor.action.gotoLine')?.run();
+      });
+    } else {
+      inst.focus();
+      void inst.getAction('editor.action.gotoLine')?.run();
+    }
   };
 
+  const handleGotoLineRef = useRef(handleGotoLine);
+  handleGotoLineRef.current = handleGotoLine;
   useEffect(() => {
-    window.addEventListener('textra:goto-line', handleGotoLine);
-    return () => window.removeEventListener('textra:goto-line', handleGotoLine);
+    const listener = () => handleGotoLineRef.current();
+    window.addEventListener('textra:goto-line', listener);
+    return () => window.removeEventListener('textra:goto-line', listener);
   }, []);
 
   useEffect(() => {
@@ -1762,6 +2121,154 @@ export function SourceEditor({
     };
   }, []);
 
+  const switchToCode = (offset?: number) => {
+    stopModeUndoGroup();
+    const instance = editor.current;
+    const model = instance?.getModel();
+    const selection = visualEditor.current?.sourceSelection();
+    if (instance && model) {
+      const text = model.getValue(monaco.editor.EndOfLinePreference.LF);
+      const anchorOffset = offset ?? selection?.anchor;
+      const headOffset = offset ?? selection?.head;
+      if (
+        anchorOffset !== undefined &&
+        headOffset !== undefined &&
+        anchorOffset >= 0 &&
+        anchorOffset <= text.length &&
+        headOffset >= 0 &&
+        headOffset <= text.length
+      ) {
+        const anchor = positionAtLfOffset(text, anchorOffset);
+        const head = positionAtLfOffset(text, headOffset);
+        instance.setSelection(
+          new monaco.Selection(anchor.lineNumber, anchor.column, head.lineNumber, head.column),
+        );
+        instance.revealPositionInCenter(head);
+      }
+    }
+    setTemporaryCode(true);
+    if (!(
+      document.activeElement instanceof Element &&
+      document.activeElement.closest('.editor-mode-control')
+    ))
+      requestAnimationFrame(() => instance?.focus());
+  };
+
+  const changeEditorMode = (mode: TexEditorMode) => {
+    stopModeUndoGroup();
+    if (mode === 'code') switchToCode();
+    else {
+      if (editor.current?.getModel()?.getVersionId() !== visualSnapshot?.modelVersion)
+        setVisualReady(false);
+      refreshVisualSnapshot();
+    }
+    setTemporaryCode(false);
+    updatePreferences({ texEditorMode: mode });
+  };
+
+  const applyVisualEdits = (
+    expectedVersion: number,
+    edits: readonly VisualSourceEdit[],
+    group: 'typing' | 'command',
+  ): number | null => {
+    const instance = editor.current;
+    const model = instance?.getModel();
+    const snapshot = visualSnapshot;
+    const document = useWorkspace
+      .getState()
+      .documents.find(
+        (item) => item.projectId === snapshot?.projectId && item.path === snapshot.path,
+      );
+    const capture = snapshot && documentSessions.capture(snapshot.projectId, snapshot.path);
+    if (
+      !instance ||
+      !model ||
+      !snapshot ||
+      !document ||
+      !capture ||
+      current.current !== snapshot.path ||
+      models.current.get(snapshot.path) !== model ||
+      capture.lifetime !== snapshot.lifetime ||
+      model.getVersionId() !== expectedVersion ||
+      readOnlyRef.current ||
+      collaborationPreparingRef.current ||
+      document.conflict ||
+      documentSessions.locked
+    )
+      return null;
+    const text = model.getValue(monaco.editor.EndOfLinePreference.LF);
+    if (!validateVisualEdits(text, edits)) return null;
+    const session = documentSessions.collaborationFor(snapshot.projectId, snapshot.path);
+    if (session && !collaborationBinding.current) return null;
+    const now = Date.now();
+    const boundary = group === 'command' || now - lastVisualTyping.current > 500;
+    if (boundary) {
+      instance.pushUndoStop();
+      session?.undoManager.stopCapturing();
+    }
+    try {
+      model.pushEditOperations(
+        instance.getSelections() ?? [],
+        edits.map((edit) => {
+          const start = positionAtLfOffset(text, edit.from);
+          const end = positionAtLfOffset(text, edit.to);
+          return {
+            range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+            text: edit.insert.replace(/\r\n?/g, '\n'),
+            forceMoveMarkers: true,
+          };
+        }),
+        () => null,
+      );
+      lastVisualTyping.current = now;
+      if (group === 'command') {
+        instance.pushUndoStop();
+        session?.undoManager.stopCapturing();
+        lastVisualTyping.current = 0;
+      }
+      return model.getVersionId();
+    } catch {
+      return null;
+    }
+  };
+
+  const visualUndo = (redo: boolean) => {
+    const instance = editor.current;
+    const snapshot = visualSnapshot;
+    if (
+      !instance ||
+      !snapshot ||
+      readOnlyRef.current ||
+      collaborationPreparingRef.current ||
+      documentSessions.locked
+    )
+      return;
+    const document = useWorkspace
+      .getState()
+      .documents.find(
+        (item) => item.projectId === snapshot.projectId && item.path === snapshot.path,
+      );
+    if (!document || document.conflict) return;
+    const session = documentSessions.collaborationFor(snapshot.projectId, snapshot.path);
+    if (session && !collaborationBinding.current) return;
+    lastVisualTyping.current = 0;
+    if (session) {
+      session.undoManager.stopCapturing();
+      if (redo) session.undoManager.redo();
+      else session.undoManager.undo();
+    } else instance.trigger('textra-visual', redo ? 'redo' : 'undo', null);
+  };
+
+  const setVisualEditor = (handle: VisualEditorHandle | null) => {
+    if (!handle && visualEditor.current && visualViewKey.current) {
+      const state = visualEditor.current.getViewState();
+      if (state) visualViews.current.set(visualViewKey.current, state);
+    }
+    visualEditor.current = handle;
+    if (handle && visualSnapshot)
+      visualViewKey.current = `${visualSnapshot.projectId}\0${visualSnapshot.path}`;
+  };
+
   return (
     <div className="source-editor-shell">
       {formatToolbarVisible && (
@@ -1775,9 +2282,108 @@ export function SourceEditor({
           onFontSizeChange={onFontSizeChange}
           wrap={wrap}
           onToggleWrap={onToggleWrap}
+          editorMode={wantsVisual ? 'visual' : 'code'}
+          onEditorModeChange={changeEditorMode}
         />
       )}
-      <div ref={container} className="source-editor" data-testid="source-editor" />
+      <div
+        ref={container}
+        className="source-editor"
+        data-testid="source-editor"
+        style={visualVisible ? { display: 'none' } : undefined}
+        inert={visualVisible}
+        aria-hidden={visualVisible || undefined}
+      />
+      {(wantsVisual || visualMounted) && visualSnapshot && visualSnapshot.path === activePath && (
+        <VisualLoadBoundary
+          onFailure={() => {
+            setTemporaryCode(true);
+            window.dispatchEvent(
+              new CustomEvent('textra:notify', {
+                detail: {
+                  message: 'Visual editor could not be loaded. Select Visual to retry.',
+                  tone: 'error',
+                },
+              }),
+            );
+          }}
+        >
+          <Suspense fallback={null}>
+            <LazyVisualEditor
+              key={`${visualSnapshot.projectId}\0${visualSnapshot.path}\0${visualSnapshot.lifetime}`}
+              ref={setVisualEditor}
+              projectId={visualSnapshot.projectId}
+              path={visualSnapshot.path}
+              lifetime={visualSnapshot.lifetime}
+              source={visualSnapshot.source}
+              modelVersion={visualSnapshot.modelVersion}
+              readOnly={readOnly || aiSuppressed || collaborationPreparing}
+              visible={visualVisible}
+              fontSize={fontSize}
+              initialViewState={visualViews.current.get(
+                `${visualSnapshot.projectId}\0${visualSnapshot.path}`,
+              )}
+              apply={applyVisualEdits}
+              undo={() => visualUndo(false)}
+              redo={() => visualUndo(true)}
+              onReady={() => {
+                if (
+                  current.current !== visualSnapshot.path ||
+                  editor.current?.getModel()?.getVersionId() !== visualSnapshot.modelVersion
+                )
+                  return;
+                const wasVisible = visualVisibleRef.current;
+                setVisualReady(true);
+                if (
+                  !wasVisible &&
+                  wantsVisualRef.current &&
+                  !(
+                    document.activeElement instanceof Element &&
+                    document.activeElement.closest('.editor-mode-control')
+                  )
+                )
+                  requestAnimationFrame(() => visualEditor.current?.focus());
+              }}
+              onFailure={(message) => {
+                setTemporaryCode(true);
+                window.dispatchEvent(
+                  new CustomEvent('textra:notify', { detail: { message, tone: 'error' } }),
+                );
+              }}
+              onSwitchToCode={switchToCode}
+              onOpenReference={(target, command) => {
+                const projectId = visualSnapshot.projectId;
+                const from = visualSnapshot.path;
+                void (async () => {
+                  for (const path of referenceCandidates(
+                    { kind: 'tex', command, target, line: 1 },
+                    from,
+                  )) {
+                    const result = await window.textra.readFile({ projectId, path });
+                    if (useWorkspace.getState().project?.id !== projectId) return;
+                    if (result.ok) {
+                      await openDocument(path);
+                      return;
+                    }
+                  }
+                  window.dispatchEvent(
+                    new CustomEvent('textra:notify', {
+                      detail: {
+                        message: `Could not find ${target} in this project.`,
+                        tone: 'error',
+                      },
+                    }),
+                  );
+                })();
+              }}
+              onRecoveryChange={(present) => {
+                setVisualDraft(visualSnapshot.projectId, visualSnapshot.path, present);
+                useWorkspace.setState((state) => ({ documents: [...state.documents] }));
+              }}
+            />
+          </Suspense>
+        </VisualLoadBoundary>
+      )}
       <div className="editor-status-bar" role="status" aria-label="Editor status">
         <div className="editor-status-left">
           <button

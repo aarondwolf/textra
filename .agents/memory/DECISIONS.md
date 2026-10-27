@@ -1,5 +1,7 @@
 # Decisions
 
+- 2026-10-27 Visual editing uses the MIT Tiptap/ProseMirror editor, existing unified-latex parser and local KaTeX. The user chose prose-first editing, plain-text paste, compact source blocks and permitted local rewrites of touched supported blocks. Code is the default persisted mode; unsupported content remains source-editable and source files stay authoritative.
+
 - 2026-10-26 User-requested MiKTeX package installation:
   - Normal explicit builds use a global miktexAutoInstall preference, enabled by
     default and exposed in Compilation. Main supplies it to both built-in and

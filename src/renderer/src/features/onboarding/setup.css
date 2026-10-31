@@ -34,6 +34,33 @@
   padding: 2px 8px 8px 3px;
   scrollbar-gutter: stable;
 }
+.visual-ignore-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.visual-ignore-settings label {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+}
+.visual-ignore-settings textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 110px;
+  padding: 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.visual-ignore-settings textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .setup-dialog h3 {
   margin: 24px 0 12px;
   font-size: 14px;

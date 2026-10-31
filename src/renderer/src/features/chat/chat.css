@@ -225,6 +225,7 @@
 }
 .ai-chat-compose {
   position: relative;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
@@ -270,6 +271,9 @@
   min-height: 36px;
   padding: 4px 6px 4px 10px;
   box-sizing: border-box;
+}
+.ai-chat-actions > .tooltip-disabled-trigger {
+  flex: 0 0 24px;
 }
 .ai-settings button[type='submit'] {
   color: var(--accent);
@@ -456,6 +460,17 @@
 }
 .ai-chat .ai-mode-switch button:disabled {
   opacity: 0.6;
+}
+/* Reserve room for send/stop before allowing secondary controls to crowd it. */
+@container (max-width: 200px) {
+  .ai-chat-controls .model-picker-compact {
+    display: none;
+  }
+}
+@container (max-width: 150px) {
+  .ai-chat-controls .ai-mode-switch {
+    display: none;
+  }
 }
 .ai-chat-active-file-corner {
   display: flex;

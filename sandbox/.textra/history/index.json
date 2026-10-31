@@ -218,8 +218,8 @@
       "sizeBytes": 1925,
       "revision": "83308974c0b5adbfa073990a01c3c239cd70a64c5c5051ad288db42f221996b1",
       "trigger": "manual",
-      "pinned": true,
-      "label": "Test"
+      "pinned": false,
+      "label": null
     },
     {
       "id": "2026-10-26T00-37-55.742Z-fd0302d9-5b78-4fb0-9561-1c191eaef17f",
@@ -252,16 +252,6 @@
       "label": null
     },
     {
-      "id": "2026-10-26T15-36-16.289Z-a0d6bde4-8ac3-4169-beaa-67a178a7bd18",
-      "path": "todo.md",
-      "createdAt": "2026-10-26T15:36:16.289Z",
-      "sizeBytes": 682,
-      "revision": "d862b04da7a2f38e8d9e85c5e711ac00527be32d01bc90c15ad4cc6e68f9be2e",
-      "trigger": "save",
-      "pinned": false,
-      "label": null
-    },
-    {
       "id": "2026-10-26T15-36-18.504Z-7e8088c6-7fe2-471f-afd3-a79df5155bd6",
       "path": "todo.md",
       "createdAt": "2026-10-26T15:36:18.504Z",
@@ -270,6 +260,150 @@
       "trigger": "save",
       "pinned": false,
       "label": null
+    },
+    {
+      "id": "2026-10-29T02-33-30.849Z-01baaf1f-2a75-4435-916c-9227735f1898",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T02:33:30.849Z",
+      "sizeBytes": 1920,
+      "revision": "2a9de2805953bd6a2cdb5a35bdd2a9b4ff7d6faa881543e0c9216ba18b78d434",
+      "trigger": "compile",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-29T02-36-04.558Z-cd62d5c1-4a29-43ec-bcd6-f271b5b34c7a",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T02:36:04.558Z",
+      "sizeBytes": 1920,
+      "revision": "4125f12a9fc52597787414e29498efd0fda1569ee30106475f9ca2845ffc9ffb",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-29T02-38-13.828Z-427c91f4-edca-4ca1-8474-7265a2d96724",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:38:13.828Z",
+      "sizeBytes": 0,
+      "revision": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trigger": "ai",
+      "pinned": true,
+      "label": "Pre-AI review changes"
+    },
+    {
+      "id": "2026-10-29T02-39-06.935Z-a53bb217-df1b-45a6-acb9-5bb9225b6d16",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:39:06.935Z",
+      "sizeBytes": 850,
+      "revision": "d6a01b93e975c5ec517d12c56cebb1ef920ed27ac23c0fbeb1eed5b4bd30d321",
+      "trigger": "ai",
+      "pinned": true,
+      "label": "Pre-AI review changes"
+    },
+    {
+      "id": "2026-10-29T02-39-35.383Z-a1e64569-cbef-410d-9d10-b370bfe41bb4",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:39:35.383Z",
+      "sizeBytes": 1090,
+      "revision": "f59ec3c650e037af9b69c6975c8b477ad22a82f80a07aee82cb14ce219f94e89",
+      "trigger": "ai",
+      "pinned": true,
+      "label": "Pre-AI review changes"
+    },
+    {
+      "id": "2026-10-29T02-39-58.967Z-187496d1-1e5e-4866-b34c-2c78a448584e",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:39:58.967Z",
+      "sizeBytes": 1095,
+      "revision": "99e69895369d16669981c3f171c431a7fa36a9b20f624c7a81606068d935ece0",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-29T02-44-22.351Z-6dbec8a1-7369-484d-8524-a4d2eab9ae7f",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:44:22.351Z",
+      "sizeBytes": 0,
+      "revision": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-29T02-52-50.963Z-f2f0d73b-2394-48b6-8924-fd8fe2933710",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:52:50.963Z",
+      "sizeBytes": 0,
+      "revision": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trigger": "ai",
+      "pinned": true,
+      "label": "Pre-AI review changes"
+    },
+    {
+      "id": "2026-10-29T02-52-53.575Z-cfa897c7-cbe6-4eee-bfef-aa31a034a89e",
+      "path": "long.tex",
+      "createdAt": "2026-10-29T02:52:53.575Z",
+      "sizeBytes": 3725,
+      "revision": "9012a3055070249b46212059d380a55022393b8bcab9bfbeb3a4de63d66f34fd",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-29T03-25-23.789Z-2fb80cd0-0692-4272-842d-abda6f9b4aee",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T03:25:23.789Z",
+      "sizeBytes": 1912,
+      "revision": "6c2b610204fd9b45ffe920b94599ebd9a5868239102e600d41720b03eb6a006b",
+      "trigger": "save",
+      "pinned": false,
+      "label": null
+    },
+    {
+      "id": "2026-10-29T03-28-28.499Z-424cf09c-2bf0-4904-91dc-8d734dcf582b",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T03:28:28.499Z",
+      "sizeBytes": 1912,
+      "revision": "6c2b610204fd9b45ffe920b94599ebd9a5868239102e600d41720b03eb6a006b",
+      "trigger": "manual",
+      "pinned": true,
+      "label": "Before merging saved collaboration updates",
+      "purpose": "recovery"
+    },
+    {
+      "id": "2026-10-29T03-35-12.391Z-e7078bde-7a28-43ab-b533-13face6c2959",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T03:35:12.391Z",
+      "sizeBytes": 1912,
+      "revision": "6c2b610204fd9b45ffe920b94599ebd9a5868239102e600d41720b03eb6a006b",
+      "trigger": "manual",
+      "pinned": true,
+      "label": "Before merging saved collaboration updates",
+      "purpose": "recovery"
+    },
+    {
+      "id": "2026-10-29T03-47-21.442Z-0c13898a-8d79-4a03-875c-72fcdea4a040",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T03:47:21.442Z",
+      "sizeBytes": 1912,
+      "revision": "6c2b610204fd9b45ffe920b94599ebd9a5868239102e600d41720b03eb6a006b",
+      "trigger": "manual",
+      "pinned": true,
+      "label": "Before merging saved collaboration updates",
+      "purpose": "recovery"
+    },
+    {
+      "id": "2026-10-29T03-55-46.686Z-f1afb2ef-8434-4030-812b-834f58d00d84",
+      "path": "demo.tex",
+      "createdAt": "2026-10-29T03:55:46.686Z",
+      "sizeBytes": 1912,
+      "revision": "6c2b610204fd9b45ffe920b94599ebd9a5868239102e600d41720b03eb6a006b",
+      "trigger": "manual",
+      "pinned": true,
+      "label": "Before merging saved collaboration updates",
+      "purpose": "recovery"
     }
   ]
 }

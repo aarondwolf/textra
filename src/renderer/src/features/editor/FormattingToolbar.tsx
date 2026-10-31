@@ -12,8 +12,9 @@ import {
   TextItalic,
 } from '@phosphor-icons/react';
 import * as RadioGroup from '@radix-ui/react-radio-group';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { TexEditorMode } from '../../../../shared/api';
-import { MarkdownLogo } from '../../icons';
+import { Ellipsis, MarkdownLogo } from '../../icons';
 import { DropdownMenu } from '../../components/DropdownMenu';
 import { TooltipButton } from '../../components/Button';
 
@@ -63,9 +64,53 @@ export default function FormattingToolbar({
   texEditorMode?: TexEditorMode;
   onTexEditorModeChange?: (mode: TexEditorMode) => void;
 }) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const fixedRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const hasSave = Boolean(onSave);
+  const hasSaveAs = Boolean(onSaveAs);
+  const hasFontSize = typeof fontSize === 'number' && Boolean(onFontSizeChange);
+  const hasWrap = Boolean(onToggleWrap);
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    const actions = actionsRef.current;
+    const fixed = fixedRef.current;
+    if (!toolbar || !actions || !fixed) return;
+    const measure = () => {
+      const style = getComputedStyle(toolbar);
+      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const gap = parseFloat(style.columnGap) || 0;
+      const available = toolbar.clientWidth - padding - fixed.offsetWidth - gap;
+      setCollapsed(actions.scrollWidth > available + 1);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar);
+    observer.observe(actions);
+    observer.observe(fixed);
+    for (const child of actions.children) observer.observe(child);
+    measure();
+    return () => observer.disconnect();
+  }, [hasSave, hasSaveAs, hasFontSize, hasWrap]);
+
+  const fontSizes = [...new Set([12, 14, 16, 18, 20, 24, ...(fontSize ? [fontSize] : [])])].sort(
+    (a, b) => a - b,
+  );
+
   return (
-    <div className="editor-format-toolbar" role="toolbar" aria-label="LaTeX formatting">
-      <div className="editor-format-actions">
+    <div
+      ref={toolbarRef}
+      className="editor-format-toolbar"
+      role="toolbar"
+      aria-label="LaTeX formatting"
+    >
+      <div
+        ref={actionsRef}
+        className={`editor-format-actions${collapsed ? ' is-collapsed' : ''}`}
+        aria-hidden={collapsed || undefined}
+        inert={collapsed}
+      >
         <TooltipButton
           type="button"
           aria-label="Bold"
@@ -194,9 +239,7 @@ export default function FormattingToolbar({
             className="editor-format-font-size"
             fullWidth={false}
             value={String(fontSize)}
-            items={[...new Set([12, 14, 16, 18, 20, 24, fontSize])]
-              .sort((a, b) => a - b)
-              .map((size) => ({ value: String(size), label: `${size}px` }))}
+            items={fontSizes.map((size) => ({ value: String(size), label: `${size}px` }))}
             onChange={(value) => onFontSizeChange(Number(value))}
           />
         )}
@@ -214,7 +257,131 @@ export default function FormattingToolbar({
           </TooltipButton>
         )}
       </div>
-      <div className="editor-format-fixed">
+      {collapsed && (
+        <DropdownMenu
+          ariaLabel="More formatting actions"
+          title="More formatting actions"
+          className="editor-format-overflow"
+          mode="actions"
+          customTrigger={
+            <TooltipButton
+              type="button"
+              className="editor-format-overflow-button"
+              aria-label="More formatting actions"
+              title="More formatting actions"
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              <Ellipsis size={16} />
+            </TooltipButton>
+          }
+          items={[
+            {
+              group: 'Formatting',
+              items: [
+                {
+                  value: 'bold',
+                  label: 'Bold',
+                  disabled: formattingDisabled,
+                  onClick: () => dispatch({ command: 'bold' }),
+                },
+                {
+                  value: 'italic',
+                  label: 'Italic',
+                  disabled: formattingDisabled,
+                  onClick: () => dispatch({ command: 'italic' }),
+                },
+                {
+                  value: 'enumerate',
+                  label: 'Numbered list',
+                  disabled: formattingDisabled,
+                  onClick: () => dispatch({ command: 'enumerate' }),
+                },
+                {
+                  value: 'itemize',
+                  label: 'Bulleted list',
+                  disabled: formattingDisabled,
+                  onClick: () => dispatch({ command: 'itemize' }),
+                },
+                {
+                  value: 'figure',
+                  label: 'Insert figure',
+                  disabled: formattingDisabled,
+                  onClick: () => dispatch({ command: 'figure' }),
+                },
+                {
+                  value: 'table',
+                  label: 'Insert table',
+                  disabled: formattingDisabled,
+                  onClick: () => dispatch({ command: 'table' }),
+                },
+              ],
+            },
+            {
+              group: 'Headings',
+              items: (
+                ['Section', 'Subsection', 'Subsubsection', 'Paragraph', 'Subparagraph'] as const
+              ).map((label, index) => ({
+                value: `heading-${index + 1}`,
+                label,
+                disabled: formattingDisabled,
+                onClick: () =>
+                  dispatch({ command: 'heading', level: (index + 1) as 1 | 2 | 3 | 4 | 5 }),
+              })),
+            },
+            ...(onSave || onSaveAs
+              ? [
+                  {
+                    group: 'File',
+                    items: [
+                      ...(onSave
+                        ? [
+                            {
+                              value: 'save',
+                              label: 'Save file',
+                              disabled: disabled || saveDisabled,
+                              onClick: onSave,
+                            },
+                          ]
+                        : []),
+                      ...(onSaveAs
+                        ? [{ value: 'save-as', label: 'Save file as', disabled, onClick: onSaveAs }]
+                        : []),
+                    ],
+                  },
+                ]
+              : []),
+            ...(typeof fontSize === 'number' && onFontSizeChange
+              ? [
+                  {
+                    group: 'Font size',
+                    items: fontSizes.map((size) => ({
+                      value: `font-${size}`,
+                      label: `${size}px`,
+                      description: size === fontSize ? 'Current' : undefined,
+                      onClick: () => onFontSizeChange(size),
+                    })),
+                  },
+                ]
+              : []),
+            ...(onToggleWrap
+              ? [
+                  {
+                    group: 'Editor',
+                    items: [
+                      {
+                        value: 'wrap',
+                        label: 'Toggle word wrap',
+                        description: wrap ? 'On' : 'Off',
+                        onClick: onToggleWrap,
+                      },
+                    ],
+                  },
+                ]
+              : []),
+          ]}
+        />
+      )}
+      <div ref={fixedRef} className="editor-format-fixed">
         {texEditorMode && onTexEditorModeChange && (
           <RadioGroup.Root
             className="editor-mode-control"

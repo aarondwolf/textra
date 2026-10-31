@@ -709,9 +709,15 @@ export function SourceEditor({
   const texlabRef = useRef<TexlabEditorAdapter | undefined>(texlab);
   const bibliographyEntriesRef = useRef(bibliographyEntries);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { autoSave, autoSaveDelayMs, editorMinimap, editorFont, texEditorMode } = useUI(
-    (state) => state.preferences,
-  );
+  const {
+    autoSave,
+    autoSaveDelayMs,
+    editorMinimap,
+    editorFont,
+    texEditorMode,
+    visualIgnoredCommands,
+    visualIgnoredEnvironments,
+  } = useUI((state) => state.preferences);
   const updatePreferences = useUI((state) => state.updatePreferences);
   const wantsVisual = isTexPath(activePath) && texEditorMode === 'visual' && !temporaryCode;
   const visualVisible = wantsVisual && visualReady && visualSnapshot?.path === activePath;
@@ -2321,6 +2327,8 @@ export function SourceEditor({
               readOnly={readOnly || aiSuppressed || collaborationPreparing}
               visible={visualVisible}
               fontSize={fontSize}
+              ignoredCommands={visualIgnoredCommands}
+              ignoredEnvironments={visualIgnoredEnvironments}
               initialViewState={visualViews.current.get(
                 `${visualSnapshot.projectId}\0${visualSnapshot.path}`,
               )}

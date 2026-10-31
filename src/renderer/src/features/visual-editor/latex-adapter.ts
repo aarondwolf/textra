@@ -1,5 +1,9 @@
 import { parseMinimal } from '@unified-latex/unified-latex-util-parse';
 import { diffChars } from 'diff';
+import {
+  DEFAULT_VISUAL_IGNORED_COMMANDS,
+  DEFAULT_VISUAL_IGNORED_ENVIRONMENTS,
+} from '../../../../shared/api';
 
 /** The adapter works in LF-normalized UTF-16 offsets, like the renderer's editor bridge. */
 export interface VisualNode {
@@ -18,6 +22,10 @@ export interface SourceRange {
   from: number;
   to: number;
 }
+export interface VisualImportOptions {
+  ignoredCommands?: readonly string[];
+  ignoredEnvironments?: readonly string[];
+}
 export interface VisualBlock extends SourceRange {
   id: string;
   node: VisualNode;
@@ -35,6 +43,7 @@ interface ParsedNode {
   type: string;
   content?: string | ParsedNode[];
   env?: string;
+  sameline?: boolean;
   position?: { start?: { offset?: number }; end?: { offset?: number } };
 }
 
@@ -52,7 +61,123 @@ const marks: Record<string, string> = {
   textit: 'italic',
   emph: 'italic',
   texttt: 'code',
+  underline: 'underline',
+  textsc: 'smallCaps',
+  textsuperscript: 'superscript',
+  textsubscript: 'subscript',
 };
+const markCommands: Record<string, string> = {
+  bold: 'textbf',
+  italic: 'textit',
+  code: 'texttt',
+  underline: 'underline',
+  smallCaps: 'textsc',
+  superscript: 'textsuperscript',
+  subscript: 'textsubscript',
+};
+const symbolCommands: Record<string, string> = {
+  LaTeX: 'LaTeX',
+  TeX: 'TeX',
+  textemdash: '—',
+  textendash: '–',
+  textcopyright: '©',
+  textregistered: '®',
+  texttrademark: '™',
+  textbullet: '•',
+  textellipsis: '…',
+  dots: '…',
+  ldots: '…',
+  pounds: '£',
+  textsterling: '£',
+  texteuro: '€',
+  textdegree: '°',
+  textsection: '§',
+  textparagraph: '¶',
+  textquotedbl: '"',
+  textquoteleft: '‘',
+  textquoteright: '’',
+  textquotedblleft: '“',
+  textquotedblright: '”',
+  ae: 'æ',
+  AE: 'Æ',
+  oe: 'œ',
+  OE: 'Œ',
+  aa: 'å',
+  AA: 'Å',
+  o: 'ø',
+  O: 'Ø',
+  ss: 'ß',
+  l: 'ł',
+  L: 'Ł',
+  i: 'ı',
+  j: 'ȷ',
+};
+const accentCommands: Record<string, string> = {
+  "'": '\u0301',
+  '`': '\u0300',
+  '"': '\u0308',
+  '^': '\u0302',
+  '~': '\u0303',
+  c: '\u0327',
+  '=': '\u0304',
+  v: '\u030c',
+  u: '\u0306',
+  H: '\u030b',
+  r: '\u030a',
+  '.': '\u0307',
+};
+const referenceCommands = new Set([
+  'ref',
+  'eqref',
+  'pageref',
+  'autoref',
+  'autopageref',
+  'nameref',
+  'vref',
+  'vpageref',
+  'cref',
+  'cpageref',
+  'crefrange',
+  'cpagerefrange',
+  'vrefrange',
+  'vpagerefrange',
+]);
+const citationCommands = new Set([
+  'cite',
+  'citep',
+  'citet',
+  'citealt',
+  'citealp',
+  'citeauthor',
+  'citeyear',
+  'citeyearpar',
+  'parencite',
+  'textcite',
+  'autocite',
+  'footcite',
+  'smartcite',
+  'supercite',
+  'fullcite',
+  'nocite',
+]);
+const twoArgumentReferences = new Set(['crefrange', 'cpagerefrange', 'vrefrange', 'vpagerefrange']);
+const otherKnownCommands = new Set([
+  'label',
+  'footnote',
+  'input',
+  'include',
+  'subfile',
+  'subfileinclude',
+  'href',
+  'url',
+]);
+function isProseGlyph(node: VisualNode): boolean {
+  return (
+    node.type === 'opaqueInline' &&
+    (node.attrs?.raw === '~' ||
+      (typeof node.attrs?.visualText === 'string' && node.attrs.visualText.length > 0))
+  );
+}
 const escapes: Record<string, string> = {
   '%': '%',
   $: '$',
@@ -97,11 +222,190 @@ function bounds(node: ParsedNode | undefined, source: string): SourceRange | nul
     return null;
   return { from, to };
 }
+function commentBounds(node: ParsedNode, source: string): SourceRange | null {
+  const range = bounds(node, source);
+  if (!range) return null;
+  return node.type === 'comment' && source[range.to] === '\n'
+    ? { from: range.from, to: range.to + 1 }
+    : range;
+}
 function idOf(node: VisualNode): string | undefined {
   return typeof node.attrs?.sourceId === 'string' ? node.attrs.sourceId : undefined;
 }
 function children(node: ParsedNode): ParsedNode[] {
   return Array.isArray(node.content) ? node.content : [];
+}
+function environmentName(node: ParsedNode): string | undefined {
+  return typeof node.env === 'string'
+    ? node.env
+    : (node.env as unknown as { content?: string } | undefined)?.content;
+}
+
+/** Remove equation metadata for rendering only; the original source is never changed. */
+function mathForDisplay(latex: string): string | null {
+  try {
+    const ast = parseMinimal(latex) as unknown as ParsedNode;
+    const removals: SourceRange[] = [];
+    const walk = (nodes: ParsedNode[]): boolean => {
+      for (let index = 0; index < nodes.length; index++) {
+        const node = nodes[index];
+        const span = bounds(node, latex);
+        if (!span) return false;
+        if (
+          node.type === 'macro' &&
+          typeof node.content === 'string' &&
+          ['label', 'tag', 'notag', 'nonumber'].includes(node.content)
+        ) {
+          let end = span.to;
+          if (node.content === 'label' || node.content === 'tag') {
+            let nextIndex = index + 1;
+            let next = nodes[nextIndex];
+            let nextSpan = bounds(next, latex);
+            if (
+              node.content === 'tag' &&
+              nextSpan?.from === end &&
+              latex.slice(nextSpan.from, nextSpan.to) === '*'
+            ) {
+              end = nextSpan.to;
+              next = nodes[++nextIndex];
+              nextSpan = bounds(next, latex);
+            }
+            if (next?.type === 'whitespace' && nextSpan?.from === end) {
+              end = nextSpan.to;
+              next = nodes[++nextIndex];
+              nextSpan = bounds(next, latex);
+            }
+            if (
+              next?.type !== 'group' ||
+              !nextSpan ||
+              nextSpan.from !== end ||
+              latex[nextSpan.from] !== '{' ||
+              latex[nextSpan.to - 1] !== '}'
+            )
+              return false;
+            end = nextSpan.to;
+            index = nextIndex;
+          }
+          removals.push({ from: span.from, to: end });
+        } else if (node.type !== 'comment' && Array.isArray(node.content) && !walk(node.content))
+          return false;
+      }
+      return true;
+    };
+    if (!walk(children(ast))) return null;
+    // Whitespace is ignored in math, but prevents removing a label from joining
+    // a preceding control word with following letters (\alpha\label{x}b).
+    return removals
+      .sort((a, b) => b.from - a.from)
+      .reduce((value, range) => value.slice(0, range.from) + ' ' + value.slice(range.to), latex);
+  } catch {
+    return null;
+  }
+}
+interface GlyphMatch {
+  from: number;
+  to: number;
+  text: string;
+  last: number;
+  remainder?: string;
+  remainderFrom?: number;
+  remainderTo?: number;
+}
+/** Recognize only fixed, conventional text symbols and simple accents. */
+function proseGlyph(nodes: ParsedNode[], index: number, source: string): GlyphMatch | null {
+  const node = nodes[index];
+  const span = bounds(node, source);
+  if (!span || node?.type !== 'macro' || typeof node.content !== 'string') return null;
+  const name = node.content;
+  if (Object.hasOwn(symbolCommands, name)) {
+    let to = span.to;
+    let last = index;
+    const next = nodes[index + 1];
+    const nextSpan = bounds(next, source);
+    if (
+      nextSpan?.from === to &&
+      next?.type === 'group' &&
+      source.slice(nextSpan.from, nextSpan.to) === '{}'
+    ) {
+      to = nextSpan.to;
+      last++;
+    } else if (nextSpan?.from === to && next?.type === 'whitespace') {
+      // TeX ignores whitespace following a control word. Keep it with the symbol.
+      to = nextSpan.to;
+      last++;
+    }
+    return { from: span.from, to, text: symbolCommands[name], last };
+  }
+  const combining = accentCommands[name];
+  if (!combining) return null;
+  let nextIndex = index + 1;
+  let next = nodes[nextIndex];
+  let nextSpan = bounds(next, source);
+  if (/^[A-Za-z]$/.test(name) && next?.type === 'whitespace' && nextSpan?.from === span.to) {
+    next = nodes[++nextIndex];
+    nextSpan = bounds(next, source);
+  }
+  if (!next || !nextSpan) return null;
+  let base: string;
+  let to = nextSpan.to;
+  let remainder = '';
+  let remainderFrom: number | undefined;
+  let remainderTo: number | undefined;
+  if (next.type === 'group' && source[nextSpan.from] === '{' && source[nextSpan.to - 1] === '}') {
+    const group = children(next);
+    if (group.length !== 1) return null;
+    if (
+      group[0].type === 'string' &&
+      typeof group[0].content === 'string' &&
+      [...group[0].content].length === 1
+    )
+      base = group[0].content;
+    else if (group[0].type === 'macro' && (group[0].content === 'i' || group[0].content === 'j'))
+      base = group[0].content;
+    else return null;
+  } else if (next.type === 'string' && typeof next.content === 'string') {
+    base = [...next.content][0] ?? '';
+    if (!base) return null;
+    to = nextSpan.from + base.length;
+    remainder = source.slice(to, nextSpan.to);
+    if (remainder) {
+      remainderFrom = to;
+      remainderTo = nextSpan.to;
+    }
+  } else return null;
+  const text = (base + combining).normalize('NFC');
+  return {
+    from: span.from,
+    to,
+    text,
+    last: nextIndex,
+    ...(remainder ? { remainder, remainderFrom, remainderTo } : {}),
+  };
+}
+/** Derive a readable link label only from supported text and formatting. */
+function linkText(nodes: ParsedNode[], source: string): string | null {
+  let output = '';
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index];
+    const span = bounds(node, source);
+    if (!span) return null;
+    if (node.type === 'string') output += source.slice(span.from, span.to);
+    else if (node.type === 'whitespace') output += ' ';
+    else if (node.type === 'macro' && typeof node.content === 'string') {
+      const glyph = proseGlyph(nodes, index, source);
+      if (glyph) {
+        output += glyph.text + (glyph.remainder ?? '');
+        index = glyph.last;
+      } else if (Object.hasOwn(escapes, node.content)) output += escapes[node.content];
+      else if (Object.hasOwn(marks, node.content) && nodes[index + 1]?.type === 'group') {
+        const text = linkText(children(nodes[index + 1]), source);
+        if (text === null) return null;
+        output += text;
+        index++;
+      } else return null;
+    } else return null;
+  }
+  return output;
 }
 function textNode(text: string, active: VisualNode['marks'] = []): VisualNode {
   return { type: 'text', text, ...(active.length ? { marks: active } : {}) };
@@ -116,17 +420,32 @@ function addText(out: VisualNode[], text: string, active: VisualNode['marks'] = 
 
 class Importer {
   private next = 0;
+  private readonly ignoredCommands: Set<string>;
+  private readonly ignoredEnvironments: Set<string>;
   readonly ranges: Record<string, SourceRange> = Object.create(null) as Record<string, SourceRange>;
-  constructor(readonly source: string) {}
+  constructor(
+    readonly source: string,
+    options: VisualImportOptions = {},
+  ) {
+    this.ignoredCommands = new Set(options.ignoredCommands ?? DEFAULT_VISUAL_IGNORED_COMMANDS);
+    this.ignoredEnvironments = new Set(
+      options.ignoredEnvironments ?? DEFAULT_VISUAL_IGNORED_ENVIRONMENTS,
+    );
+  }
   id(range?: SourceRange): string {
     const id = `s${this.next++}`;
     if (range) this.ranges[id] = range;
     return id;
   }
-  opaque(range: SourceRange, label: string, block = false): VisualNode {
+  opaque(range: SourceRange, label: string, block = false, hidden = false): VisualNode {
     return {
       type: block ? 'opaqueBlock' : 'opaqueInline',
-      attrs: { sourceId: this.id(range), raw: this.source.slice(range.from, range.to), label },
+      attrs: {
+        sourceId: this.id(range),
+        raw: this.source.slice(range.from, range.to),
+        label,
+        ...(hidden ? { hidden: true } : {}),
+      },
     };
   }
   math(node: ParsedNode, block: boolean): VisualNode | null {
@@ -142,6 +461,9 @@ class Importer {
           : '$';
     const close = open === '\\(' ? '\\)' : open === '\\[' ? '\\]' : open;
     if (!raw.endsWith(close) || raw.length < open.length + close.length) return null;
+    const latex = raw.slice(open.length, -close.length);
+    const renderLatex = mathForDisplay(latex);
+    if (renderLatex === null) return null;
     return {
       type: block ? 'blockMath' : 'inlineMath',
       attrs: {
@@ -149,37 +471,75 @@ class Importer {
         raw,
         open,
         close,
-        latex: raw.slice(open.length, -close.length),
+        latex,
+        renderLatex,
       },
     };
   }
   equation(node: ParsedNode): VisualNode | null {
-    const env =
-      typeof node.env === 'string'
-        ? node.env
-        : (node.env as unknown as { content?: string } | undefined)?.content;
+    const env = environmentName(node);
     if (
       (node.type !== 'environment' && node.type !== 'mathenv') ||
-      (env !== 'equation' && env !== 'equation*')
+      !env ||
+      ![
+        'math',
+        'displaymath',
+        'equation',
+        'equation*',
+        'align',
+        'align*',
+        'alignat',
+        'alignat*',
+        'flalign',
+        'flalign*',
+        'gather',
+        'gather*',
+        'multline',
+        'multline*',
+        'eqnarray',
+        'eqnarray*',
+      ].includes(env)
     )
       return null;
     const range = bounds(node, this.source);
     if (!range) return null;
     const raw = this.source.slice(range.from, range.to);
-    const open = `\\begin{${env}}`;
+    let open = `\\begin{${env}}`;
     const close = `\\end{${env}}`;
     if (!raw.startsWith(open) || !raw.endsWith(close)) return null;
-    const latex = raw.slice(open.length, -close.length);
-    if (/^\s*\[/.test(latex) || /\\(?:label|tag|notag|nonumber|begin|end)\b/.test(latex))
-      return null;
-    return { type: 'blockMath', attrs: { sourceId: this.id(range), raw, open, close, latex } };
+    let latex = raw.slice(open.length, -close.length);
+    let alignColumns = '';
+    if (env === 'alignat' || env === 'alignat*') {
+      const argument = /^(\s*\{\s*([1-9]\d{0,2})\s*\})/.exec(latex);
+      if (!argument) return null;
+      open += argument[1];
+      alignColumns = argument[2];
+      latex = latex.slice(argument[1].length);
+    }
+    const stripped = mathForDisplay(latex);
+    if (stripped === null) return null;
+    const multiline = /^(?:align|flalign|eqnarray)/.test(env)
+      ? 'aligned'
+      : /^(?:gather|multline)/.test(env)
+        ? 'gathered'
+        : null;
+    const renderLatex = env.startsWith('alignat')
+      ? `\\begin{alignedat}{${alignColumns}}${stripped}\\end{alignedat}`
+      : multiline
+        ? `\\begin{${multiline}}${stripped}\\end{${multiline}}`
+        : stripped;
+    return {
+      type: env === 'math' ? 'inlineMath' : 'blockMath',
+      attrs: { sourceId: this.id(range), raw, open, close, latex, renderLatex },
+    };
   }
   /** Gather only balanced, immediately attached arguments. Never guess macro expansion. */
-  macroEnd(nodes: ParsedNode[], index: number): number {
+  macroEnd(nodes: ParsedNode[], index: number, requiredGroups = 1): number {
     const initial = bounds(nodes[index], this.source);
     if (!initial) return index;
     let i = index;
     let end = initial.to;
+    let groups = 0;
     while (i + 1 < nodes.length) {
       const next = nodes[i + 1];
       const range = bounds(next, this.source);
@@ -205,6 +565,8 @@ class Importer {
       if (next.type === 'group') {
         i++;
         end = range.to;
+        groups++;
+        if (groups === requiredGroups) break;
         continue;
       }
       if (this.source[range.from] === '[') {
@@ -240,36 +602,76 @@ class Importer {
       const raw = this.source.slice(range.from, range.to);
       if (node.type === 'string') {
         // Unmatched delimiters are not safe to reinterpret as ordinary prose.
-        const ligature = raw.length === 1 && "-`'".includes(raw) && this.source[range.to] === raw;
-        if (ligature) {
-          let last = i + 1;
-          while (
-            last + 1 < nodes.length &&
-            bounds(nodes[last + 1], this.source)?.from === bounds(nodes[last], this.source)?.to &&
-            this.source.slice(
-              bounds(nodes[last + 1], this.source)!.from,
-              bounds(nodes[last + 1], this.source)!.to,
-            ) === raw
-          )
-            last++;
-          out.push(
-            this.opaque(
-              { from: range.from, to: bounds(nodes[last], this.source)!.to },
-              'LaTeX punctuation',
-            ),
-          );
-          i = last;
-        } else if (/[{}$~&_^#]/.test(raw) || /--|``|''/.test(raw))
-          out.push(this.opaque(range, 'LaTeX'));
+        if (raw === '~') {
+          const space = this.opaque(range, 'Nonbreaking space');
+          if (active.length) space.marks = active;
+          out.push(space);
+        } else if (/[{}$~&_^#]/.test(raw)) out.push(this.opaque(range, 'LaTeX'));
         else addText(out, raw, active);
       } else if (node.type === 'whitespace') addText(out, ' ', active);
-      else if (node.type === 'comment') out.push(this.opaque(range, 'Comment'));
+      else if (node.type === 'comment')
+        out.push(
+          this.opaque(
+            commentBounds(node, this.source) ?? range,
+            node.sameline === false ? 'Comments' : 'Comment',
+            false,
+            node.sameline === false,
+          ),
+        );
       else if (node.type === 'inlinemath') {
         const math = this.math(node, false);
         out.push(math ?? this.opaque(range, 'Equation'));
+      } else if (node.type === 'mathenv' && environmentName(node) === 'math') {
+        const math = this.equation(node);
+        out.push(math ?? this.opaque(range, 'Equation'));
       } else if (node.type === 'macro' && typeof node.content === 'string') {
         const name = node.content;
-        if (name === '\\' || name === 'newline') out.push({ type: 'hardBreak' });
+        if (this.ignoredCommands.has(name)) {
+          let end = range.to;
+          const next = nodes[i + 1];
+          const nextRange = bounds(next, this.source);
+          const candidateIndex =
+            next?.type === 'whitespace' && nextRange?.from === end ? i + 2 : i + 1;
+          const candidate = nodes[candidateIndex];
+          const candidateRange = bounds(candidate, this.source);
+          const candidateRaw = candidateRange
+            ? this.source.slice(candidateRange.from, candidateRange.to)
+            : '';
+          if (
+            (candidate?.type === 'group' && candidateRaw !== '{}') ||
+            candidateRaw.startsWith('[')
+          ) {
+            const last = nodes.length - 1;
+            const tail = bounds(nodes[last], this.source);
+            if (!tail) return null;
+            out.push(this.opaque({ from: range.from, to: tail.to }, name));
+            i = last;
+            continue;
+          }
+          if (
+            nextRange?.from === end &&
+            next?.type === 'group' &&
+            this.source.slice(nextRange.from, nextRange.to) === '{}'
+          ) {
+            end = nextRange.to;
+            i++;
+          } else if (nextRange?.from === end && next?.type === 'whitespace') {
+            // Whitespace after a control word is part of the TeX token delimiter.
+            end = nextRange.to;
+            i++;
+          }
+          out.push(this.opaque({ from: range.from, to: end }, 'Ignored source', false, true));
+          continue;
+        }
+        const glyph = proseGlyph(nodes, i, this.source);
+        if (glyph) {
+          const atom = this.opaque({ from: glyph.from, to: glyph.to }, glyph.text);
+          atom.attrs = { ...atom.attrs, visualText: glyph.text };
+          if (active.length) atom.marks = active;
+          out.push(atom);
+          if (glyph.remainder) addText(out, glyph.remainder, active);
+          i = glyph.last;
+        } else if (name === '\\' || name === 'newline') out.push({ type: 'hardBreak' });
         else if (Object.hasOwn(escapes, name)) {
           addText(out, escapes[name], active);
           const next = nodes[i + 1];
@@ -307,19 +709,51 @@ class Importer {
             out.push(this.opaque(range, name));
           }
         } else {
+          const normalized = name.toLowerCase();
           const known =
-            /^(?:cite|citep|citet|citeauthor|citeyear|parencite|textcite|ref|eqref|pageref|autoref|label|footnote|input|include|subfile)$/i.test(
-              name,
-            );
-          if (!known) return null;
-          const last = this.macroEnd(nodes, i);
-          if (!nodes.slice(i + 1, last + 1).some((part) => part.type === 'group')) return null;
+            referenceCommands.has(normalized) ||
+            citationCommands.has(normalized) ||
+            otherKnownCommands.has(normalized);
+          if (!known) {
+            // The unknown macro may consume unbraced arguments or change the
+            // interpretation of following text. Keep the complete remaining
+            // paragraph together, while leaving preceding prose editable.
+            const last = nodes.length - 1;
+            const end = bounds(nodes[last], this.source);
+            if (!end) return null;
+            out.push(this.opaque({ from: range.from, to: end.to }, name));
+            i = last;
+            continue;
+          }
+          const expectedGroups =
+            twoArgumentReferences.has(normalized) || normalized === 'href' ? 2 : 1;
+          const last = this.macroEnd(nodes, i, expectedGroups);
+          const groups = nodes.slice(i + 1, last + 1).filter((part) => part.type === 'group');
+          if (groups.length !== expectedGroups) return null;
           const end = bounds(nodes[last], this.source);
           if (!end) return null;
           const full = { from: range.from, to: end.to };
-          const value = this.source.slice(full.from, full.to);
-          const key = /\{([^{}]*)\}$/.exec(value)?.[1];
-          const label = known && key ? `${name}: ${key}` : name;
+          const groupRanges = groups.map((group) => bounds(group, this.source));
+          if (
+            groupRanges.some(
+              (group) =>
+                !group || this.source[group.from] !== '{' || this.source[group.to - 1] !== '}',
+            )
+          )
+            return null;
+          const keys = groupRanges.map((group) =>
+            this.source.slice(group!.from + 1, group!.to - 1),
+          );
+          const linkLabel =
+            normalized === 'href' || normalized === 'url'
+              ? linkText(children(groups[normalized === 'href' ? 1 : 0]), this.source)
+              : null;
+          const label =
+            normalized === 'href' || normalized === 'url'
+              ? `${name}: ${linkLabel || 'Link'}`
+              : keys.every((key) => key && !/[{}]/.test(key))
+                ? `${name}: ${keys.join('–')}`
+                : name;
           out.push(this.opaque(full, label));
           i = last;
         }
@@ -385,6 +819,57 @@ class Importer {
       range,
     };
   }
+  /** Identify a balanced optional argument using the parser's original token ranges. */
+  optionalArgument(nodes: ParsedNode[], first: number): { last: number; raw: string } | null {
+    const start = bounds(nodes[first], this.source);
+    if (!start || this.source.slice(start.from, start.to) !== '[') return null;
+    let depth = 0;
+    let end = start.from;
+    for (let index = first; index < nodes.length; index++) {
+      const part = nodes[index];
+      const span = bounds(part, this.source);
+      if (!span || span.from !== end) return null;
+      // Groups and macros are complete TeX units; brackets inside them are not delimiters.
+      if (part.type === 'string') {
+        for (const char of this.source.slice(span.from, span.to)) {
+          if (char === '[') depth++;
+          else if (char === ']') depth--;
+          if (depth < 0) return null;
+        }
+      }
+      end = span.to;
+      if (depth === 0) return { last: index, raw: this.source.slice(start.from, end) };
+    }
+    return null;
+  }
+  /** Group neighboring protected blocks while keeping the exact source gap. */
+  groupOpaqueBlocks(blocks: VisualBlock[]): VisualBlock[] {
+    const grouped: VisualBlock[] = [];
+    for (const block of blocks) {
+      const previous = grouped.at(-1);
+      if (
+        previous?.node.type === 'opaqueBlock' &&
+        block.node.type === 'opaqueBlock' &&
+        Boolean(previous.node.attrs?.hidden) === Boolean(block.node.attrs?.hidden) &&
+        (previous.node.attrs?.label === 'Comments') === (block.node.attrs?.label === 'Comments') &&
+        previous.to <= block.from &&
+        /^\s*$/.test(this.source.slice(previous.to, block.from))
+      ) {
+        previous.to = block.to;
+        previous.node = {
+          ...previous.node,
+          attrs: {
+            ...previous.node.attrs,
+            raw: this.source.slice(previous.from, previous.to),
+            label: previous.node.attrs?.label === 'Comments' ? 'Comments' : 'LaTeX source',
+          },
+        };
+        this.ranges[previous.id] = { from: previous.from, to: previous.to };
+        delete this.ranges[block.id];
+      } else grouped.push(block);
+    }
+    return grouped;
+  }
   list(node: ParsedNode): VisualNode | null {
     const range = bounds(node, this.source);
     if (
@@ -397,45 +882,92 @@ class Importer {
     let pending: ParsedNode[] = [];
     let itemStart = -1;
     let started = false;
+    let latexOptions = '';
     const flush = () => {
       while (pending[0]?.type === 'whitespace') pending.shift();
       while (pending.at(-1)?.type === 'whitespace') pending.pop();
-      if (pending[0] && this.source[bounds(pending[0], this.source)?.from ?? -1] === '[')
-        return false;
-      const parts: VisualNode[] = [];
+      const originalItemEnd = bounds(pending.at(-1), this.source)?.to ?? itemStart + 5;
+      let itemLabel = '';
+      let textStart = itemStart + 5;
+      if (pending[0] && this.source[bounds(pending[0], this.source)?.from ?? -1] === '[') {
+        const label = this.optionalArgument(pending, 0);
+        if (!label) return false;
+        itemLabel = label.raw;
+        textStart = bounds(pending[label.last], this.source)?.to ?? textStart;
+        pending.splice(0, label.last + 1);
+        while (pending[0]?.type === 'whitespace') pending.shift();
+      }
+      let parts: VisualNode[] = [];
       let prose: ParsedNode[] = [];
-      const flushProse = () => {
+      const flushProse = (emptyPosition?: number) => {
         while (prose[0]?.type === 'whitespace') prose.shift();
         while (prose.at(-1)?.type === 'whitespace') prose.pop();
         const content = this.inline(prose);
-        if (!content) return false;
         const first = bounds(prose[0], this.source);
-        const last = bounds(prose.at(-1), this.source);
-        const paragraphRange = first && last ? { from: first.from, to: last.to } : undefined;
-        parts.push({
-          type: 'paragraph',
-          attrs: { sourceId: this.id(paragraphRange) },
-          ...(content.length ? { content } : {}),
-        });
+        const lastNode = prose.at(-1);
+        const last = lastNode ? commentBounds(lastNode, this.source) : null;
+        const paragraphRange =
+          first && last
+            ? { from: first.from, to: last.to }
+            : { from: emptyPosition ?? textStart, to: emptyPosition ?? textStart };
+        if (!content) {
+          if (!first || !last) return false;
+          const opaque = this.opaque(paragraphRange, 'LaTeX source', true);
+          if (!parts.length)
+            parts.push({
+              type: 'paragraph',
+              attrs: { sourceId: this.id({ from: first.from, to: first.from }) },
+            });
+          parts.push(opaque);
+        } else
+          parts.push({
+            type: 'paragraph',
+            attrs: { sourceId: this.id(paragraphRange) },
+            ...(content.length ? { content } : {}),
+          });
         prose = [];
         return true;
       };
       for (const child of pending) {
-        if (
-          child.type === 'environment' &&
-          (child.env === 'itemize' || child.env === 'enumerate')
+        if (child.type === 'mathenv' && environmentName(child) === 'math') {
+          prose.push(child);
+          continue;
+        }
+        if (child.type === 'parbreak') {
+          if (prose.some((part) => part.type !== 'whitespace') && !flushProse()) return false;
+          prose = [];
+        } else if (
+          child.type === 'environment' ||
+          child.type === 'mathenv' ||
+          child.type === 'verbatim' ||
+          child.type === 'displaymath'
         ) {
-          if ((prose.length || !parts.length) && !flushProse()) return false;
-          const nested = this.list(child);
-          if (!nested) return false;
-          parts.push(nested);
+          const childRange = bounds(child, this.source);
+          if (!childRange) return false;
+          if (
+            (prose.some((part) => part.type !== 'whitespace') || !parts.length) &&
+            !flushProse(childRange.from)
+          )
+            return false;
+          prose = [];
+          const nested = this.blocks([child]);
+          if (!nested || nested.length !== 1) return false;
+          parts.push(nested[0].node);
         } else prose.push(child);
       }
-      if ((prose.length || !parts.length) && !flushProse()) return false;
-      const itemEnd = bounds(pending.at(-1), this.source)?.to ?? itemStart;
+      if ((prose.some((part) => part.type !== 'whitespace') || !parts.length) && !flushProse())
+        return false;
+      parts = this.groupOpaqueBlocks(
+        parts.map((part) => {
+          const id = idOf(part)!;
+          const partRange = this.ranges[id];
+          return { id, ...partRange, node: part };
+        }),
+      ).map((block) => block.node);
+      const itemEnd = originalItemEnd;
       items.push({
         type: 'listItem',
-        attrs: { sourceId: this.id({ from: itemStart, to: itemEnd }) },
+        attrs: { sourceId: this.id({ from: itemStart, to: itemEnd }), latexItemLabel: itemLabel },
         content: parts,
       });
       pending = [];
@@ -444,7 +976,21 @@ class Importer {
     for (const child of node.content) {
       if (child.type === 'macro' && child.content === 'item') {
         if (started && !flush()) return null;
-        if (!started && pending.some((part) => part.type !== 'whitespace')) return null;
+        if (!started) {
+          let index = 0;
+          while (pending[index]?.type === 'whitespace') index++;
+          if (
+            pending[index] &&
+            this.source[bounds(pending[index], this.source)?.from ?? -1] === '['
+          ) {
+            const option = this.optionalArgument(pending, index);
+            if (!option) return null;
+            latexOptions = option.raw;
+            index = option.last + 1;
+          }
+          while (pending[index]?.type === 'whitespace') index++;
+          if (index !== pending.length) return null;
+        }
         pending = [];
         started = true;
         itemStart = bounds(child, this.source)?.from ?? -1;
@@ -454,8 +1000,55 @@ class Importer {
     if (!started || !flush()) return null;
     return {
       type: node.env === 'itemize' ? 'bulletList' : 'orderedList',
-      attrs: { sourceId: this.id(range), ...(node.env === 'enumerate' ? { start: 1 } : {}) },
+      attrs: {
+        sourceId: this.id(range),
+        latexOptions,
+        ...(node.env === 'enumerate' ? { start: 1 } : {}),
+      },
       content: items,
+    };
+  }
+  ignoredEnvironment(node: ParsedNode): VisualNode | null {
+    const env = environmentName(node);
+    const range = bounds(node, this.source);
+    if (
+      node.type !== 'environment' ||
+      !Array.isArray(node.content) ||
+      !env ||
+      !range ||
+      !this.ignoredEnvironments.has(env)
+    )
+      return null;
+    const raw = this.source.slice(range.from, range.to);
+    const open = `\\begin{${env}}`;
+    const close = `\\end{${env}}`;
+    if (!raw.startsWith(open) || !raw.endsWith(close)) return null;
+    const content = children(node);
+    let bodyStart = 0;
+    while (content[bodyStart]?.type === 'whitespace') bodyStart++;
+    const first = bounds(content[bodyStart], this.source);
+    if (first && this.source[first.from] === '[') {
+      const option = this.optionalArgument(content, bodyStart);
+      if (!option) return null;
+      bodyStart = option.last + 1;
+    } else bodyStart = 0;
+    const body = this.blocks(content.slice(bodyStart));
+    if (!body) return null;
+    if (!body.length) {
+      const closeStart = range.to - close.length;
+      const position = this.source[closeStart - 1] === '\n' ? closeStart - 1 : closeStart;
+      const id = this.id({ from: position, to: position });
+      body.push({
+        id,
+        from: position,
+        to: position,
+        node: { type: 'paragraph', attrs: { sourceId: id } },
+      });
+    }
+    return {
+      type: 'ignoredEnvironment',
+      attrs: { sourceId: this.id(range), environment: env, open, close },
+      content: body.map((block) => block.node),
     };
   }
   blocks(nodes: ParsedNode[]): VisualBlock[] | null {
@@ -466,12 +1059,22 @@ class Importer {
       while (pending.at(-1)?.type === 'whitespace') pending.pop();
       if (!pending.length) return true;
       const first = bounds(pending[0], this.source);
-      const last = bounds(pending.at(-1)!, this.source);
+      const last = commentBounds(pending.at(-1)!, this.source);
       if (!first || !last) return false;
       const range = { from: first.from, to: last.to };
       const content = this.inline(pending);
       if (!content) {
         const node = this.opaque(range, 'LaTeX source', true);
+        result.push({ id: idOf(node)!, ...range, node });
+      } else if (
+        content.length > 0 &&
+        content.every((part) => part.type === 'opaqueInline' && part.attrs?.hidden === true)
+      ) {
+        for (const part of content) {
+          const id = idOf(part);
+          if (id) delete this.ranges[id];
+        }
+        const node = this.opaque(range, 'Ignored source', true, true);
         result.push({ id: idOf(node)!, ...range, node });
       } else {
         const id = this.id(range);
@@ -496,11 +1099,26 @@ class Importer {
         if (!flush()) return null;
         continue;
       }
+      if (
+        node.type === 'comment' &&
+        node.sameline === false &&
+        pending.every((part) => part.type === 'whitespace')
+      ) {
+        if (!flush()) return null;
+        const commentRange = commentBounds(node, this.source) ?? range;
+        const comment = this.opaque(commentRange, 'Comments', true, true);
+        result.push({ id: idOf(comment)!, ...commentRange, node: comment });
+        continue;
+      }
       const heading = this.heading(nodes, i);
       if (heading) {
         if (!flush()) return null;
         result.push({ id: idOf(heading.node)!, ...heading.range, node: heading.node });
         i = heading.last;
+        continue;
+      }
+      if (node.type === 'mathenv' && environmentName(node) === 'math') {
+        pending.push(node);
         continue;
       }
       if (
@@ -513,7 +1131,7 @@ class Importer {
         let visual: VisualNode | null = null;
         if (node.type === 'displaymath') visual = this.math(node, true);
         else if (node.type === 'environment' || node.type === 'mathenv') {
-          visual = this.equation(node) ?? this.list(node);
+          visual = this.equation(node) ?? this.ignoredEnvironment(node) ?? this.list(node);
           if (!visual && (node.env === 'quote' || node.env === 'quotation')) {
             const quoteBlocks = this.blocks(children(node));
             if (quoteBlocks?.length)
@@ -538,13 +1156,13 @@ class Importer {
       }
       pending.push(node);
     }
-    return flush() ? result : null;
+    return flush() ? this.groupOpaqueBlocks(result) : null;
   }
 }
 
 /** Import without modifying or serializing the source. Unknown constructs stay opaque. */
-export function importLatex(source: string): Projection {
-  const importer = new Importer(source);
+export function importLatex(source: string, options?: VisualImportOptions): Projection {
+  const importer = new Importer(source, options);
   let blocks: VisualBlock[] | null = null;
   try {
     const ast = parseMinimal(source) as unknown as ParsedNode;
@@ -606,12 +1224,17 @@ function signature(node: VisualNode): string {
     'starred',
     'optionalTitle',
     'latexEnvironment',
+    'environment',
+    'hidden',
+    'latexOptions',
+    'latexItemLabel',
     'start',
     'raw',
     'label',
     'latex',
     'open',
     'close',
+    'visualText',
   ];
   const meaningful = Object.fromEntries(
     keys
@@ -636,7 +1259,12 @@ function signature(node: VisualNode): string {
 }
 
 function protectedNodes(node: VisualNode, output: VisualNode[] = []): VisualNode[] {
-  if (['opaqueInline', 'opaqueBlock', 'inlineMath', 'blockMath'].includes(node.type))
+  if (
+    ['opaqueInline', 'opaqueBlock', 'inlineMath', 'blockMath', 'ignoredEnvironment'].includes(
+      node.type,
+    ) &&
+    !isProseGlyph(node)
+  )
     output.push(node);
   for (const child of node.content ?? []) protectedNodes(child, output);
   return output;
@@ -710,6 +1338,9 @@ class Writer {
     const usable =
       old &&
       old.type === node.type &&
+      (old.attrs?.latexOptions ?? '') === (node.attrs?.latexOptions ?? '') &&
+      (old.attrs?.latexItemLabel ?? '') === (node.attrs?.latexItemLabel ?? '') &&
+      (old.attrs?.latexEnvironment ?? '') === (node.attrs?.latexEnvironment ?? '') &&
       parentRange &&
       oldChildren.length > 0 &&
       oldRanges.every(
@@ -720,8 +1351,18 @@ class Writer {
           (!index || oldRanges[index - 1]!.to <= range.from),
       );
     const source = this.projection.source;
-    if (usable) this.append(source.slice(parentRange.from, oldRanges[0]!.from));
-    else this.append(prefix);
+    if (usable) {
+      const preservedPrefix = source.slice(parentRange.from, oldRanges[0]!.from);
+      this.append(preservedPrefix);
+      // An empty item has a zero-width paragraph immediately after \item. If it
+      // acquires text, a separator is required so it cannot become \itemText.
+      if (
+        node.type === 'listItem' &&
+        /\\item$/.test(preservedPrefix) &&
+        (node.content?.[0]?.content?.length ?? 0) > 0
+      )
+        this.append(' ');
+    } else this.append(prefix);
     const nextChildren = node.content ?? [];
     nextChildren.forEach((child, index) => {
       if (index) {
@@ -743,17 +1384,21 @@ class Writer {
   }
   inline(node: VisualNode): void {
     if (node.type === 'text') {
-      const wrappers = (node.marks ?? []).map(
-        (mark) => ({ bold: 'textbf', italic: 'textit', code: 'texttt' })[mark.type],
-      );
+      const wrappers = (node.marks ?? []).map((mark) => markCommands[mark.type]);
       if (wrappers.some((value) => !value)) throw new Error('This formatting needs Code mode.');
       for (const wrapper of wrappers) this.append(`\\${wrapper}{`);
       this.append(escapeText(node.text ?? ''));
       this.append('}'.repeat(wrappers.length));
     } else if (node.type === 'hardBreak') this.append('\\\\\n');
-    else if (node.type === 'opaqueInline')
+    else if (node.type === 'opaqueInline') {
+      const wrappers = isProseGlyph(node)
+        ? (node.marks ?? []).map((mark) => markCommands[mark.type])
+        : [];
+      if (wrappers.some((value) => !value)) throw new Error('This formatting needs Code mode.');
+      for (const wrapper of wrappers) this.append(`\\${wrapper}{`);
       this.region(node, () => this.append(String(node.attrs?.raw ?? '')));
-    else if (node.type === 'inlineMath')
+      this.append('}'.repeat(wrappers.length));
+    } else if (node.type === 'inlineMath')
       this.region(node, () =>
         this.append(
           `${String(node.attrs?.open ?? '$')}${String(node.attrs?.latex ?? '')}${String(node.attrs?.close ?? '$')}`,
@@ -794,10 +1439,14 @@ class Writer {
         case 'bulletList':
         case 'orderedList': {
           const env = node.type === 'bulletList' ? 'itemize' : 'enumerate';
-          this.container(node, `\\begin{${env}}\n`, '\n', `\n\\end{${env}}`, (item) => {
+          const options =
+            typeof node.attrs?.latexOptions === 'string' ? node.attrs.latexOptions : '';
+          this.container(node, `\\begin{${env}}${options}\n`, '\n', `\n\\end{${env}}`, (item) => {
             if (item.type !== 'listItem') throw new Error('This list needs Code mode.');
             this.region(item, () => {
-              this.container(item, '\\item ', '\n', '', (part) => this.block(part));
+              const label =
+                typeof item.attrs?.latexItemLabel === 'string' ? item.attrs.latexItemLabel : '';
+              this.container(item, `\\item${label} `, '\n', '', (part) => this.block(part));
             });
           });
           break;
@@ -807,6 +1456,14 @@ class Writer {
           this.container(node, `\\begin{${env}}\n`, '\n\n', `\n\\end{${env}}`, (child) =>
             this.block(child),
           );
+          break;
+        }
+        case 'ignoredEnvironment': {
+          const open = node.attrs?.open;
+          const close = node.attrs?.close;
+          if (typeof open !== 'string' || typeof close !== 'string')
+            throw new Error('This environment needs Code mode.');
+          this.container(node, `${open}\n`, '\n\n', `\n${close}`, (child) => this.block(child));
           break;
         }
         case 'opaqueBlock':
@@ -855,6 +1512,8 @@ export function projectChanges(projection: Projection, updatedDoc: VisualNode): 
         node.type !== other.type ||
         idOf(node) !== idOf(other) ||
         node.attrs?.raw !== other.attrs?.raw ||
+        node.attrs?.environment !== other.attrs?.environment ||
+        Boolean(node.attrs?.hidden) !== Boolean(other.attrs?.hidden) ||
         node.attrs?.open !== other.attrs?.open ||
         node.attrs?.close !== other.attrs?.close
       );
@@ -1044,6 +1703,17 @@ export function sourceOffsetForPosition(
     projection.ranges[blockId] ?? projection.blocks.find((block) => block.id === blockId);
   if (!range) return 0;
   const raw = projection.source.slice(range.from, range.to);
+  const hiddenRanges = allNodes(projection.doc)
+    .filter((node) => node.type === 'opaqueInline' && node.attrs?.hidden === true)
+    .map((node) => {
+      const id = idOf(node);
+      return id ? projection.ranges[id] : undefined;
+    })
+    .filter((hidden): hidden is SourceRange =>
+      Boolean(hidden && hidden.from >= range.from && hidden.to <= range.to),
+    );
+  const hiddenStartsAt = (offset: number) =>
+    hiddenRanges.some((hidden) => hidden.from === range.from + offset);
   // Local-only parse; malformed content returns the start instead of an unsafe guess.
   try {
     const ast = parseMinimal(raw) as unknown as ParsedNode;
@@ -1054,9 +1724,38 @@ export function sourceOffsetForPosition(
         const node = nodes[i];
         const span = bounds(node, raw);
         if (!span) continue;
+        const hidden = hiddenRanges.find(
+          (item) => item.from <= range.from + span.from && item.to > range.from + span.from,
+        );
+        if (hidden) {
+          last = hidden.to - range.from;
+          while (i + 1 < nodes.length && (bounds(nodes[i + 1], raw)?.to ?? Infinity) <= last) i++;
+          continue;
+        }
+        const glyph = proseGlyph(nodes, i, raw);
+        if (glyph) {
+          if (
+            remaining < glyph.text.length ||
+            (remaining === glyph.text.length && !hiddenStartsAt(glyph.to))
+          )
+            return remaining ? glyph.to : glyph.from;
+          remaining -= glyph.text.length;
+          last = glyph.to;
+          if (
+            glyph.remainder &&
+            glyph.remainderFrom !== undefined &&
+            glyph.remainderTo !== undefined
+          ) {
+            if (remaining <= glyph.remainder.length) return glyph.remainderFrom + remaining;
+            remaining -= glyph.remainder.length;
+            last = glyph.remainderTo;
+          }
+          i = glyph.last;
+          continue;
+        }
         if (node.type === 'string' || node.type === 'whitespace') {
           const length = node.type === 'whitespace' ? 1 : span.to - span.from;
-          if (remaining <= length)
+          if (remaining < length || (remaining === length && !hiddenStartsAt(span.to)))
             return (
               span.from +
               (node.type === 'whitespace' ? Math.min(remaining, span.to - span.from) : remaining)
@@ -1082,7 +1781,8 @@ export function sourceOffsetForPosition(
             nextSpan?.from === span.to &&
             raw.slice(nextSpan.from, nextSpan.to) === '{}';
           const end = isEmptyDelimiter ? nextSpan.to : span.to;
-          if (remaining <= 1) return remaining ? end : span.from;
+          if (remaining < 1 || (remaining === 1 && !hiddenStartsAt(end)))
+            return remaining ? end : span.from;
           remaining--;
           last = end;
           if (isEmptyDelimiter) i++;

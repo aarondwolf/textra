@@ -416,6 +416,7 @@
 }
 .editor-toolbar,
 .editor-format-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -451,15 +452,25 @@
 .editor-format-actions::-webkit-scrollbar {
   display: none;
 }
+.editor-format-actions.is-collapsed {
+  position: absolute;
+  inset: 2px auto auto 8px;
+  width: max-content;
+  overflow: visible;
+  visibility: hidden;
+  pointer-events: none;
+}
 .editor-format-actions > *,
 .editor-format-fixed > * {
   flex-shrink: 0;
 }
 .editor-format-fixed {
   flex-shrink: 0;
+  margin-left: auto;
 }
 .editor-format-actions > button,
-.editor-format-fixed > button {
+.editor-format-fixed > button,
+.editor-format-overflow-button {
   min-width: 25px;
   height: 24px;
   padding: 0 5px;
@@ -472,7 +483,9 @@
 .editor-format-actions > button:hover:not(:disabled),
 .editor-format-actions > button:focus-visible,
 .editor-format-fixed > button:hover:not(:disabled),
-.editor-format-fixed > button:focus-visible {
+.editor-format-fixed > button:focus-visible,
+.editor-format-overflow-button:hover,
+.editor-format-overflow-button:focus-visible {
   color: var(--text);
   background: var(--hover);
   border-color: var(--border);
@@ -481,6 +494,16 @@
 .editor-format-fixed > button:disabled,
 .editor-format-heading-trigger:disabled {
   opacity: 0.45;
+}
+.editor-format-actions > .editor-format-wrap-control[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.editor-format-actions > .editor-format-wrap-control[aria-pressed='true']:hover,
+.editor-format-actions > .editor-format-wrap-control[aria-pressed='true']:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
 }
 .editor-mode-control {
   display: inline-flex;
@@ -769,7 +792,7 @@
   font-size: 10px;
 }
 .editor-format-actions > .dropdown-menu-container {
-  width: 68px;
+  width: 76px;
 }
 .editor-format-fixed > .editor-format-hide:hover,
 .editor-format-fixed > .editor-format-hide:focus-visible {

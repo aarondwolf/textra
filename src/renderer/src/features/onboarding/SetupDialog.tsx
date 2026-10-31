@@ -22,6 +22,8 @@ import {
 import {
   BUILD_RECIPES,
   CONFIGURABLE_TOOLS,
+  DEFAULT_VISUAL_IGNORED_COMMANDS,
+  DEFAULT_VISUAL_IGNORED_ENVIRONMENTS,
   type BuildEngine,
   type ConfigurableTool,
   type CustomTheme,
@@ -112,6 +114,96 @@ function parseChktexRules(value: string): number[] | null {
   const rules = value.split(',').map((part) => Number(part.trim()));
   if (rules.some((rule) => !Number.isInteger(rule) || rule < 1 || rule > 10_000)) return null;
   return [...new Set(rules)].sort((left, right) => left - right);
+}
+
+function parseVisualIgnoreNames(value: string): string[] | null {
+  const names = value
+    .split(/[\n,]+/)
+    .map((part) => part.trim().replace(/^\\/, ''))
+    .filter(Boolean);
+  if (
+    names.length > 100 ||
+    names.some((name) => name.length > 80 || !/^[A-Za-z@][A-Za-z0-9@:_-]*\*?$/.test(name))
+  )
+    return null;
+  return [...new Set(names)];
+}
+
+function VisualIgnoreSettings() {
+  const { preferences, updatePreferences } = useUI();
+  const commandsValue = preferences.visualIgnoredCommands.join('\n');
+  const environmentsValue = preferences.visualIgnoredEnvironments.join('\n');
+  const [commands, setCommands] = useState(commandsValue);
+  const [environments, setEnvironments] = useState(environmentsValue);
+  const [error, setError] = useState('');
+  useEffect(() => setCommands(commandsValue), [commandsValue]);
+  useEffect(() => setEnvironments(environmentsValue), [environmentsValue]);
+  const apply = () => {
+    const nextCommands = parseVisualIgnoreNames(commands);
+    const nextEnvironments = parseVisualIgnoreNames(environments);
+    if (!nextCommands || !nextEnvironments) {
+      setError(
+        'Enter up to 100 command or environment names, one per line. Use names without arguments.',
+      );
+      return;
+    }
+    setError('');
+    setCommands(nextCommands.join('\n'));
+    setEnvironments(nextEnvironments.join('\n'));
+    updatePreferences({
+      visualIgnoredCommands: nextCommands,
+      visualIgnoredEnvironments: nextEnvironments,
+    });
+  };
+  const reset = () => {
+    const nextCommands = [...DEFAULT_VISUAL_IGNORED_COMMANDS];
+    const nextEnvironments = [...DEFAULT_VISUAL_IGNORED_ENVIRONMENTS];
+    setCommands(nextCommands.join('\n'));
+    setEnvironments(nextEnvironments.join('\n'));
+    setError('');
+    updatePreferences({
+      visualIgnoredCommands: nextCommands,
+      visualIgnoredEnvironments: nextEnvironments,
+    });
+  };
+  return (
+    <>
+      <h3>Visual editor</h3>
+      <p>
+        Hide layout commands and environment wrappers in Visual mode. Their source stays in the
+        file. Enter one name per line; a leading backslash is optional for commands. Listed commands
+        are treated as having no arguments; commands with attached nonempty arguments remain visible
+        as source. Environments keep their contents visible.
+      </p>
+      <div className="visual-ignore-settings">
+        <label>
+          Ignored visual commands
+          <textarea
+            aria-label="Ignored visual commands"
+            value={commands}
+            onChange={(event) => setCommands(event.target.value)}
+            rows={6}
+            spellCheck={false}
+          />
+        </label>
+        <label>
+          Ignored visual environments
+          <textarea
+            aria-label="Ignored visual environments"
+            value={environments}
+            onChange={(event) => setEnvironments(event.target.value)}
+            rows={6}
+            spellCheck={false}
+          />
+        </label>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      <div className="setup-actions">
+        <Button onClick={apply}>Apply visual ignore settings</Button>
+        <Button onClick={reset}>Reset visual ignore settings</Button>
+      </div>
+    </>
+  );
 }
 
 const SYSTEM_FONTS = [
@@ -888,6 +980,7 @@ export default function SetupDialog({
                       />
                     </SettingPair>
                   </div>
+                  <VisualIgnoreSettings />
                   <h3>Autosave</h3>
                   <div className="settings-pairs">
                     <SettingPair

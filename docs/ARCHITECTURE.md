@@ -37,7 +37,7 @@ keeps unsupported commands, comments, and environments as protected source nodes
 No-op viewing or mode changes do not serialize the document. Accepted visual
 transactions serialize affected supported blocks, reuse untouched source slices, and
 apply bounded edits to the Monaco model after checking document lifetime, model
-version, and editability. A source-edit dialog similarly checks its captured range
+version, and editability. An in-place source editor similarly checks its captured range
 before applying. Save, change detection, history, TexLab, and the Monaco/Yjs binding
 therefore continue through the existing document-session and main-process paths.
 Visual undo and redo route to the existing Monaco or Yjs history rather than a
@@ -48,7 +48,10 @@ The visual feature and its local KaTeX assets load separately from the initial
 editor frame. A renderer worker prepares document projections; document identity,
 model version, and worker generations reject stale results. Math rendering uses
 bounded KaTeX options with trust disabled and isolated macro state. The view uses
-plain-text paste and does not load project media or remote content. A failed visual
+plain-text paste and loads PDF figures only through the checked project PDF API.
+Figure candidate lookups coalesce concurrent reads and treat missing candidates as
+expected; explicit PDF reads and other failures remain logged. It does not load
+remote content. A failed visual
 load returns the user to Code; unsupported or ambiguous source remains available for
 explicit editing. Native and cross-platform validation for Visual mode is still in
 progress.

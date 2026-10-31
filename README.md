@@ -106,11 +106,26 @@ typeset result. The editor works locally and does not require a connection or ac
 Type and paste ordinary text in Visual mode; TeXtra escapes LaTeX special characters
 when applying edits. Pasted formatting is reduced to plain text. Use the existing
 formatting toolbar for bold, italic, headings, and lists. Enter starts a new paragraph
-or list item, and Shift+Enter inserts a line break. Click a rendered equation to edit
-its LaTeX. Document setup, comments, citations, references, tables, figures, and
-other constructs that cannot safely be represented as prose appear as labelled
-source markers or blocks with **Edit source**. Some unusual or incomplete LaTeX may
-require Code mode. Edit source applies to the open buffer; use Save to write the file.
+or list item, and Shift+Enter inserts a line break. Click a rendered equation,
+reference, citation, link, symbol or footnote caret to edit its source in place.
+Enter applies an inline edit; Ctrl/Cmd+Enter applies a multiline edit, and Escape
+cancels. Changes update the open buffer; use Save to write the file.
+Common text formatting, symbols and accents display visually. Simple tables, figure
+captions and document metadata have read-only previews; PDF figures show their first
+page. Other constructs remain available as source-backed boxes, and unusual or
+incomplete LaTeX may require Code mode.
+Common display equation and alignment environments render without compiled equation
+numbers; unknown math commands remain visible within the formula. Source-backed boxes can
+be clicked or activated with the keyboard to edit their LaTeX in place.
+Inline quotes and dashes display as their original editable characters. Unknown
+commands and any ambiguous trailing text remain protected source within the prose.
+Simple tables use a read-only, best-effort parsed grid; ambiguous structures remain
+source-backed. Supported lists retain their options and item labels; consecutive protected blocks
+are grouped into one source editor while preserving their original separators.
+Whole-line comments and common layout-only commands are hidden in Visual mode, and
+the `landscape` environment displays its contents without its wrapper. Their source
+is retained. Customize the ignored command and environment names in **Settings →
+Editor → Visual editor**; listed commands are treated as taking no arguments.
 
 Switching modes alone does not change the file. A visual edit can rewrite the affected
 paragraph or list structure while preserving untouched source and protected constructs.

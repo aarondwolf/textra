@@ -24,6 +24,30 @@ describe('preference boundary validation', () => {
     );
     expect(() => validatePreferences({ ...legacy, texEditorMode: 'other' })).toThrow();
   });
+  it('migrates and validates editable Visual ignore lists', () => {
+    const legacy: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+    delete legacy.visualIgnoredCommands;
+    delete legacy.visualIgnoredEnvironments;
+    const migrated = validatePreferences(legacy);
+    expect(migrated.visualIgnoredCommands).toEqual(DEFAULT_PREFERENCES.visualIgnoredCommands);
+    expect(migrated.visualIgnoredEnvironments).toEqual(
+      DEFAULT_PREFERENCES.visualIgnoredEnvironments,
+    );
+    const updated = validatePreferences({
+      ...legacy,
+      visualIgnoredCommands: ['newpage', 'newpage', 'MyCommand'],
+      visualIgnoredEnvironments: [],
+    });
+    expect(updated.visualIgnoredCommands).toEqual(['newpage', 'MyCommand']);
+    expect(updated.visualIgnoredEnvironments).toEqual([]);
+    for (const bad of [
+      ['\\clearpage'],
+      ['clearpage{unsafe}'],
+      ['x'.repeat(81)],
+      Array(101).fill('x'),
+    ])
+      expect(() => validatePreferences({ ...legacy, visualIgnoredCommands: bad })).toThrow();
+  });
   it('allows automatic MiKTeX packages to be disabled and rejects non-boolean values', () => {
     expect(
       validatePreferences({ ...DEFAULT_PREFERENCES, miktexAutoInstall: false }).miktexAutoInstall,

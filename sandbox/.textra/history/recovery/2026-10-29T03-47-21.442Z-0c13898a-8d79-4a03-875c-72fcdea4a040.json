@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "summary": {
+    "id": "2026-10-29T03-47-21.442Z-0c13898a-8d79-4a03-875c-72fcdea4a040",
+    "path": "demo.tex",
+    "createdAt": "2026-10-29T03:47:21.442Z",
+    "sizeBytes": 1912,
+    "revision": "6c2b610204fd9b45ffe920b94599ebd9a5868239102e600d41720b03eb6a006b",
+    "trigger": "manual",
+    "pinned": true,
+    "label": "Before merging saved collaboration updates",
+    "purpose": "recovery"
+  }
+}

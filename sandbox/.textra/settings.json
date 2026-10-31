@@ -161,6 +161,7 @@
   "recipes": {
     "test.tex": "latexmk",
     "test2.tex": "pdflatex",
-    "demo.tex": "pdflatex"
+    "demo.tex": "pdflatex",
+    "long.tex": "latexmk"
   }
 }

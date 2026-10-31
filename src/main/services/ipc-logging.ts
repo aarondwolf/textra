@@ -10,6 +10,8 @@ export function shouldLogIpcFailure(channel: string, code: string): boolean {
     'APP_CLOSING',
   ].includes(code);
   const expectedMissingReference =
-    channel === 'textra:file:read-reference-candidate' && code === 'NOT_FOUND';
+    (channel === 'textra:file:read-reference-candidate' ||
+      channel === 'textra:pdf:read-project-candidate') &&
+    code === 'NOT_FOUND';
   return !expectedCompletionStop && !expectedWorkspaceStop && !expectedMissingReference;
 }

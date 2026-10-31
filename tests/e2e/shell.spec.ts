@@ -127,6 +127,8 @@ test('native shell keeps security boundaries and persists representative UI acti
       'readFileHistorySnapshot',
       'readPdf',
       'readProjectPdf',
+      'readProjectPdfCandidate',
+      'readReferenceCandidate',
       'refreshAIModels',
       'refreshProject',
       'rejectAIAgentProposal',

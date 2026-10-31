@@ -68,6 +68,8 @@ export default defineConfig({
         '@tiptap/starter-kit',
         '@tiptap/extension-bold',
         '@tiptap/extension-italic',
+        '@tiptap/extension-subscript',
+        '@tiptap/extension-superscript',
         '@tiptap/extension-mathematics',
         'katex',
         'cmdk',
@@ -83,6 +85,7 @@ export default defineConfig({
         // Otherwise the browser rejects raw modules (for example unified's is-buffer).
         '@retorquere/bibtex-parser',
         '@unified-latex/unified-latex-util-parse',
+        '@unified-latex/unified-latex-util-align',
         '@unified-latex/unified-latex-util-to-string',
         '@unified-latex/unified-latex-util-visit',
         '@phosphor-icons/react',

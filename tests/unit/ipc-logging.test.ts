@@ -7,6 +7,10 @@ describe('IPC failure logging', () => {
     expect(shouldLogIpcFailure('textra:file:read', 'NOT_FOUND')).toBe(true);
     expect(shouldLogIpcFailure('textra:file:read-reference-candidate', 'ACCESS_DENIED')).toBe(true);
     expect(shouldLogIpcFailure('textra:file:read-reference-candidate', 'INVALID_PATH')).toBe(true);
+    expect(shouldLogIpcFailure('textra:pdf:read-project-candidate', 'NOT_FOUND')).toBe(false);
+    expect(shouldLogIpcFailure('textra:pdf:read-project', 'NOT_FOUND')).toBe(true);
+    expect(shouldLogIpcFailure('textra:pdf:read-project-candidate', 'ACCESS_DENIED')).toBe(true);
+    expect(shouldLogIpcFailure('textra:pdf:read-project-candidate', 'STALE_PROJECT')).toBe(true);
   });
 
   it('retains existing expected cancellation handling', () => {

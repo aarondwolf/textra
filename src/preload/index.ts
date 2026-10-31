@@ -151,6 +151,8 @@ const api: TextraAPI = {
   restoreLastPdf: (projectId) => ipcRenderer.invoke('textra:pdf:restore', projectId),
   prepareAI: () => ipcRenderer.invoke('textra:ai:prepare'),
   readProjectPdf: (request) => ipcRenderer.invoke('textra:pdf:read-project', request),
+  readProjectPdfCandidate: (request) =>
+    ipcRenderer.invoke('textra:pdf:read-project-candidate', request),
   syncForward: (request) => ipcRenderer.invoke('textra:sync:forward', request),
   syncInverse: (request) => ipcRenderer.invoke('textra:sync:inverse', request),
   getProjectConfig: (id) => ipcRenderer.invoke('textra:config:get', id),

@@ -864,6 +864,9 @@ export function registerApplicationIpc(services: IpcServices): void {
   handleRequest<'readProjectPdf'>('textra:pdf:read-project', (request) =>
     projects.readProjectPdf(request),
   );
+  handleRequest<'readProjectPdfCandidate'>('textra:pdf:read-project-candidate', (request) =>
+    projects.readProjectPdf(request),
+  );
   handleRequest<'syncForward'>('textra:sync:forward', (request) => builds.syncForward(request));
   handleRequest<'syncInverse'>('textra:sync:inverse', (request) => builds.syncInverse(request));
   handleRequest<'getProjectConfig'>('textra:config:get', (id) => config.getProjectConfig(id));

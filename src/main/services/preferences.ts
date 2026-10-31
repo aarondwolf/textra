@@ -133,6 +133,30 @@ export const preferencesSchema = z
     commonProblemHelp: z.boolean().optional().default(DEFAULT_PREFERENCES.commonProblemHelp),
     formatToolbarVisible: z.boolean().optional().default(DEFAULT_PREFERENCES.formatToolbarVisible),
     texEditorMode: z.enum(['code', 'visual']).optional().default(DEFAULT_PREFERENCES.texEditorMode),
+    visualIgnoredCommands: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[A-Za-z@][A-Za-z0-9@:_-]*\*?$/),
+      )
+      .max(100)
+      .transform((names) => [...new Set(names)])
+      .optional()
+      .default([...DEFAULT_PREFERENCES.visualIgnoredCommands]),
+    visualIgnoredEnvironments: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[A-Za-z@][A-Za-z0-9@:_-]*\*?$/),
+      )
+      .max(100)
+      .transform((names) => [...new Set(names)])
+      .optional()
+      .default([...DEFAULT_PREFERENCES.visualIgnoredEnvironments]),
     sidebarWidth: z
       .number()
       .refine(

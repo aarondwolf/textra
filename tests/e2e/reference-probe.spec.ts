@@ -31,13 +31,31 @@ test('missing reference probes are quiet while ordinary missing reads are logged
       return {
         candidate: await window.textra.readReferenceCandidate(ref),
         ordinary: await window.textra.readFile(ref),
+        pdfCandidate: await window.textra.readProjectPdfCandidate({ ...ref, path: 'absent.pdf' }),
+        pdfOrdinary: await window.textra.readProjectPdf({ ...ref, path: 'absent.pdf' }),
+        invalidPdf: await window.textra.readProjectPdfCandidate({ ...ref, path: '../outside.pdf' }),
       };
     });
     expect(results.candidate).toMatchObject({ ok: false, code: 'NOT_FOUND' });
     expect(results.ordinary).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(results.pdfCandidate).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(results.pdfOrdinary).toMatchObject({ ok: false, code: 'NOT_FOUND' });
+    expect(results.invalidPdf.ok).toBe(false);
     await expect.poll(() => warnings).toContain('"channel":"textra:file:read"');
     expect(warnings).not.toContain('"channel":"textra:file:read-reference-candidate"');
+    await expect.poll(() => warnings).toContain('"channel":"textra:pdf:read-project"');
+    await expect
+      .poll(() => warnings)
+      .toContain('"channel":"textra:pdf:read-project-candidate","code":"INVALID_PATH"');
+    expect(warnings).not.toContain(
+      '"channel":"textra:pdf:read-project-candidate","code":"NOT_FOUND"',
+    );
   } finally {
+    await application
+      .evaluate(({ app }) => {
+        setImmediate(() => app.exit(0));
+      })
+      .catch(() => undefined);
     await application.close();
     await rm(directory, { recursive: true, force: true });
   }

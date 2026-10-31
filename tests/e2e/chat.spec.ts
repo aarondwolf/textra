@@ -355,9 +355,25 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await expect(ask.locator('svg')).toHaveAttribute('width', '12');
     const composeFrame = chat.locator('.ai-chat-compose');
     await expect(composeFrame.locator('.ai-chat-actions')).toBeVisible();
+    await composeFrame.evaluate((element) => (element.style.width = '300px'));
     const model = composeFrame.getByRole('button', { name: /^Model: / });
     await expect(model).toBeEnabled();
     await expect(model).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
+    await composeFrame.evaluate((element) => (element.style.width = '180px'));
+    await expect(model).toBeHidden();
+    await expect(chat.getByRole('group', { name: 'Assistant mode' })).toBeVisible();
+    await composeFrame.evaluate((element) => (element.style.width = '130px'));
+    await expect(chat.getByRole('group', { name: 'Assistant mode' })).toBeHidden();
+    await expect(ask).toBeVisible();
+    const narrowBounds = await composeFrame.boundingBox();
+    const narrowSend = await ask.boundingBox();
+    expect(narrowBounds).not.toBeNull();
+    expect(narrowSend).not.toBeNull();
+    expect(narrowSend!.x + narrowSend!.width).toBeLessThanOrEqual(
+      narrowBounds!.x + narrowBounds!.width,
+    );
+    await composeFrame.evaluate((element) => (element.style.width = '300px'));
+    await expect(model).toBeVisible();
     await model.click();
     const search = page.getByRole('combobox', { name: 'Search model', exact: true });
     await expect(search).toBeFocused();
@@ -372,6 +388,7 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
     await page.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
     await page.keyboard.press('Enter');
     await expect(model).toHaveAccessibleName('Model: Gemini 3.5 Flash Lite');
+    await composeFrame.evaluate((element) => (element.style.width = ''));
     await composer.fill('   ');
     await expect(ask).toBeDisabled();
     await composer.fill('');
@@ -411,9 +428,11 @@ test('native multi-provider chat onboards, retries, cancels, and reviews Problem
 
     // Removing a provider clears its temporary role binding. Reconnecting must
     // not silently revive that choice; the user explicitly chooses again.
+    await composeFrame.evaluate((element) => (element.style.width = '300px'));
     await model.click();
     await page.getByRole('combobox', { name: 'Search model', exact: true }).fill('3.5 lite');
     await page.keyboard.press('Enter');
+    await composeFrame.evaluate((element) => (element.style.width = ''));
     await composer.fill('Why is my LaTeX brace missing?\n\n```tex\n\\usepackage{lipsum}\n```');
     await expect(ask).toBeEnabled();
     await expect(ask).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');

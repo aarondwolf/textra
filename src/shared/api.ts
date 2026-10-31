@@ -30,6 +30,30 @@ export type Theme =
   'dark' | 'light' | 'midnight' | 'forest' | 'ocean' | 'rose' | 'sand' | (string & {});
 export type ChktexRunMode = 'save' | 'live';
 export type TexEditorMode = 'code' | 'visual';
+/** Layout-only TeX constructs hidden in Visual mode; source remains unchanged. */
+export const DEFAULT_VISUAL_IGNORED_COMMANDS = [
+  'clearpage',
+  'cleardoublepage',
+  'newpage',
+  'FloatBarrier',
+  'noindent',
+  'indent',
+  'smallskip',
+  'medskip',
+  'bigskip',
+  'vfill',
+  'hfill',
+  'sloppy',
+  'fussy',
+  'flushbottom',
+  'raggedbottom',
+  'onecolumn',
+  'twocolumn',
+  'centering',
+  'raggedright',
+  'raggedleft',
+];
+export const DEFAULT_VISUAL_IGNORED_ENVIRONMENTS = ['landscape'];
 /** Policy for external changes to open .tex documents. Local to this device. */
 export type ConflictPolicy = 'manual-review' | 'background-merge';
 export type DiagnosticSeverity = Diagnostic['severity'];
@@ -89,6 +113,9 @@ export interface Preferences {
   formatToolbarVisible: boolean;
   /** Preferred editing surface for TeX files. */
   texEditorMode: TexEditorMode;
+  /** Source-preserving presentation rules for Visual mode, using names without backslashes. */
+  visualIgnoredCommands: string[];
+  visualIgnoredEnvironments: string[];
   sidebarWidth: number;
   /** TexLab is bundled and enabled by default; users may opt out of enhanced language tooling. */
   texlabEnabled: boolean;
@@ -177,6 +204,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   commonProblemHelp: true,
   formatToolbarVisible: true,
   texEditorMode: 'code',
+  visualIgnoredCommands: [...DEFAULT_VISUAL_IGNORED_COMMANDS],
+  visualIgnoredEnvironments: [...DEFAULT_VISUAL_IGNORED_ENVIRONMENTS],
   sidebarWidth: 226,
   texlabEnabled: true,
   chktexEnabled: true,
@@ -611,6 +640,8 @@ export interface TextraAPI {
   prepareAI(): Promise<Result<void>>;
   /** Reads an explicit, validated PDF selected from the active project. */
   readProjectPdf(request: FileRef): Promise<Result<Uint8Array>>;
+  /** Probe a possible project PDF reference; a missing candidate is expected. */
+  readProjectPdfCandidate(request: FileRef): Promise<Result<Uint8Array>>;
   syncForward(request: SyncForwardRequest): Promise<Result<PdfLocation>>;
   syncInverse(request: SyncInverseRequest): Promise<Result<SourceLocation>>;
   getProjectConfig(projectId: string): Promise<Result<ProjectConfig>>;

@@ -1077,7 +1077,8 @@ export function SourceEditor({
     };
     window.addEventListener('textra:format-document', showSourceForFormatting);
     const insertSource = (event: Event) => {
-      if (documentSessions.locked) return;
+      if (documentSessions.locked || readOnlyRef.current || collaborationPreparingRef.current)
+        return;
       const detail = (event as CustomEvent<{ text: string; caret: number }>).detail;
       if (visualVisibleRef.current && detail) {
         if (visualEditor.current?.insertSource(detail.text, detail.caret)) event.preventDefault();
@@ -1101,7 +1102,8 @@ export function SourceEditor({
     };
     window.addEventListener('textra:insert-source', insertSource);
     const formatSource = (event: Event) => {
-      if (documentSessions.locked) return;
+      if (documentSessions.locked || readOnlyRef.current || collaborationPreparingRef.current)
+        return;
       const detail = (event as CustomEvent<EditorFormatRequest>).detail;
       if (visualVisibleRef.current && detail) {
         if (visualEditor.current?.format(detail)) event.preventDefault();
@@ -2363,15 +2365,33 @@ export function SourceEditor({
               onOpenReference={(target, command) => {
                 const projectId = visualSnapshot.projectId;
                 const from = visualSnapshot.path;
+                const lifetime = visualSnapshot.lifetime;
+                const stillCurrent = () => {
+                  const state = useWorkspace.getState();
+                  return (
+                    state.project?.id === projectId &&
+                    state.activePath === from &&
+                    documentSessions.capture(projectId, from)?.lifetime === lifetime
+                  );
+                };
                 void (async () => {
                   for (const path of referenceCandidates(
                     { kind: 'tex', command, target, line: 1 },
                     from,
                   )) {
-                    const result = await window.textra.readFile({ projectId, path });
-                    if (useWorkspace.getState().project?.id !== projectId) return;
+                    if (!stillCurrent()) return;
+                    const result = await window.textra.readReferenceCandidate({ projectId, path });
+                    if (!stillCurrent()) return;
                     if (result.ok) {
                       await openDocument(path);
+                      return;
+                    }
+                    if (result.code !== 'NOT_FOUND') {
+                      window.dispatchEvent(
+                        new CustomEvent('textra:notify', {
+                          detail: { message: result.error, tone: 'error' },
+                        }),
+                      );
                       return;
                     }
                   }

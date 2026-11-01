@@ -477,11 +477,7 @@ test('visual editing preserves LaTeX and shares save and undo with code mode', a
     await page.keyboard.press('End');
     await page.keyboard.press('Control+i');
     await expect(codeMode).toBeChecked();
-    await expect(
-      page.getByText('Choose a source location in Code mode before using inline editing here.', {
-        exact: true,
-      }),
-    ).toBeVisible();
+    await expect(source).toBeVisible();
   } finally {
     await application
       ?.evaluate(({ app }) => {

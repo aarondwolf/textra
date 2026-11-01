@@ -4,6 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { MarkdownPreview } from '../../src/renderer/src/features/markdown/MarkdownPreview';
 
 describe('MarkdownPreview', () => {
+  it('does not render raw HTML or unsafe links', () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownPreview, {
+        source: '<img src=x onerror=alert(1)>\n\n[unsafe](javascript:alert(1))',
+      }),
+    );
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+    expect(html).not.toContain('href="javascript:');
+  });
   it('renders fenced code and inline emphasis as formatted markup', () => {
     const html = renderToStaticMarkup(
       createElement(MarkdownPreview, {

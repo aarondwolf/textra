@@ -33,7 +33,9 @@ The optional Visual editor is a renderer-only Tiptap/ProseMirror view of the act
 `.tex` buffer. The Monaco model remains the authoritative document and stays mounted
 while Visual is shown. The adapter uses the existing `unified-latex` parser with
 source ranges to import a conservative set of prose, headings, lists, and math; it
-keeps unsupported commands, comments, and environments as protected source nodes.
+keeps unsupported commands and environments as protected source nodes. Whole-line
+comments and configurable layout commands are hidden while their source is retained;
+configurable ignored environments expose their contents and preserve their wrappers.
 No-op viewing or mode changes do not serialize the document. Accepted visual
 transactions serialize affected supported blocks, reuse untouched source slices, and
 apply bounded edits to the Monaco model after checking document lifetime, model
@@ -51,8 +53,8 @@ bounded KaTeX options with trust disabled and isolated macro state. The view use
 plain-text paste and loads PDF figures only through the checked project PDF API.
 Figure candidate lookups coalesce concurrent reads and treat missing candidates as
 expected; explicit PDF reads and other failures remain logged. It does not load
-remote content. A failed visual
-load returns the user to Code; unsupported or ambiguous source remains available for
+remote content. Table previews use parsed alignment rows and cells, with ambiguous
+structures left as source-backed blocks. A failed visual load returns the user to Code; unsupported or ambiguous source remains available for
 explicit editing. Native and cross-platform validation for Visual mode is still in
 progress.
 

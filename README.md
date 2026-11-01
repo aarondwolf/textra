@@ -312,10 +312,11 @@ There is no fallback or automatic retry. Ollama is kept warm for five minutes af
 completion requests; opening TeXtra does not start or warm it. Automatic failures stay
 quiet and authentication/quota errors pause suggestions until retry or configuration change.
 
-MVP AI settings live in git-ignored `.textra-local/ai.json` inside this application checkout,
-with each key encrypted by Electron `safeStorage` for your OS account. No plaintext fallback
-is allowed. Do not distribute this local directory or put it under source control. Before
-public release, migrate it to global app data; see [security](docs/SECURITY.md).
+AI settings live in `userData/ai/ai.json` (on Windows, normally
+`%APPDATA%/TeXtra/ai/ai.json`). Keys are encrypted with Electron `safeStorage`;
+there is no plaintext fallback. Development installations can copy a legacy
+`.textra-local/ai.json` into an empty user-data store without deleting the original.
+Release verification of migration and OS storage remains open; see [security](docs/SECURITY.md).
 Provider pricing, free tiers and limits depend on your account; TeXtra adds no fee.
 Quota notices suggest switching models or trying again later, with a link to that
 provider's usage page.

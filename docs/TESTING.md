@@ -1,5 +1,12 @@
 # Testing
 
+2026-10-30 focused log and code review: typecheck, production build, targeted
+lint and formatting checks passed. Focused Markdown, IPC logging and visual adapter
+tests passed 50/50. Windows native conflict-lock and Visual/collaboration regressions
+passed; the Visual test now checks Code mode without requiring a notification that
+is only shown when selection mapping fails. Historical app log files were not found;
+available historical logs were test transcripts. Cross-platform gates remain open.
+
 2026-10-27 Windows packaging: electron-builder produced the unsigned x64 NSIS
 installer and unpacked app. The initial attempt was stopped prematurely: diagnostic
 logging showed 315 production packages followed by a slow serial file scan. A

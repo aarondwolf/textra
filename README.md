@@ -55,9 +55,9 @@ TeXtra is completely free: Any Cloud API usage is billed through your provider a
 
 ## Try TeXtra
 
-TeXtra is under active development. Releases will be available on the
-[GitHub releases page](https://github.com/aarondwolf/textra/releases). To run
-from source, install **Node.js 24 LTS** and **npm 11**, then run:
+Download the [TeXtra v0.2.1 Alpha for Windows](https://github.com/aarondwolf/textra/releases/tag/v0.2.1)
+from GitHub. TeXtra is under active development. To run from source, install
+**Node.js 24 LTS** and **npm 11**, then run:
 
 ```sh
 npm ci
@@ -66,6 +66,6 @@ npm run dev
 
 Open a project folder and select a `.tex` file to start writing. To compile, install
 a TeX distribution such as MiKTeX or TeX Live separately, then choose **Compile**.
-A Windows x64 installer is planned for release; installation and release checks
+The Windows x64 installer is unsigned, and installation and release checks
 are still in progress. Windows has received the most native testing so far, while
 macOS and Linux verification remains open.

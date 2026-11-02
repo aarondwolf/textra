@@ -466,7 +466,7 @@ export function App() {
   const activePath = useWorkspace((state) => state.activePath);
   const coreReady = editorReady || (hydrated && restoration === 'settled' && !activePath);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>('0.2.0');
+  const [appVersion, setAppVersion] = useState<string>('0.2.1');
 
   useEffect(() => {
     if (!coreReady) return;

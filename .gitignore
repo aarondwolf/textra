@@ -19,3 +19,12 @@ resources/texlab/**/*.zip
 sandbox/test.pdf
 *.log
 *.CONFLICTED_*
+
+# Private local development notes and agent configuration
+.agents/
+.claude/
+.codex/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+docs/ROADMAP.md

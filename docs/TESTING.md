@@ -178,9 +178,7 @@ timeouts are live limitations, not mocked successes.
 without it, the helper probes the continuation/FIM adapter. Disabled providers are skipped.
 `--figure` tests a synthetic TikZ supply/demand comment followed by an open
 environment. On 2026-10-21, real Qwen2.5-Coder0.5B automatic completion returned
-four lines/836 characters in 13.669s before the prompted-edit redesign. Current
-verification counts and limitations are recorded in `.agents/memory/TESTING.md` and
-`.agents/memory/AI_SETTINGS_IMPLEMENTATION.md`.
+four lines/836 characters in 13.669s before the prompted-edit redesign. Current verification counts and limitations are recorded in this guide.
 TexLab has mocked protocol/adapter regressions plus a Windows bundled-process
 integration test exercising unchanged syncs and a burst of real editor requests.
 
@@ -254,5 +252,4 @@ run-specific performance evidence are recorded with the milestone memory.
 - Phase 2 native writing, diagnostics, language-service and toolbar interactions.
 - Build the installer and exercise install, upgrade, uninstall and TeX setup on Windows.
 
-The most recent verified counts, environment, exceptions and run-specific evidence are
-recorded in `.agents/memory/TESTING.md`.
+The most recent verified counts, environment, exceptions and run-specific evidence are recorded in this guide.

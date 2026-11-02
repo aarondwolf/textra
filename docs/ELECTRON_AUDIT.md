@@ -81,7 +81,7 @@ main restart smoke test. The full native run took 4.1 minutes; live AI and the
 separately invoked benchmark were intentionally skipped in that run.
 
 Verification commands and run-specific results are recorded in
-[Testing](TESTING.md) and `.agents/memory/TESTING.md`. Targeted regressions include
+[Testing](TESTING.md). Targeted regressions include
 hostile persisted indexes, real Windows links/junctions, backup failure, interrupted
 import, growth after stat, stale document versions, overlapping saves, watcher races,
 stream errors, framing/backpressure, shutdown and native Monaco undo/save behavior.
